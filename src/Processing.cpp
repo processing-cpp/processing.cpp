@@ -2896,12 +2896,51 @@ void run(){
     // Auto-load default.ttf from project root as the default font
     // (matches Processing Java's "a generic sans-serif font will be used")
     // Try to load default.ttf from several common locations
-	if (!tryLoadTTF("default.ttf",      g_textSize) &&
-	    !tryLoadTTF("src/default.ttf",  g_textSize) &&
-	    !tryLoadTTF("fonts/default.ttf",g_textSize) &&
-	    !tryLoadTTF("/home/pep/Projects/processing4/core/src/font/ProcessingSansPro-Regular.ttf", g_textSize)) {
-	    std::cerr << "[font] default.ttf not found -- using bitmap fallback\n";
-	}
+    {
+        std::string _homeDir;
+#ifdef _WIN32
+        if (const char* h = std::getenv("USERPROFILE")) _homeDir = h;
+#else
+        if (const char* h = std::getenv("HOME")) _homeDir = h;
+#endif
+        std::string _modePath;
+        if (const char* mp = std::getenv("PROCESSING_MODE_PATH"))
+            _modePath = std::string(mp) + "/";
+
+        // Font name used by Processing4
+        const std::string _font = "ProcessingSansPro-Regular.ttf";
+
+        // Check Documents/Processing on Windows (user sketchbook)
+        std::string _docsPath;
+#ifdef _WIN32
+        if (const char* ud = std::getenv("USERPROFILE"))
+            _docsPath = std::string(ud) + "/Documents/Processing/";
+#endif
+
+        if (!tryLoadTTF(_modePath + "fonts/" + _font, g_textSize) &&
+            !tryLoadTTF(_modePath + _font, g_textSize) &&
+            !tryLoadTTF(_docsPath + "modes/CppMode/fonts/" + _font, g_textSize) &&
+            // Windows: Processing4 install locations
+            !tryLoadTTF("C:/Program Files/Processing/core/library/" + _font, g_textSize) &&
+            !tryLoadTTF("C:/Program Files (x86)/Processing/core/library/" + _font, g_textSize) &&
+            !tryLoadTTF("C:/Program Files/processing-4.3/core/library/" + _font, g_textSize) &&
+            !tryLoadTTF(_homeDir + "/AppData/Local/Programs/Processing/core/library/" + _font, g_textSize) &&
+            // Windows: dev build
+            !tryLoadTTF(_homeDir + "/Projects/processing4/core/src/font/" + _font, g_textSize) &&
+            // Linux: installed Processing4
+            !tryLoadTTF("/usr/lib/processing4/core/library/" + _font, g_textSize) &&
+            !tryLoadTTF("/usr/share/processing4/core/library/" + _font, g_textSize) &&
+            !tryLoadTTF("/opt/processing4/core/library/" + _font, g_textSize) &&
+            !tryLoadTTF("/opt/processing/core/library/" + _font, g_textSize) &&
+            !tryLoadTTF(_homeDir + "/.local/share/processing4/core/library/" + _font, g_textSize) &&
+            !tryLoadTTF(_homeDir + "/processing-4.3/core/library/" + _font, g_textSize) &&
+            !tryLoadTTF(_homeDir + "/Projects/processing4/core/src/font/" + _font, g_textSize) &&
+            // macOS
+            !tryLoadTTF("/Applications/Processing.app/Contents/Java/core/library/" + _font, g_textSize) &&
+            !tryLoadTTF(_homeDir + "/Applications/Processing.app/Contents/Java/core/library/" + _font, g_textSize)) {
+            std::cerr << "[font] ProcessingSansPro-Regular.ttf not found -- using bitmap fallback\n";
+        }
+    }
 
     glfwFocusWindow(gWindow);  // ensure input focus on Windows
 
