@@ -148,6 +148,15 @@ void (*_wireCallbacksFn)() = nullptr;
 void (*_staticSketchSetup)() = nullptr; // set by static sketches for i3 redraw
 
 static GLFWwindow* gWindow=nullptr;
+std::string g_sketchName = "Sketch";
+
+// Read sketch name from environment (set by CppRunner at runtime)
+static struct _SketchNameInit {
+    _SketchNameInit() {
+        const char* env = std::getenv("PROCESSING_SKETCH_NAME");
+        if (env && env[0]) g_sketchName = env;
+    }
+} _sketchNameInit;
 static bool is3DMode=false;
 static int   sphereRes=48;
 static int   curveDetailVal=20;
@@ -2838,7 +2847,7 @@ void run(){
     glfwWindowHint(GLFW_RESIZABLE,isResizable?GLFW_TRUE:GLFW_FALSE);
     glfwWindowHint(GLFW_SAMPLES,4); // 4x MSAA for crisp P3D rendering; 2D noSmooth() disables at runtime
     glfwWindowHint(GLFW_STENCIL_BITS,8);  // needed for concave shape fill
-    gWindow=glfwCreateWindow(winWidth,winHeight,"processing-cpp",nullptr,nullptr);
+    gWindow=glfwCreateWindow(winWidth,winHeight,g_sketchName.c_str(),nullptr,nullptr);
     if(!gWindow){
 #ifdef _WIN32
         MessageBoxA(NULL, "Window creation failed.\nCheck that your GPU supports OpenGL 2.0+", "processing-cpp Error", MB_OK|MB_ICONERROR);

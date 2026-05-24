@@ -2348,3 +2348,5 @@ inline void link(const std::string& url) {
 #endif
 }
 inline void link(const char* url){link(std::string(url));}
+
+extern std::string g_sketchName;
