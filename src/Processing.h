@@ -1665,59 +1665,6 @@ public:
 };
 
 // =============================================================================
-// PList<T> -- std::vector wrapper that works inside the Processing namespace
-// Use instead of std::vector<T> in sketches to avoid namespace conflicts.
-// All Java ArrayList methods supported: add, get, set, remove, size, clear,
-// contains, indexOf, sort, shuffle, isEmpty.
-// =============================================================================
-template<typename T>
-class PList {
-public:
-    ::std::vector<T> _data;
-
-    PList() {}
-    PList(::std::initializer_list<T> il) : _data(il) {}
-
-    // Core
-    void   add(const T& v)              { _data.push_back(v); }
-    void   add(int i, const T& v)       { _data.insert(_data.begin()+i, v); }
-    T&     get(int i)                   { return _data[i]; }
-    const T& get(int i) const           { return _data[i]; }
-    void   set(int i, const T& v)       { _data[i] = v; }
-    void   remove(int i)                { _data.erase(_data.begin()+i); }
-    bool   remove(const T& v)           { auto it=::std::find(_data.begin(),_data.end(),v); if(it==_data.end()) return false; _data.erase(it); return true; }
-    int    size()  const                { return (int)_data.size(); }
-    bool   isEmpty() const              { return _data.empty(); }
-    void   clear()                      { _data.clear(); }
-    bool   contains(const T& v) const   { return ::std::find(_data.begin(),_data.end(),v)!=_data.end(); }
-    int    indexOf(const T& v) const    { auto it=::std::find(_data.begin(),_data.end(),v); return it==_data.end()?-1:(int)(it-_data.begin()); }
-
-    // Sort / shuffle
-    void sort()    { ::std::sort(_data.begin(), _data.end()); }
-    void reverse() { ::std::reverse(_data.begin(), _data.end()); }
-    void shuffle() {
-        for(int i=size()-1;i>0;i--){
-            int j=(int)(::std::rand()%(i+1));
-            ::std::swap(_data[i],_data[j]);
-        }
-    }
-
-    // Operator[] for array-style access
-    T&       operator[](int i)       { return _data[i]; }
-    const T& operator[](int i) const { return _data[i]; }
-
-    // Range-for support
-    auto begin() { return _data.begin(); }
-    auto end()   { return _data.end(); }
-    auto begin() const { return _data.begin(); }
-    auto end()   const { return _data.end(); }
-
-    // Append all from another PList
-    void addAll(const PList<T>& other) { for(auto& v:other._data) _data.push_back(v); }
-};
-
-// Convenience aliases matching Java Processing names
-
 // PMap<K,V> -- thin std::unordered_map wrapper
 template<typename K, typename V>
 class PMap {
@@ -2036,32 +1983,7 @@ void     resetShader();
 // GENERIC ARRAYLIST / HASHMAP  --  templated Java-style collections
 // =============================================================================
 
-template<typename T>
-class ArrayList {
-public:
-    std::vector<T> data;
 
-    ArrayList() = default;
-
-    void add(const T& v)        { data.push_back(v); }
-    void add(int i, const T& v) { data.insert(data.begin()+i,v); }
-    T&   get(int i)             { return data[i]; }
-    const T& get(int i) const   { return data[i]; }
-    void set(int i, const T& v) { data[i]=v; }
-    void remove(int i)          { data.erase(data.begin()+i); }
-    bool remove(const T& v)     { auto it=std::find(data.begin(),data.end(),v); if(it==data.end())return false; data.erase(it); return true; }
-    int  size()    const        { return (int)data.size(); }
-    bool isEmpty() const        { return data.empty(); }
-    void clear()                { data.clear(); }
-    bool contains(const T& v) const   { return std::find(data.begin(),data.end(),v)!=data.end(); }
-    int  indexOf(const T& v)   const  { auto it=std::find(data.begin(),data.end(),v); return it==data.end()?-1:(int)(it-data.begin()); }
-    void sort()                       { std::sort(data.begin(),data.end()); }
-
-    T&       operator[](int i)       { return data[i]; }
-    const T& operator[](int i) const { return data[i]; }
-    typename std::vector<T>::iterator begin() { return data.begin(); }
-    typename std::vector<T>::iterator end()   { return data.end();   }
-};
 
 template<typename K, typename V>
 class HashMap {
