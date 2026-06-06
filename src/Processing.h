@@ -611,6 +611,8 @@ extern char key;     // ASCII character, or CODED (0xFF) for special keys
 
 extern int   frameCount;
 extern float currentFrameRate;
+extern float _frameRate;  // measured fps (read-only)
+extern float deltaTime;  // seconds since last frame
 extern bool  looping;
 extern float measuredFrameRate;
 

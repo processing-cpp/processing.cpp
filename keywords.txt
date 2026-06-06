@@ -370,3 +370,5 @@ extern	KEYWORD6
 typedef	KEYWORD6
 sizeof	KEYWORD6
 delete	KEYWORD6
+_frameRate	KEYWORD4
+deltaTime	KEYWORD4

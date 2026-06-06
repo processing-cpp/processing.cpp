@@ -99,6 +99,8 @@ char  key     = 0;
 // Frame timing
 int   frameCount     = 1;
 float currentFrameRate    = 60.0f;
+float _frameRate          = 60.0f;
+float deltaTime          = 0.0f;
 bool  looping        = true;
 static bool   redrawOnce = false;
 float measuredFrameRate  = 0.0f;
@@ -2848,6 +2850,11 @@ void run(){
     glfwWindowHint(GLFW_SAMPLES,4); // 4x MSAA for crisp P3D rendering; 2D noSmooth() disables at runtime
     glfwWindowHint(GLFW_STENCIL_BITS,8);  // needed for concave shape fill
     gWindow=glfwCreateWindow(winWidth,winHeight,g_sketchName.c_str(),nullptr,nullptr);
+    // Prevent freeze when dragging title bar on Windows
+    glfwSetWindowRefreshCallback(gWindow,[](GLFWwindow* w){
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+        glfwSwapBuffers(w);
+    });
     if(!gWindow){
 #ifdef _WIN32
         MessageBoxA(NULL, "Window creation failed.\nCheck that your GPU supports OpenGL 2.0+", "processing-cpp Error", MB_OK|MB_ICONERROR);
@@ -3130,6 +3137,8 @@ void run(){
         auto now=std::chrono::steady_clock::now();
         double elapsed=std::chrono::duration<double>(now-last).count();
         if(elapsed>0) measuredFrameRate=measuredFrameRate*0.9f+(float)(1.0/elapsed)*0.1f;
+        _frameRate=(float)(1.0/elapsed);
+        deltaTime=(float)elapsed;
         double sl=targetFrameTime-elapsed;
         if(sl>0)std::this_thread::sleep_for(std::chrono::duration<double>(sl));
         last=std::chrono::steady_clock::now();
