@@ -1,10 +1,10 @@
-name=c++ mode
+name=C++ Mode
 category=other
 authors=[Jose Gonzalez Llamas](https://github.com/pepc84)
 url=https://github.com/processing-cpp/processing.cpp
-sentence=write and run processing sketches in c++.
-paragraph=c++ mode lets you write sketches using the familiar processing api — size(), ellipse(), mousex, draw() — but compiled to a native binary via g++. runs on linux and windows (via msys2). requires g++ and opengl (glfw + glew).
+sentence=Write and run Processing sketches in C++.
+paragraph=C++ Mode lets you write sketches using the familiar Processing API — size(), ellipse(), mouseX, draw() — but compiled to a native binary via g++. Runs on Linux and Windows (via MSYS2). Requires g++ and OpenGL (GLFW + GLEW).
 version=4
 prettyversion=0.1.4
-minrevision=1293
-maxrevision=0
+minRevision=1280
+maxRevision=0
