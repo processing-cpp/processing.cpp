@@ -550,7 +550,8 @@ static inline int& height = logicalH;
 // MOUSE STATE
 // =============================================================================
 
-extern float mouseX, mouseY;   // current mouse position (screen coords)
+extern float mouseX, mouseY;
+extern float mouseDX, mouseDY;  // accumulated delta since last frame
 extern float pmouseX, pmouseY; // previous frame mouse position
 extern bool  _mousePressed; // true while any mouse button is held
 extern int   mouseButton;      // LEFT, RIGHT, or CENTER

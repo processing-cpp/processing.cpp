@@ -87,6 +87,7 @@ bool  focused     = false;
 
 // Mouse state
 float mouseX = 0, mouseY = 0, pmouseX = 0, pmouseY = 0;
+float mouseDX = 0, mouseDY = 0;
 bool  mouseInWindow = false;    // true once cursor has entered the window
 bool  _mousePressed = false;
 int   mouseButton   = -1;
@@ -2597,6 +2598,8 @@ static bool mouseWasPressed=false;
 
 static void cursor_pos_cb(GLFWwindow*, double x, double y) {
     mouseInWindow = true;
+    mouseDX += (float)x - mouseX;
+    mouseDY += (float)y - mouseY;
     pmouseX = mouseX;
     pmouseY = mouseY;
     mouseX  = (float)x;
@@ -3015,6 +3018,7 @@ void run(){
             setProjection(logicalW, logicalH);
         }
         ++frameCount; draw();
+                mouseDX = 0; mouseDY = 0;  // reset delta each frame
         flushPoints(); // flush any pending points before swap
         saveToPersist(); // save back buffer before swap for next frame restore
         glfwSwapBuffers(gWindow);
@@ -3038,7 +3042,7 @@ void run(){
         }
     }
     while(!glfwWindowShouldClose(gWindow)){
-        pmouseX=mouseX;pmouseY=mouseY;
+
         if(looping||redrawOnce){
             redrawOnce=false;
 
@@ -3127,7 +3131,7 @@ void run(){
                 // Reset tint state each frame (Processing Java behavior)
                 doTint=false; tintR=1; tintG=1; tintB=1; tintA=1;
                 glGetError();
-                ++frameCount; draw();
+                ++frameCount; draw(); pmouseX=mouseX; pmouseY=mouseY; mouseDX=0; mouseDY=0;
                 glGetError(); // consume any GL errors
             }
 
