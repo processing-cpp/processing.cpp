@@ -1,4 +1,13 @@
+#if __has_include("stb_truetype.h")
+#  define PROCESSING_HAS_STB_TRUETYPE 1
+#  define STB_TRUETYPE_IMPLEMENTATION
+#  include "stb_truetype.h"
+#else
+#  define PROCESSING_HAS_STB_TRUETYPE 0
+#endif
+
 #include "Processing.h"
+#include <csignal>
 #include <cstdlib>
 #include <cmath>
 #include <sys/stat.h>
@@ -26,7 +35,8 @@
 
 // Uncomment + drop stb_image_write.h to enable saveFrame()/save():
 // #define STB_IMAGE_WRITE_IMPLEMENTATION
-// #include "stb_image_write.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 // ── Manual glu replacements (no GLU header needed) ───────────────────────────
 static void _gluPerspective(double fovY_deg, double aspect, double zNear, double zFar) {
@@ -61,76 +71,26 @@ static void _gluLookAt(double ex,double ey,double ez,
 
 // stb_truetype -- drop stb_truetype.h next to this file for TTF font rendering.
 // default.ttf in the project root is loaded automatically as the default font.
-#if __has_include("stb_truetype.h")
-#  define STB_TRUETYPE_IMPLEMENTATION
-#  include "stb_truetype.h"
-#  define PROCESSING_HAS_STB_TRUETYPE 1
-#else
-#  define PROCESSING_HAS_STB_TRUETYPE 0
-#endif
 
-namespace Processing {
 
 // =============================================================================
 // STATE
 // =============================================================================
 
 // Window / canvas size
-int   winWidth  = 640, winHeight  = 480;    // current window size (updated by size())
-int   logicalW  = 640, logicalH  = 480;    // sketch's coordinate space (from size())
 static int fbW  = 640, fbH       = 480;    // actual framebuffer (may be 2× on HiDPI)
-int   displayWidth  = 0, displayHeight  = 0;
-int   pixelWidth    = 0, pixelHeight    = 0;
-int   pixelDensityValue = 1;
-bool  isResizable = false;
-bool  focused     = false;
 
 // Mouse state
-float mouseX = 0, mouseY = 0, pmouseX = 0, pmouseY = 0;
-float mouseDX = 0, mouseDY = 0;
-bool  mouseInWindow = false;    // true once cursor has entered the window
-bool  _mousePressed = false;
-int   mouseButton   = -1;
 
 // Keyboard state
-bool  _keyPressed = false;
-int   keyCode = 0;
-char  key     = 0;
 
 // Frame timing
-int   frameCount     = 1;
-float currentFrameRate    = 60.0f;
-float _frameRate          = 60.0f;
-float deltaTime          = 0.0f;
-bool  looping        = true;
-static bool   redrawOnce = false;
-float measuredFrameRate  = 0.0f;
-static double targetFrameTime = 1.0 / 60.0;
 
 // Current draw style
-float fillR = 1, fillG = 1, fillB = 1, fillA = 1;
-float strokeR = 0, strokeG = 0, strokeB = 0, strokeA = 1;
-float strokeW = 1;
-bool  doFill = true, doStroke = true, smoothing = true;
-
-int   currentRectMode    = CORNER;
-int   currentEllipseMode = CENTER;
-int   currentImageMode   = CORNER;
-
-float tintR = 1, tintG = 1, tintB = 1, tintA = 1;
-bool  doTint = false;
 
 // Lighting state
-static float pendingSpecR = 0, pendingSpecG = 0, pendingSpecB = 0;  // from lightSpecular()
-static float lightConcentration[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };   // spotlight exponent
-static float lightCutoffCos[8]     = { -1, -1, -1, -1, -1, -1, -1, -1 }; // cos(cutoff), -1 = no cone
 
 // Color mode
-int   colorModeVal = RGB;
-float colorMaxH = 255.f, colorMaxS = 255.f, colorMaxB = 255.f, colorMaxA = 255.f;
-
-std::vector<unsigned int> pixels;
-
 // User event callbacks
 std::function<void()>    _onKeyPressed;
 std::function<void()>    _onKeyReleased;
@@ -142,52 +102,12 @@ std::function<void()>    _onMouseMoved;
 std::function<void()>    _onMouseDragged;
 std::function<void(int)> _onMouseWheel;
 std::function<void()>    _onWindowMoved;
-std::function<void()>    _onWindowResized;
-
 // On Windows: IDE.cpp stores a raw function pointer here before static init
 // of Processing.cpp completes. Raw function pointers are POD -- zero-initialized
 // at program start before ANY constructor runs, so this is always safe to write.
-void (*_wireCallbacksFn)() = nullptr;
-void (*_staticSketchSetup)() = nullptr; // set by static sketches for i3 redraw
-
-static GLFWwindow* gWindow=nullptr;
-std::string g_sketchName = "Sketch";
-
-// Read sketch name from environment (set by CppRunner at runtime)
-static struct _SketchNameInit {
-    _SketchNameInit() {
-        const char* env = std::getenv("PROCESSING_SKETCH_NAME");
-        if (env && env[0]) g_sketchName = env;
-    }
-} _sketchNameInit;
-static bool is3DMode=false;
-static int   sphereRes=48;
-static int   curveDetailVal=20;
-static float curveTightnessVal=0.0f;
-static int   bezierDetailVal=60;
-static bool  lightsEnabled=false;
-static int   lightIndex=0;
 
 // Shape state
-static int  shapeKind=-1;
-static bool inShape=false,inContour=false;
-static bool shape3D=false;
-static std::vector<std::pair<float,float>>          shapeVerts;   // 2D projections (for stroke outlines)
-static std::vector<std::array<float,3>>             shapeVerts3D; // full 3D positions (for fill)
-static std::vector<std::pair<float,float>> contourVerts;
 
-// Style stack
-struct Style {
-    float fillR, fillG, fillB, fillA;
-    float strokeR, strokeG, strokeB, strokeA, strokeW;
-    bool  doFill, doStroke;
-    int   rectMode, ellipseMode, imageMode;
-    float tintR, tintG, tintB, tintA;
-    bool  doTint;
-    int   colorMode;
-    float cmH, cmS, cmB, cmA;
-};
-static std::vector<Style> styleStack;
 
 // =============================================================================
 // NOISE - exact Java Processing implementation (PApplet.java)
@@ -195,18 +115,31 @@ static std::vector<Style> styleStack;
 // This matches Processing Java's noise() output exactly.
 // =============================================================================
 
+
+namespace Processing {
+
+static void _doEnableDebugConsole() {
+#ifdef _WIN32
+    if (AllocConsole()) {
+        FILE* f;
+        freopen_s(&f, "CONOUT$", "w", stdout);
+        freopen_s(&f, "CONOUT$", "w", stderr);
+        freopen_s(&f, "CONIN$",  "r", stdin);
+        fprintf(stderr, "[debug] processing-cpp debug console enabled\n");
+    }
+#endif
+}
+void enableDebugConsole() { _doEnableDebugConsole(); }
+
+static std::string _s_objDir; // OBJ loader scratch
+
 static const int PERLIN_YWRAPB = 4;
 static const int PERLIN_YWRAP  = 1 << PERLIN_YWRAPB;  // 16
 static const int PERLIN_ZWRAPB = 8;
 static const int PERLIN_ZWRAP  = 1 << PERLIN_ZWRAPB;  // 256
 static const int PERLIN_SIZE   = 4095;
 
-static int   noiseOctaves  = 4;
-static float noiseFalloff  = 0.5f;
-static float perlinTable[PERLIN_SIZE + 1];
-static bool  perlinInit    = false;
-
-static void initPerlin(unsigned int seed) {
+void PApplet::initPerlin(unsigned int seed) {
     // Java Processing seeds with a simple LCG and fills with rand values in [0,1)
     // It uses its own random to not disturb the sketch's random()
     uint32_t s = seed;
@@ -219,15 +152,15 @@ static void initPerlin(unsigned int seed) {
     perlinInit = true;
 }
 
-void noiseSeed(int s) { initPerlin((unsigned int)s); }
-void noiseDetail(int o, float f) { noiseOctaves = o; noiseFalloff = f; }
+void PApplet::noiseSeed(int s) { initPerlin((unsigned int)s); }
+void PApplet::noiseDetail(int o, float f) { noiseOctaves = o; noiseFalloff = f; }
 
 // Cosine interpolation curve -- Java Processing's noise_fsc()
 static inline float noise_fsc(float i) {
     return 0.5f * (1.0f - std::cos(i * PI));
 }
 
-float noise(float x, float y, float z) {
+float PApplet::noise(float x, float y, float z) {
     if (!perlinInit) initPerlin(0);  // default seed 0 like Java
     if (x < 0) x = -x;
     if (y < 0) y = -y;
@@ -259,23 +192,21 @@ float noise(float x, float y, float z) {
     }
     return r;
 }
-float noise(float x)           { return noise(x, 0.0f, 0.0f); }
-float noise(float x, float y)  { return noise(x, y,    0.0f); }
+float PApplet::noise(float x)           { return noise(x, 0.0f, 0.0f); }
+float PApplet::noise(float x, float y)  { return noise(x, y,    0.0f); }
 
 // Seeded random -- Mersenne Twister for reproducibility matching Java Processing
-static std::mt19937 _rng(std::mt19937::default_seed);
-static std::uniform_real_distribution<float> _rngDist(0.0f, 1.0f);
 
-void randomSeed(long s) {
+void PApplet::randomSeed(long s) {
     _rng.seed(static_cast<uint32_t>(s));
     _rngDist.reset();
 }
-float random(float lo, float hi) {
+float PApplet::random(float lo, float hi) {
     return lo + _rngDist(_rng) * (hi - lo);
 }
-float random(float hi) { return random(0.f, hi); }
+float PApplet::random(float hi) { return random(0.f, hi); }
 
-float randomGaussian(){
+float PApplet::randomGaussian(){
     static float spare; static bool has=false;
     if(has){has=false;return spare;}
     float u,v,s;
@@ -287,7 +218,7 @@ float randomGaussian(){
 // COLOR MODE & HELPERS
 // =============================================================================
 
-static void hsbToRgb(float h, float s, float b, float& outR, float& outG, float& outB) {
+void PApplet::hsbToRgb(float h, float s, float b, float& outR, float& outG, float& outB) {
     // Normalise each channel to [0, 1]
     h /= colorMaxH;
     s /= colorMaxS;
@@ -317,7 +248,7 @@ static void hsbToRgb(float h, float s, float b, float& outR, float& outG, float&
     }
 }
 
-color makeColor(float a, float b, float c, float d) {
+color PApplet::makeColor(float a, float b, float c, float d) {
     float r = 0, g = 0, bv = 0, aa = 0;
     if (colorModeVal == HSB) {
         hsbToRgb(a, b, c, r, g, bv);
@@ -330,7 +261,7 @@ color makeColor(float a, float b, float c, float d) {
     }
     return colorVal((int)(r*255), (int)(g*255), (int)(bv*255), (int)(aa*255));
 }
-color makeColor(float gray,float alpha){
+color PApplet::makeColor(float gray,float alpha){
     // In HSB mode, a single-value gray maps to brightness only (hue=0, sat=0)
     // matching Processing Java behavior -- background(v) in HSB gives gray
     if(colorModeVal==HSB){
@@ -346,29 +277,42 @@ color makeColor(float gray,float alpha){
 // =============================================================================
 // color STRUCT CONSTRUCTORS
 // =============================================================================
-color::color(int gray)              { value = makeColor((float)gray, colorMaxA).value; }
-color::color(int gray, int a)       { value = makeColor((float)gray, (float)a).value; }
-color::color(int r, int g, int b)   { value = makeColor((float)r,(float)g,(float)b,colorMaxA).value; }
-color::color(int r,int g,int b,int a){ value = makeColor((float)r,(float)g,(float)b,(float)a).value; }
-color::color(float gray)            { value = makeColor(gray, colorMaxA).value; }
-color::color(float gray, float a)   { value = makeColor(gray, a).value; }
-color::color(float r,float g,float b){ value = makeColor(r,g,b,colorMaxA).value; }
-color::color(float r,float g,float b,float a){ value = makeColor(r,g,b,a).value; }
+// File-scope shims so color:: constructors can call makeColor
+static color _makeColor(float a,float b,float c,float d=255){
+    if(PApplet::g_papplet) return PApplet::g_papplet->makeColor(a,b,c,d);
+    return colorVal((int)a,(int)b,(int)c,(int)d);
+}
+static color _makeColor(float gray,float alpha=255){
+    if(PApplet::g_papplet) return PApplet::g_papplet->makeColor(gray,alpha);
+    return colorVal((int)gray,(int)gray,(int)gray,(int)alpha);
+}
+static float _colorMaxA(){
+    return PApplet::g_papplet ? PApplet::g_papplet->colorMaxA : 255.f;
+}
 
-void colorMode(int mode, float mx) { colorModeVal=mode; colorMaxH=colorMaxS=colorMaxB=colorMaxA=mx; }
-void colorMode(int mode, float mH, float mS, float mB, float mA) { colorModeVal=mode; colorMaxH=mH; colorMaxS=mS; colorMaxB=mB; colorMaxA=mA; }
+color::color(int gray)              { value = _makeColor((float)gray, _colorMaxA()).value; }
+color::color(int gray, int a)       { value = _makeColor((float)gray, (float)a).value; }
+color::color(int r, int g, int b)   { value = _makeColor((float)r,(float)g,(float)b,_colorMaxA()).value; }
+color::color(int r,int g,int b,int a){ value = _makeColor((float)r,(float)g,(float)b,(float)a).value; }
+color::color(float gray)            { value = _makeColor(gray, _colorMaxA()).value; }
+color::color(float gray, float a)   { value = _makeColor(gray, a).value; }
+color::color(float r,float g,float b){ value = _makeColor(r,g,b,_colorMaxA()).value; }
+color::color(float r,float g,float b,float a){ value = _makeColor(r,g,b,a).value; }
+
+void PApplet::colorMode(int mode, float mx) { colorModeVal=mode; colorMaxH=colorMaxS=colorMaxB=colorMaxA=mx; }
+void PApplet::colorMode(int mode, float mH, float mS, float mB, float mA) { colorModeVal=mode; colorMaxH=mH; colorMaxS=mS; colorMaxB=mB; colorMaxA=mA; }
 
 // Color channel accessors -- scaled to current colorMode range
-float red(color c)       { unsigned int v=c.value; return (v>>16&0xFF)/255.0f*colorMaxH; }
-float green(color c)     { unsigned int v=c.value; return (v>>8&0xFF)/255.0f*colorMaxS; }
-float blue(color c)      { unsigned int v=c.value; return (v&0xFF)/255.0f*colorMaxB; }
-float alpha(color c)     { unsigned int v=c.value; return (v>>24&0xFF)/255.0f*colorMaxA; }
-float brightness(color c) {
+float PApplet::red(color c)       { unsigned int v=c.value; return (v>>16&0xFF)/255.0f*colorMaxH; }
+float PApplet::green(color c)     { unsigned int v=c.value; return (v>>8&0xFF)/255.0f*colorMaxS; }
+float PApplet::blue(color c)      { unsigned int v=c.value; return (v&0xFF)/255.0f*colorMaxB; }
+float PApplet::alpha(color c)     { unsigned int v=c.value; return (v>>24&0xFF)/255.0f*colorMaxA; }
+float PApplet::brightness(color c) {
     unsigned int v=c.value;
     float r=(v>>16&0xFF)/255.f, g=(v>>8&0xFF)/255.f, b=(v&0xFF)/255.f;
     return max(r, max(g, b)) * colorMaxB;
 }
-float saturation(color c) {
+float PApplet::saturation(color c) {
     unsigned int v = c.value;
     float r  = (v >> 16 & 0xFF) / 255.f;
     float g  = (v >>  8 & 0xFF) / 255.f;
@@ -377,7 +321,7 @@ float saturation(color c) {
     float mn = min(r, min(g, b));
     return (mx == 0 ? 0 : (mx - mn) / mx) * colorMaxS;
 }
-float hue(color c){
+float PApplet::hue(color c){
     unsigned int v=c.value;
     float r=(v>>16&0xFF)/255.f,g=(v>>8&0xFF)/255.f,b=(v&0xFF)/255.f;
     float mx=max(r,max(g,b)),mn=min(r,min(g,b)),d=mx-mn;
@@ -385,7 +329,7 @@ float hue(color c){
     float h=(mx==r)?(g-b)/d:(mx==g)?2+(b-r)/d:4+(r-g)/d;
     h*=60;if(h<0)h+=360;return h/360.0f*colorMaxH;
 }
-color lerpColor(color c1, color c2, float t) {
+color PApplet::lerpColor(color c1, color c2, float t) {
     unsigned int v1 = c1.value;
     unsigned int v2 = c2.value;
 
@@ -406,7 +350,7 @@ color lerpColor(color c1, color c2, float t) {
 // INTERNAL HELPERS
 // =============================================================================
 
-static void applyFill() {
+void PApplet::applyFill() {
     glColor4f(fillR, fillG, fillB, fillA);
     // Always enable blend -- shapes with alpha need it, opaque shapes don't hurt
     glEnable(GL_BLEND);
@@ -415,7 +359,7 @@ static void applyFill() {
 
 // Temporarily suspend lighting so stroke lines/points render with their exact
 // colour. Processing Java does the same -- strokes are never affected by lights.
-static void applyStroke() {
+void PApplet::applyStroke() {
     if (lightsEnabled) {
         glDisable(GL_LIGHTING);
         glDisable(GL_COLOR_MATERIAL);
@@ -426,7 +370,7 @@ static void applyStroke() {
 }
 
 // Restore lighting after a stroke draw call.
-static void restoreLighting() {
+void PApplet::restoreLighting() {
     if (lightsEnabled) {
         glEnable(GL_LIGHTING);
         glEnable(GL_COLOR_MATERIAL);
@@ -435,9 +379,7 @@ static void restoreLighting() {
         glColor4f(fillR, fillG, fillB, fillA);
     }
 }
-
-static GLuint persistFBO=0, persistTex=0;
-static void initPersistFBO(){
+void PApplet::initPersistFBO(){
     if(persistFBO){glDeleteFramebuffers(1,&persistFBO);glDeleteTextures(1,&persistTex);persistFBO=0;}
     glGenFramebuffers(1,&persistFBO);
     glGenTextures(1,&persistTex);
@@ -452,7 +394,7 @@ static void initPersistFBO(){
 }
 
 // Copy current back buffer into persist FBO
-static void saveToPersist(){
+void PApplet::saveToPersist(){
     if(!persistFBO) initPersistFBO();
     // Blit back buffer -> persist FBO
     glBindFramebuffer(GL_READ_FRAMEBUFFER,0);
@@ -462,7 +404,7 @@ static void saveToPersist(){
 }
 
 // Restore persist FBO into back buffer
-static void restoreFromPersist(){
+void PApplet::restoreFromPersist(){
     if(!persistFBO) return;
     glBindFramebuffer(GL_READ_FRAMEBUFFER,persistFBO);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER,0);
@@ -470,7 +412,7 @@ static void restoreFromPersist(){
     glBindFramebuffer(GL_FRAMEBUFFER,0);
 }
 
-static void _restoreMainCanvas(){
+void PApplet::_restoreMainCanvas(){
     // Restore main window viewport and projection after PGraphics endDraw()
     glViewport(0,0,fbW,fbH);
     glMatrixMode(GL_PROJECTION);glLoadIdentity();
@@ -480,7 +422,7 @@ static void _restoreMainCanvas(){
     glDisable(GL_LIGHTING);
 }
 
-static void setProjection(int,int){
+void PApplet::setProjection(int,int){
     // Viewport = actual framebuffer size (handles HiDPI where fb > logical).
     // Ortho = logical sketch size (coordinates always match what size() set).
     if (gWindow) {
@@ -497,8 +439,8 @@ static void setProjection(int,int){
     glDisable(GL_LIGHTING);
 }
 
-static void drawEllipseGeom(float cx,float cy,float rx,float ry,
-                             float sa=0,float ea=TWO_PI,int segs=-1){
+void PApplet::drawEllipseGeom(float cx,float cy,float rx,float ry,
+                             float sa,float ea,int segs){
     if(segs < 0){
         float maxR = rx > ry ? rx : ry;
         segs = (int)(maxR * 2.5f);
@@ -536,17 +478,17 @@ static void drawEllipseGeom(float cx,float cy,float rx,float ry,
     }
 }
 
-static void resolveRect(float& x,float& y,float& w,float& h){
+void PApplet::resolveRect(float& x,float& y,float& w,float& h){
     if(currentRectMode==CENTER){x-=w*0.5f;y-=h*0.5f;}
     else if(currentRectMode==RADIUS){x-=w;y-=h;w*=2;h*=2;}
     else if(currentRectMode==CORNERS){w=w-x;h=h-y;}
 }
-static void resolveEllipse(float& cx,float& cy,float& rx,float& ry){
+void PApplet::resolveEllipse(float& cx,float& cy,float& rx,float& ry){
     if(currentEllipseMode==CORNER){cx+=rx;cy+=ry;}
     else if(currentEllipseMode==CORNERS){float ex=rx,ey=ry;rx=(ex-cx)*0.5f;ry=(ey-cy)*0.5f;cx=(cx+ex)*0.5f;cy=(cy+ey)*0.5f;}
     else if(currentEllipseMode==CENTER){rx*=0.5f;ry*=0.5f;}
 }
-static void setFillFromColor(color c) {
+void PApplet::setFillFromColor(color c) {
     unsigned int v = c.value;
     fillR = (v >> 16 & 0xFF) / 255.f;
     fillG = (v >>  8 & 0xFF) / 255.f;
@@ -554,7 +496,7 @@ static void setFillFromColor(color c) {
     fillA = (v >> 24 & 0xFF) / 255.f;
     doFill = true;
 }
-static void setStrokeFromColor(color c) {
+void PApplet::setStrokeFromColor(color c) {
     unsigned int v = c.value;
     strokeR = (v >> 16 & 0xFF) / 255.f;
     strokeG = (v >>  8 & 0xFF) / 255.f;
@@ -567,10 +509,7 @@ static void setStrokeFromColor(color c) {
 // ENVIRONMENT
 // =============================================================================
 
-static bool defaultP3D = false;
-static void applyDefaultCamera(); // forward decl for use in size()
-
-void size(int w,int h){
+void PApplet::size(int w,int h){
     winWidth=w;winHeight=h;
     logicalW=w;logicalH=h;  // remember what the sketch requested
     pixelWidth=w;pixelHeight=h;
@@ -611,7 +550,7 @@ void size(int w,int h){
         setProjection(w,h);
     }
 }
-void size(int w,int h,int renderer){
+void PApplet::size(int w,int h,int renderer){
     defaultP3D=(renderer==P3D);
     size(w,h);
     // For P3D mode: set up depth test and apply default camera/perspective
@@ -629,7 +568,7 @@ void size(int w,int h,int renderer){
         applyDefaultCamera();
     }
 }
-void fullScreen() {
+void PApplet::fullScreen() {
     if (!gWindow) {
         winWidth = displayWidth;
         winHeight = displayHeight;
@@ -639,24 +578,23 @@ void fullScreen() {
         glfwSetWindowMonitor(gWindow, m, 0, 0, v->width, v->height, v->refreshRate);
     }
 }
-void frameRate(int fps){currentFrameRate=fps;targetFrameTime=1.0/fps;}
-void settings(){}
-void noLoop(){looping=false;}
-void loop()  {looping=true;}
-void redraw(){redrawOnce=true;}
-void exit_sketch(){if(gWindow)glfwSetWindowShouldClose(gWindow,GLFW_TRUE);}
-void windowTitle(const std::string& t){if(gWindow)glfwSetWindowTitle(gWindow,t.c_str());}
-void windowMove(int x,int y){if(gWindow)glfwSetWindowPos(gWindow,x,y);}
-void windowResize(int w,int h){size(w,h);}
-void windowResizable(bool r){isResizable=r;if(gWindow)glfwSetWindowAttrib(gWindow,GLFW_RESIZABLE,r?GLFW_TRUE:GLFW_FALSE);}
+void PApplet::frameRate(int fps){currentFrameRate=fps;targetFrameTime=1.0/fps;}
+void PApplet::noLoop(){looping=false;}
+void PApplet::loop()  {looping=true;}
+void PApplet::redraw(){redrawOnce=true;}
+void PApplet::exit_sketch(){if(gWindow)glfwSetWindowShouldClose(gWindow,GLFW_TRUE);}
+void PApplet::windowTitle(const std::string& t){if(gWindow)glfwSetWindowTitle(gWindow,t.c_str());}
+void PApplet::windowMove(int x,int y){if(gWindow)glfwSetWindowPos(gWindow,x,y);}
+void PApplet::windowResize(int w,int h){size(w,h);}
+void PApplet::windowResizable(bool r){isResizable=r;if(gWindow)glfwSetWindowAttrib(gWindow,GLFW_RESIZABLE,r?GLFW_TRUE:GLFW_FALSE);}
 // ---------------------------------------------------------------------------
 // Clipboard
 // ---------------------------------------------------------------------------
-void setClipboard(const std::string& s) {
+void PApplet::setClipboard(const std::string& s) {
     if (s.empty()) return;
     if (gWindow) glfwSetClipboardString(gWindow, s.c_str());
 }
-std::string getClipboard() {
+std::string PApplet::getClipboard() {
     if (!gWindow) return "";
     const char* cb = glfwGetClipboardString(gWindow);
     return cb ? std::string(cb) : "";
@@ -665,7 +603,7 @@ std::string getClipboard() {
 // ---------------------------------------------------------------------------
 // Window icon
 // ---------------------------------------------------------------------------
-void setWindowIcon(PImage* img) {
+void PApplet::setWindowIcon(PImage* img) {
     if (!img || !gWindow) return;
     // Convert ARGB pixels (Processing internal) to RGBA (GLFW wants RGBA)
     std::vector<unsigned char> rgba(img->width * img->height * 4);
@@ -686,33 +624,32 @@ void setWindowIcon(PImage* img) {
 // ---------------------------------------------------------------------------
 // Modifier key state
 // ---------------------------------------------------------------------------
-static int g_currentMods = 0; // GLFW modifier bitmask, set in key/mouse callbacks
 
-bool isCtrlDown() {
+bool PApplet::isCtrlDown() {
     // Use GLFW mods bitmask (reliable from callbacks) OR glfwGetKey (for polling)
     if (g_currentMods & GLFW_MOD_CONTROL) return true;
     if (!gWindow) return false;
     return glfwGetKey(gWindow, GLFW_KEY_LEFT_CONTROL)  == GLFW_PRESS
         || glfwGetKey(gWindow, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
 }
-bool isShiftDown() {
+bool PApplet::isShiftDown() {
     if (g_currentMods & GLFW_MOD_SHIFT) return true;
     if (!gWindow) return false;
     return glfwGetKey(gWindow, GLFW_KEY_LEFT_SHIFT)  == GLFW_PRESS
         || glfwGetKey(gWindow, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
 }
-bool isAltDown() {
+bool PApplet::isAltDown() {
     if (g_currentMods & GLFW_MOD_ALT) return true;
     if (!gWindow) return false;
     return glfwGetKey(gWindow, GLFW_KEY_LEFT_ALT)  == GLFW_PRESS
         || glfwGetKey(gWindow, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS;
 }
 
-void windowRatio(int w,int h){if(gWindow)glfwSetWindowAspectRatio(gWindow,w,h);}
-void pixelDensity(int d){pixelDensityValue=d;}
-void smooth()  {smoothing=true; glEnable(GL_LINE_SMOOTH);glHint(GL_LINE_SMOOTH_HINT,GL_NICEST);glEnable(GL_POINT_SMOOTH);glHint(GL_POINT_SMOOTH_HINT,GL_NICEST);glEnable(GL_MULTISAMPLE);}
-void noSmooth(){smoothing=false;glDisable(GL_LINE_SMOOTH);glDisable(GL_POLYGON_SMOOTH);glDisable(GL_POINT_SMOOTH);glDisable(GL_MULTISAMPLE);}
-void hint(int which){
+void PApplet::windowRatio(int w,int h){if(gWindow)glfwSetWindowAspectRatio(gWindow,w,h);}
+void PApplet::pixelDensity(int d){pixelDensityValue=d;}
+void PApplet::smooth()  {smoothing=true; glEnable(GL_LINE_SMOOTH);glHint(GL_LINE_SMOOTH_HINT,GL_NICEST);glEnable(GL_POINT_SMOOTH);glHint(GL_POINT_SMOOTH_HINT,GL_NICEST);glEnable(GL_MULTISAMPLE);}
+void PApplet::noSmooth(){smoothing=false;glDisable(GL_LINE_SMOOTH);glDisable(GL_POLYGON_SMOOTH);glDisable(GL_POINT_SMOOTH);glDisable(GL_MULTISAMPLE);}
+void PApplet::hint(int which){
     switch(which){
         case ENABLE_DEPTH_TEST:  glEnable(GL_DEPTH_TEST);  break;
         case DISABLE_DEPTH_TEST: glDisable(GL_DEPTH_TEST); break;
@@ -721,23 +658,23 @@ void hint(int which){
         default: break;
     }
 }
-void cursor()       {if(gWindow)glfwSetInputMode(gWindow,GLFW_CURSOR,GLFW_CURSOR_NORMAL);}
-void cursor(int type){if(!gWindow)return;GLFWcursor* c=glfwCreateStandardCursor(type);if(c)glfwSetCursor(gWindow,c);}
-void noCursor()     {if(gWindow)glfwSetInputMode(gWindow,GLFW_CURSOR,GLFW_CURSOR_HIDDEN);}
+void PApplet::cursor()       {if(gWindow)glfwSetInputMode(gWindow,GLFW_CURSOR,GLFW_CURSOR_NORMAL);}
+void PApplet::cursor(int type){if(!gWindow)return;GLFWcursor* c=glfwCreateStandardCursor(type);if(c)glfwSetCursor(gWindow,c);}
+void PApplet::noCursor()     {if(gWindow)glfwSetInputMode(gWindow,GLFW_CURSOR,GLFW_CURSOR_HIDDEN);}
 // captureMouse(): locks cursor to window and provides unlimited delta movement.
 // Use releaseMouse() or press ESC to free it.
-void captureMouse() {if(gWindow){glfwSetInputMode(gWindow,GLFW_CURSOR,GLFW_CURSOR_DISABLED);
+void PApplet::captureMouse() {if(gWindow){glfwSetInputMode(gWindow,GLFW_CURSOR,GLFW_CURSOR_DISABLED);
     // Enable raw motion if supported (removes OS acceleration)
     if(glfwRawMouseMotionSupported())
         glfwSetInputMode(gWindow,GLFW_RAW_MOUSE_MOTION,GLFW_TRUE);}}
-void releaseMouse(){if(gWindow){glfwSetInputMode(gWindow,GLFW_CURSOR,GLFW_CURSOR_NORMAL);
+void PApplet::releaseMouse(){if(gWindow){glfwSetInputMode(gWindow,GLFW_CURSOR,GLFW_CURSOR_NORMAL);
     glfwSetInputMode(gWindow,GLFW_RAW_MOUSE_MOTION,GLFW_FALSE);}}
 
 // =============================================================================
 // STYLE STACK
 // =============================================================================
 
-static void captureStyle(Style& s) {
+void PApplet::captureStyle(Style& s) {
     s = { fillR, fillG, fillB, fillA,
           strokeR, strokeG, strokeB, strokeA, strokeW,
           doFill, doStroke,
@@ -745,7 +682,7 @@ static void captureStyle(Style& s) {
           tintR, tintG, tintB, tintA, doTint,
           colorModeVal, colorMaxH, colorMaxS, colorMaxB, colorMaxA };
 }
-static void restoreStyle(const Style& s) {
+void PApplet::restoreStyle(const Style& s) {
     fillR = s.fillR; fillG = s.fillG; fillB = s.fillB; fillA = s.fillA;
     strokeR = s.strokeR; strokeG = s.strokeG; strokeB = s.strokeB;
     strokeA = s.strokeA; strokeW = s.strokeW;
@@ -758,51 +695,47 @@ static void restoreStyle(const Style& s) {
     colorModeVal = s.colorMode;
     colorMaxH = s.cmH; colorMaxS = s.cmS; colorMaxB = s.cmB; colorMaxA = s.cmA;
 }
-void pushStyle() {
+void PApplet::pushStyle() {
     Style s;
     captureStyle(s);
     styleStack.push_back(s);
 }
 
-void popStyle() {
+void PApplet::popStyle() {
     if (!styleStack.empty()) {
         restoreStyle(styleStack.back());
         styleStack.pop_back();
     }
 }
 
-void push()       { glPushMatrix(); pushStyle(); }
-void pop()        { glPopMatrix();  popStyle();  }
-void pushMatrix() { glPushMatrix(); }
-void popMatrix()  { glPopMatrix();  }
+void PApplet::push()       { glPushMatrix(); pushStyle(); }
+void PApplet::pop()        { glPopMatrix();  popStyle();  }
+void PApplet::pushMatrix() { glPushMatrix(); }
+void PApplet::popMatrix()  { glPopMatrix();  }
 
 // =============================================================================
 // BACKGROUND / CLEAR
 // =============================================================================
-
-static float bgR=0.8f,bgG=0.8f,bgB=0.8f,bgA=1; // Java Processing default grey // last background() color
-static void setBg(float r,float g,float b,float a){
+void PApplet::setBg(float r,float g,float b,float a){
     bgR=r;bgG=g;bgB=b;bgA=a;
     glClearColor(r,g,b,a);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 }
-void background(float gray)           {background(gray, colorMaxA);}
-void background(float gray, float a) {
+void PApplet::background(float gray, float a) {
     color c = makeColor(gray, a);
     unsigned int v = c.value;
     setBg((v>>16&0xFF)/255.f, (v>>8&0xFF)/255.f, (v&0xFF)/255.f, (v>>24&0xFF)/255.f);
 }
-void background(float r, float g, float b, float a) {
+void PApplet::background(float r, float g, float b, float a) {
     color c = makeColor(r, g, b, a);
     unsigned int v = c.value;
     setBg((v>>16&0xFF)/255.f, (v>>8&0xFF)/255.f, (v&0xFF)/255.f, (v>>24&0xFF)/255.f);
 }
-void background(color c) {
+void PApplet::background(color c) {
     unsigned int v = c.value;
     setBg((v>>16&0xFF)/255.f, (v>>8&0xFF)/255.f, (v&0xFF)/255.f, (v>>24&0xFF)/255.f);
 }
-static void drawImageRect(PImage& img,float x,float y,float w,float h); // fwd for background(PImage)
-void background(const PImage& img) {
+void PApplet::background(const PImage& img) {
     // Draw image as full-canvas background
     if (img.width == 0 || img.height == 0) return;
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -815,18 +748,18 @@ void background(const PImage& img) {
     glMatrixMode(GL_MODELVIEW); glPopMatrix();
     if (defaultP3D) glEnable(GL_DEPTH_TEST);
 }
-void clear(){glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);}
+void PApplet::clear(){glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);}
 
 // =============================================================================
 // FILL / STROKE
 // =============================================================================
 
-void fill(float gray,float a)              {setFillFromColor(makeColor(gray,a));}
-void fill(float gray)                      {setFillFromColor(makeColor(gray,colorMaxA));}
-void fill(float r,float g,float b,float a) {setFillFromColor(makeColor(r,g,b,a));}
-void fill(float r,float g,float b)           {setFillFromColor(makeColor(r,g,b,colorMaxA));}
-void fill(color c)                         {setFillFromColor(c);}
-void fill(color c, float a) {
+void PApplet::fill(float gray,float a)              {setFillFromColor(makeColor(gray,a));}
+void PApplet::fill(float gray)                      {setFillFromColor(makeColor(gray,colorMaxA));}
+void PApplet::fill(float r,float g,float b,float a) {setFillFromColor(makeColor(r,g,b,a));}
+void PApplet::fill(float r,float g,float b)           {setFillFromColor(makeColor(r,g,b,colorMaxA));}
+void PApplet::fill(color c)                         {setFillFromColor(c);}
+void PApplet::fill(color c, float a) {
     unsigned int v = c.value;
     fillR = (v>>16&0xFF)/255.f;
     fillG = (v>>8 &0xFF)/255.f;
@@ -834,27 +767,27 @@ void fill(color c, float a) {
     fillA = std::min(255.f, std::max(0.f, a)) / 255.f;
     doFill = true;
 }
-void noFill()                              {doFill=false;}
-void stroke(float gray,float a)            {setStrokeFromColor(makeColor(gray,a));}
-void stroke(float gray)                    {setStrokeFromColor(makeColor(gray,colorMaxA));}
-void stroke(float r,float g,float b,float a){setStrokeFromColor(makeColor(r,g,b,a));}
-void stroke(float r,float g,float b)          {setStrokeFromColor(makeColor(r,g,b,colorMaxA));}
-void stroke(color c)                       {setStrokeFromColor(c);}
-void noStroke()                            {doStroke=false;}
-void strokeWeight(float w)                 {strokeW=w;}
-void strokeCap(int)  {}
-void strokeJoin(int) {}
+void PApplet::noFill()                              {doFill=false;}
+void PApplet::stroke(float gray,float a)            {setStrokeFromColor(makeColor(gray,a));}
+void PApplet::stroke(float gray)                    {setStrokeFromColor(makeColor(gray,colorMaxA));}
+void PApplet::stroke(float r,float g,float b,float a){setStrokeFromColor(makeColor(r,g,b,a));}
+void PApplet::stroke(float r,float g,float b)          {setStrokeFromColor(makeColor(r,g,b,colorMaxA));}
+void PApplet::stroke(color c)                       {setStrokeFromColor(c);}
+void PApplet::noStroke()                            {doStroke=false;}
+void PApplet::strokeWeight(float w)                 {strokeW=w;}
+void PApplet::strokeCap(int)  {}
+void PApplet::strokeJoin(int) {}
 
 // =============================================================================
 // PCOLOR CONVENIENCE OVERLOADS
 // =============================================================================
 
-void fill(const PColor& c)      { fill(c.r, c.g, c.b, c.a); }
-void stroke(const PColor& c)    { stroke(c.r, c.g, c.b, c.a); }
-void background(const PColor& c){ background(c.r, c.g, c.b, c.a); }
-void tint(const PColor& c)      { tint(c.r, c.g, c.b, c.a); }
-void rectMode(int m)    {currentRectMode=m;}
-void ellipseMode(int m) {currentEllipseMode=m;}
+void PApplet::fill(const PColor& c)      { fill(c.r, c.g, c.b, c.a); }
+void PApplet::stroke(const PColor& c)    { stroke(c.r, c.g, c.b, c.a); }
+void PApplet::background(const PColor& c){ background(c.r, c.g, c.b, c.a); }
+void PApplet::tint(const PColor& c)      { tint(c.r, c.g, c.b, c.a); }
+void PApplet::rectMode(int m)    {currentRectMode=m;}
+void PApplet::ellipseMode(int m) {currentEllipseMode=m;}
 
 // =============================================================================
 // 2D PRIMITIVES
@@ -862,7 +795,7 @@ void ellipseMode(int m) {currentEllipseMode=m;}
 
 static void flushPoints(){} // no-op, points drawn immediately now
 
-void point(float x, float y) {
+void PApplet::point(float x, float y) {
     if (!doStroke) return;
     applyStroke();
     if (!smoothing && strokeW <= 1.0f) {
@@ -874,14 +807,14 @@ void point(float x, float y) {
     }
     restoreLighting();
 }
-void point(float x, float y, float z) {
+void PApplet::point(float x, float y, float z) {
     if (!doStroke) return;
     applyStroke();
     glPointSize(strokeW);
     glBegin(GL_POINTS); glVertex3f(x, y, z); glEnd();
     restoreLighting();
 }
-void line(float x1, float y1, float x2, float y2) {
+void PApplet::line(float x1, float y1, float x2, float y2) {
     if (!doStroke) return;
     applyStroke();
     float w = strokeW;
@@ -939,34 +872,34 @@ void line(float x1, float y1, float x2, float y2) {
     glDisable(GL_STENCIL_TEST);
     restoreLighting();
 }
-void line(float x1, float y1, float z1, float x2, float y2, float z2) {
+void PApplet::line(float x1, float y1, float z1, float x2, float y2, float z2) {
     if (!doStroke) return;
     applyStroke();
     glLineWidth(strokeW);
     glBegin(GL_LINES); glVertex3f(x1,y1,z1); glVertex3f(x2,y2,z2); glEnd();
     restoreLighting();
 }
-void ellipse(float cx, float cy, float w, float h) {
+void PApplet::ellipse(float cx, float cy, float w, float h) {
     float rx = w, ry = h;
     resolveEllipse(cx, cy, rx, ry);
     drawEllipseGeom(cx, cy, rx, ry);
 }
 
-void circle(float cx, float cy, float diameter) {
+void PApplet::circle(float cx, float cy, float diameter) {
     ellipse(cx, cy, diameter, diameter);
 }
 
-void arc(float cx, float cy, float w, float h, float startAngle, float endAngle) {
+void PApplet::arc(float cx, float cy, float w, float h, float startAngle, float endAngle) {
     float rx = w, ry = h;
     resolveEllipse(cx, cy, rx, ry);
     drawEllipseGeom(cx, cy, rx, ry, startAngle, endAngle);
 }
 
-void arc(float cx, float cy, float w, float h, float startAngle, float endAngle, int /*mode*/) {
+void PApplet::arc(float cx, float cy, float w, float h, float startAngle, float endAngle, int /*mode*/) {
     // mode = OPEN / CHORD / PIE -- basic implementation uses OPEN
     arc(cx, cy, w, h, startAngle, endAngle);
 }
-void rect(float x, float y, float w, float h) {
+void PApplet::rect(float x, float y, float w, float h) {
     resolveRect(x, y, w, h);
 
     if (doFill) {
@@ -993,7 +926,7 @@ void rect(float x, float y, float w, float h) {
         restoreLighting();
     }
 }
-void rect(float x, float y, float w, float h, float r) {
+void PApplet::rect(float x, float y, float w, float h, float r) {
     resolveRect(x, y, w, h);
 
     // Clamp radius so it never exceeds half the shortest side
@@ -1035,8 +968,8 @@ void rect(float x, float y, float w, float h, float r) {
         glEnd();
     }
 }
-void square(float x,float y,float s){rect(x,y,s,s);}
-void triangle(float x1, float y1, float x2, float y2, float x3, float y3) {
+void PApplet::square(float x,float y,float s){rect(x,y,s,s);}
+void PApplet::triangle(float x1, float y1, float x2, float y2, float x3, float y3) {
     if (doFill) {
         applyFill();
         glBegin(GL_TRIANGLES);
@@ -1056,7 +989,7 @@ void triangle(float x1, float y1, float x2, float y2, float x3, float y3) {
         restoreLighting();
     }
 }
-void quad(float x1, float y1, float x2, float y2,
+void PApplet::quad(float x1, float y1, float x2, float y2,
           float x3, float y3, float x4, float y4) {
     if (doFill) {
         applyFill();
@@ -1084,16 +1017,14 @@ void quad(float x1, float y1, float x2, float y2,
 // 3D PRIMITIVES
 // =============================================================================
 
-void rotateX(float a){glRotatef(a*180.0f/PI,1,0,0);}
-void rotateY(float a){glRotatef(a*180.0f/PI,0,1,0);}
-void rotateZ(float a){glRotatef(a*180.0f/PI,0,0,1);}
-void sphereDetail(int r){sphereRes=r;}
+void PApplet::rotateX(float a){glRotatef(a*180.0f/PI,1,0,0);}
+void PApplet::rotateY(float a){glRotatef(a*180.0f/PI,0,1,0);}
+void PApplet::rotateZ(float a){glRotatef(a*180.0f/PI,0,0,1);}
+void PApplet::sphereDetail(int r){sphereRes=r;}
 
 // =============================================================================
 // PHONG SHADING SHADER
 // =============================================================================
-static GLuint phongProg = 0;
-static int    phongVersion = 0; // increment to force recompile
 
 static GLuint compileShader(GLenum type, const char* code) {
     GLuint sh = glCreateShader(type);
@@ -1103,14 +1034,14 @@ static GLuint compileShader(GLenum type, const char* code) {
     if (!ok) { char b[512]; glGetShaderInfoLog(sh,512,nullptr,b); fprintf(stderr,"[sh] %s\n",b); }
     return sh;
 }
-static void initPhongShader() {
+void PApplet::initPhongShader() {
     if (phongProg) return;
     // Phong shader using compatibility profile built-ins.
     // Works on any system that supports our fixed-function GL pipeline.
     const char* vs = R"VERT(
 varying vec3 vN;
 varying vec3 vP;
-void main(){
+void PApplet::main(){
     // gl_NormalMatrix = inverse-transpose of modelview upper 3x3
     vN = gl_NormalMatrix * gl_Normal;
     vP = vec3(gl_ModelViewMatrix * gl_Vertex);
@@ -1124,7 +1055,7 @@ varying vec3 vP;
 uniform int uNumLights;
 uniform float uLightConc[8];
 uniform float uLightCutCos[8];
-void main(){
+void PApplet::main(){
     vec3 N = normalize(vN);
     vec3 V = normalize(-vP);
     vec3 col = gl_Color.rgb * gl_LightModel.ambient.rgb;
@@ -1163,8 +1094,8 @@ void main(){
     glDeleteShader(v); glDeleteShader(f);
 }
 
-void box(float s){box(s,s,s);}
-void box(float bw,float bh,float bd){
+void PApplet::box(float s){box(s,s,s);}
+void PApplet::box(float bw,float bh,float bd){
     float hw=bw/2,hh=bh/2,hd=bd/2;
     struct Face{ float nx,ny,nz; float v[4][3]; };
     Face faces[]={
@@ -1196,7 +1127,7 @@ void box(float bw,float bh,float bd){
         restoreLighting();
     }
 }
-void sphere(float r){
+void PApplet::sphere(float r){
     int stacks=sphereRes, slices=sphereRes;
     if(doFill){
         // Use Phong (per-pixel) shading when lighting is on for smooth highlights
@@ -1271,7 +1202,7 @@ void sphere(float r){
 // VERTEX / SHAPES
 // =============================================================================
 
-void beginShape(int kind){
+void PApplet::beginShape(int kind){
     shapeKind = kind;
     inShape   = true;
     shape3D   = false;
@@ -1281,35 +1212,35 @@ void beginShape(int kind){
     // endShape() draws fill and/or stroke from those collections.
     // shape3D is set when 3-component vertices are used (vertex(x,y,z)).
 }
-void vertex(float x, float y) {
+void PApplet::vertex(float x, float y) {
     if (inContour) { contourVerts.push_back({x,y}); return; }
     if (!inShape)  return;
     shapeVerts.push_back({x, y});
     shapeVerts3D.push_back({x, y, 0.0f});
 }
-void vertex(float x, float y, float z) {
+void PApplet::vertex(float x, float y, float z) {
     if (inContour) { contourVerts.push_back({x,y}); return; }
     if (!inShape)  return;
     shapeVerts.push_back({x, y});
     shapeVerts3D.push_back({x, y, z});
     if (z != 0.0f) shape3D = true;
 }
-void vertex(float x, float y, float u, float v) {
+void PApplet::vertex(float x, float y, float u, float v) {
     if (!inShape) return;
     shapeVerts.push_back({x, y});
     shapeVerts3D.push_back({x, y, 0.0f});
     // UV stored for future texture mapping support
 }
-void vertex(float x, float y, float z, float u, float v) {
+void PApplet::vertex(float x, float y, float z, float u, float v) {
     if (!inShape) return;
     shapeVerts.push_back({x, y});
     shapeVerts3D.push_back({x, y, z});
     if (z != 0.0f) shape3D = true;
 }
-void beginContour(){inContour=true;contourVerts.clear();}
-void endContour()  {inContour=false;}
+void PApplet::beginContour(){inContour=true;contourVerts.clear();}
+void PApplet::endContour()  {inContour=false;}
 
-void endShape(int mode){
+void PApplet::endShape(int mode){
     if(!inShape){return;}
     bool cl=(mode==CLOSE);
     int  n3 = (int)shapeVerts3D.size();
@@ -1481,27 +1412,27 @@ void endShape(int mode){
     inShape=false; shapeVerts.clear(); shapeVerts3D.clear();
 }
 
-void bezierVertex(float cx1,float cy1,float cx2,float cy2,float x,float y){
+void PApplet::bezierVertex(float cx1,float cy1,float cx2,float cy2,float x,float y){
     if(!inShape||shapeVerts.empty())return;
     auto[x0,y0]=shapeVerts.back();const int sg=bezierDetailVal;
     for(int i=1;i<=sg;i++){float t=i/(float)sg,u=1-t;
         float bx=u*u*u*x0+3*u*u*t*cx1+3*u*t*t*cx2+t*t*t*x, by=u*u*u*y0+3*u*u*t*cy1+3*u*t*t*cy2+t*t*t*y;
         shapeVerts.push_back({bx,by}); shapeVerts3D.push_back({bx,by,0.0f});}
 }
-void quadraticVertex(float cx,float cy,float x,float y){
+void PApplet::quadraticVertex(float cx,float cy,float x,float y){
     if(!inShape||shapeVerts.empty())return;
     auto[x0,y0]=shapeVerts.back();const int sg=bezierDetailVal;
     for(int i=1;i<=sg;i++){float t=i/(float)sg,u=1-t;float qx=u*u*x0+2*u*t*cx+t*t*x,qy=u*u*y0+2*u*t*cy+t*t*y;shapeVerts.push_back({qx,qy});shapeVerts3D.push_back({qx,qy,0.0f});}
 }
-void curveVertex(float x,float y){if(inShape){shapeVerts.push_back({x,y});shapeVerts3D.push_back({x,y,0.0f});}}
+void PApplet::curveVertex(float x,float y){if(inShape){shapeVerts.push_back({x,y});shapeVerts3D.push_back({x,y,0.0f});}}
 
-void bezier(float x1,float y1,float cx1,float cy1,float cx2,float cy2,float x2,float y2){
+void PApplet::bezier(float x1,float y1,float cx1,float cy1,float cx2,float cy2,float x2,float y2){
     if(!doStroke)return;applyStroke();glLineWidth(strokeW);glBegin(GL_LINE_STRIP);
     for(int i=0;i<=bezierDetailVal;i++){float t=i/(float)bezierDetailVal,u=1-t;
         glVertex2f(u*u*u*x1+3*u*u*t*cx1+3*u*t*t*cx2+t*t*t*x2,u*u*u*y1+3*u*u*t*cy1+3*u*t*t*cy2+t*t*t*y2);}
     glEnd();
 }
-void curve(float x0,float y0,float x1,float y1,float x2,float y2,float x3,float y3){
+void PApplet::curve(float x0,float y0,float x1,float y1,float x2,float y2,float x3,float y3){
     if(!doStroke)return;applyStroke();glLineWidth(strokeW);glBegin(GL_LINE_STRIP);
     float s=curveTightnessVal;
     for(int i=0;i<=curveDetailVal;i++){
@@ -1512,31 +1443,31 @@ void curve(float x0,float y0,float x1,float y1,float x2,float y2,float x3,float 
     }
     glEnd();
 }
-float bezierPoint(float a,float b,float c,float d,float t){float u=1-t;return u*u*u*a+3*u*u*t*b+3*u*t*t*c+t*t*t*d;}
-float bezierTangent(float a,float b,float c,float d,float t){float u=1-t;return 3*u*u*(b-a)+6*u*t*(c-b)+3*t*t*(d-c);}
-float curvePoint(float a,float b,float c,float d,float t){float t2=t*t,t3=t2*t,s=curveTightnessVal;return 0.5f*((-s*t3+2*s*t2-s*t)*a+((2-s)*t3+(s-3)*t2+1)*b+((s-2)*t3+(3-2*s)*t2+s*t)*c+(s*t3-s*t2)*d);}
-float curveTangent(float a,float b,float c,float d,float t){float t2=t*t,s=curveTightnessVal;return 0.5f*((-3*s*t2+4*s*t-s)*a+(3*(2-s)*t2+2*(s-3)*t)*b+(3*(s-2)*t2+2*(3-2*s)*t+s)*c+(3*s*t2-2*s*t)*d);}
-void curveDetail(int d)     {curveDetailVal=d;}
-void curveTightness(float t){curveTightnessVal=t;}
-void bezierDetail(int d)    {bezierDetailVal=d;}
+float PApplet::bezierPoint(float a,float b,float c,float d,float t){float u=1-t;return u*u*u*a+3*u*u*t*b+3*u*t*t*c+t*t*t*d;}
+float PApplet::bezierTangent(float a,float b,float c,float d,float t){float u=1-t;return 3*u*u*(b-a)+6*u*t*(c-b)+3*t*t*(d-c);}
+float PApplet::curvePoint(float a,float b,float c,float d,float t){float t2=t*t,t3=t2*t,s=curveTightnessVal;return 0.5f*((-s*t3+2*s*t2-s*t)*a+((2-s)*t3+(s-3)*t2+1)*b+((s-2)*t3+(3-2*s)*t2+s*t)*c+(s*t3-s*t2)*d);}
+float PApplet::curveTangent(float a,float b,float c,float d,float t){float t2=t*t,s=curveTightnessVal;return 0.5f*((-3*s*t2+4*s*t-s)*a+(3*(2-s)*t2+2*(s-3)*t)*b+(3*(s-2)*t2+2*(3-2*s)*t+s)*c+(3*s*t2-2*s*t)*d);}
+void PApplet::curveDetail(int d)     {curveDetailVal=d;}
+void PApplet::curveTightness(float t){curveTightnessVal=t;}
+void PApplet::bezierDetail(int d)    {bezierDetailVal=d;}
 
 // =============================================================================
 // MATRIX
 // =============================================================================
 
-void resetMatrix(){glLoadIdentity();}
-void applyMatrix(float n00,float n01,float n02,float n03,float n10,float n11,float n12,float n13,float n20,float n21,float n22,float n23,float n30,float n31,float n32,float n33){
+void PApplet::resetMatrix(){glLoadIdentity();}
+void PApplet::applyMatrix(float n00,float n01,float n02,float n03,float n10,float n11,float n12,float n13,float n20,float n21,float n22,float n23,float n30,float n31,float n32,float n33){
     float m[]={n00,n10,n20,n30,n01,n11,n21,n31,n02,n12,n22,n32,n03,n13,n23,n33};
     glMultMatrixf(m);
 }
-void translate(float x,float y)        {glTranslatef(x,y,0);}
-void translate(float x,float y,float z){glTranslatef(x,y,z);}
-void scale(float s)                    {glScalef(s,s,1);}
-void scale(float sx,float sy)          {glScalef(sx,sy,1);}
-void rotate(float a)                   {glRotatef(a*180.0f/PI,0,0,1);}
-void shearX(float a)                   {float m[]={1,0,0,0,std::tan(a),1,0,0,0,0,1,0,0,0,0,1};glMultMatrixf(m);}
-void shearY(float a)                   {float m[]={1,std::tan(a),0,0,0,1,0,0,0,0,1,0,0,0,0,1};glMultMatrixf(m);}
-void printMatrix(){float m[16];glGetFloatv(GL_MODELVIEW_MATRIX,m);for(int i=0;i<4;i++){for(int j=0;j<4;j++)std::cout<<m[j*4+i]<<" ";std::cout<<"\n";}}
+void PApplet::translate(float x,float y)        {glTranslatef(x,y,0);}
+void PApplet::translate(float x,float y,float z){glTranslatef(x,y,z);}
+void PApplet::scale(float s)                    {glScalef(s,s,1);}
+void PApplet::scale(float sx,float sy)          {glScalef(sx,sy,1);}
+void PApplet::rotate(float a)                   {glRotatef(a*180.0f/PI,0,0,1);}
+void PApplet::shearX(float a)                   {float m[]={1,0,0,0,std::tan(a),1,0,0,0,0,1,0,0,0,0,1};glMultMatrixf(m);}
+void PApplet::shearY(float a)                   {float m[]={1,std::tan(a),0,0,0,1,0,0,0,0,1,0,0,0,0,1};glMultMatrixf(m);}
+void PApplet::printMatrix(){float m[16];glGetFloatv(GL_MODELVIEW_MATRIX,m);for(int i=0;i<4;i++){for(int j=0;j<4;j++)std::cout<<m[j*4+i]<<" ";std::cout<<"\n";}}
 
 static void projectPoint(float x,float y,float z,float& ox,float& oy,float& oz){
     float mv[16],proj[16];int vp[4];
@@ -1554,21 +1485,20 @@ static void projectPoint(float x,float y,float z,float& ox,float& oy,float& oz){
     oy=vp[1]+(1-py)*0.5f*vp[3];
     oz=(pz+1)*0.5f;
 }
-float screenX(float x,float y,float z){float ox,oy,oz;projectPoint(x,y,z,ox,oy,oz);return ox;}
-float screenY(float x,float y,float z){float ox,oy,oz;projectPoint(x,y,z,ox,oy,oz);return oy;}
-float screenZ(float x,float y,float z){float ox,oy,oz;projectPoint(x,y,z,ox,oy,oz);return oz;}
-float modelX(float x,float y,float z) {float mv[16];glGetFloatv(GL_MODELVIEW_MATRIX,mv);return mv[0]*x+mv[4]*y+mv[8]*z+mv[12];}
-float modelY(float x,float y,float z) {float mv[16];glGetFloatv(GL_MODELVIEW_MATRIX,mv);return mv[1]*x+mv[5]*y+mv[9]*z+mv[13];}
-float modelZ(float x,float y,float z) {float mv[16];glGetFloatv(GL_MODELVIEW_MATRIX,mv);return mv[2]*x+mv[6]*y+mv[10]*z+mv[14];}
+float PApplet::screenX(float x,float y,float z){float ox,oy,oz;projectPoint(x,y,z,ox,oy,oz);return ox;}
+float PApplet::screenY(float x,float y,float z){float ox,oy,oz;projectPoint(x,y,z,ox,oy,oz);return oy;}
+float PApplet::screenZ(float x,float y,float z){float ox,oy,oz;projectPoint(x,y,z,ox,oy,oz);return oz;}
+float PApplet::modelX(float x,float y,float z) {float mv[16];glGetFloatv(GL_MODELVIEW_MATRIX,mv);return mv[0]*x+mv[4]*y+mv[8]*z+mv[12];}
+float PApplet::modelY(float x,float y,float z) {float mv[16];glGetFloatv(GL_MODELVIEW_MATRIX,mv);return mv[1]*x+mv[5]*y+mv[9]*z+mv[13];}
+float PApplet::modelZ(float x,float y,float z) {float mv[16];glGetFloatv(GL_MODELVIEW_MATRIX,mv);return mv[2]*x+mv[6]*y+mv[10]*z+mv[14];}
 
 // =============================================================================
 // CAMERA
 // =============================================================================
-static void applyStandardModelview(); // forward declaration
 
 // Internal helper -- sets up the standard Processing Y-flipped perspective
 // camera. Called by camera() and perspective() so they stay in sync.
-static void applyDefaultCamera() {
+void PApplet::applyDefaultCamera() {
     float eyeZ  = ((float)logicalH / 2.0f) / std::tan(PI * 60.0f / 360.0f);
     float near_ = eyeZ / 10.0f;
     float far_  = eyeZ * 10.0f;
@@ -1580,10 +1510,10 @@ static void applyDefaultCamera() {
     applyStandardModelview();
 }
 
-void camera(){
+void PApplet::camera(){
     applyDefaultCamera();
 }
-void camera(float ex,float ey,float ez,float cx,float cy,float cz,float ux,float uy,float uz){
+void PApplet::camera(float ex,float ey,float ez,float cx,float cy,float cz,float ux,float uy,float uz){
     float eyeZ = ((float)logicalH/2.0f) / std::tan(PI*60.0f/360.0f);
     float near_ = eyeZ/10.0f, far_ = eyeZ*10.0f;
     glMatrixMode(GL_PROJECTION); glLoadIdentity();
@@ -1595,13 +1525,13 @@ void camera(float ex,float ey,float ez,float cx,float cy,float cz,float ux,float
     glDisable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
 }
-void beginCamera(){glMatrixMode(GL_MODELVIEW);glPushMatrix();}
-void endCamera()  {glPopMatrix();}
+void PApplet::beginCamera(){glMatrixMode(GL_MODELVIEW);glPushMatrix();}
+void PApplet::endCamera()  {glPopMatrix();}
 
-void perspective(){
+void PApplet::perspective(){
     applyDefaultCamera();
 }
-void perspective(float fov, float aspect, float zNear, float zFar) {
+void PApplet::perspective(float fov, float aspect, float zNear, float zFar) {
     glMatrixMode(GL_PROJECTION); glLoadIdentity();
     glScalef(1,-1,1);
     _gluPerspective(degrees(fov), aspect, zNear, zFar);
@@ -1610,7 +1540,7 @@ void perspective(float fov, float aspect, float zNear, float zFar) {
 // Helper shared by ortho() and perspective() -- sets up the standard
 // Processing modelview camera (eye at eyeZ looking at canvas centre,
 // Y-down screen coordinates) and enables depth test.
-static void applyStandardModelview() {
+void PApplet::applyStandardModelview() {
     float eyeZ = ((float)logicalH / 2.0f) / std::tan(PI * 60.0f / 360.0f);
     glMatrixMode(GL_MODELVIEW); glLoadIdentity();
     _gluLookAt(logicalW/2.0, logicalH/2.0, eyeZ,
@@ -1622,7 +1552,7 @@ static void applyStandardModelview() {
     glDepthFunc(GL_LESS);
 }
 
-void ortho() {
+void PApplet::ortho() {
     // Default ortho: 1:1 pixel mapping, origin at top-left, Y increases downward.
     // glOrtho(l, r, bottom, top, near, far):
     //   bottom = winHeight (screen bottom = large Y in Processing)
@@ -1638,7 +1568,7 @@ void ortho() {
     glDepthFunc(GL_LESS);
 }
 
-void ortho(float l, float r, float b, float t, float n, float f) {
+void PApplet::ortho(float l, float r, float b, float t, float n, float f) {
     // Processing Java ortho() uses the SAME standard modelview as perspective()
     // (eye at eyeZ above canvas center, looking at canvas center).
     // Only the projection changes: orthographic instead of frustum.
@@ -1654,13 +1584,13 @@ void ortho(float l, float r, float b, float t, float n, float f) {
     applyStandardModelview();
 }
 
-void frustum(float l, float r, float b, float t, float n, float f) {
+void PApplet::frustum(float l, float r, float b, float t, float n, float f) {
     glMatrixMode(GL_PROJECTION); glLoadIdentity();
     glFrustum(l, r, b, t, n, f);
     applyStandardModelview();
 }
-void printCamera(){float m[16];glGetFloatv(GL_MODELVIEW_MATRIX,m);std::cout<<"Camera matrix:\n";for(int i=0;i<4;i++){for(int j=0;j<4;j++)std::cout<<m[j*4+i]<<" ";std::cout<<"\n";}}
-void printProjection(){float m[16];glGetFloatv(GL_PROJECTION_MATRIX,m);std::cout<<"Projection matrix:\n";for(int i=0;i<4;i++){for(int j=0;j<4;j++)std::cout<<m[j*4+i]<<" ";std::cout<<"\n";}}
+void PApplet::printCamera(){float m[16];glGetFloatv(GL_MODELVIEW_MATRIX,m);std::cout<<"Camera matrix:\n";for(int i=0;i<4;i++){for(int j=0;j<4;j++)std::cout<<m[j*4+i]<<" ";std::cout<<"\n";}}
+void PApplet::printProjection(){float m[16];glGetFloatv(GL_PROJECTION_MATRIX,m);std::cout<<"Projection matrix:\n";for(int i=0;i<4;i++){for(int j=0;j<4;j++)std::cout<<m[j*4+i]<<" ";std::cout<<"\n";}}
 
 // =============================================================================
 // LIGHTS
@@ -1678,11 +1608,11 @@ void printProjection(){float m[16];glGetFloatv(GL_PROJECTION_MATRIX,m);std::cout
 // ---------------------------------------------------------------------------
 
 // Convenience: normalise a 0-255 colour component to 0.0-1.0
-static inline float lc(float v) { return v / colorMaxH; } // respects colorMode max
+static inline float lc(float v) { return PApplet::g_papplet ? v/PApplet::g_papplet->colorMaxH : v/255.f; } // respects colorMode max
 
 // Apply all common light state and reset the index counter.
 // Call this at the start of a draw() that uses lights.
-void lights() {
+void PApplet::lights() {
     // Matches Processing Java lights() exactly:
     //   ambientLight(128, 128, 128)
     //   directionalLight(128, 128, 128,  0, 0, -1)
@@ -1727,7 +1657,7 @@ void lights() {
     lightIndex = 1;
 }
 
-void noLights() {
+void PApplet::noLights() {
     glDisable(GL_LIGHTING);
     glDisable(GL_COLOR_MATERIAL);
     lightsEnabled = false;
@@ -1735,8 +1665,8 @@ void noLights() {
 }
 
 // Ambient light: emits equally in all directions, no diffuse.
-void ambientLight(float r, float g, float b) { ambientLight(r,g,b,0,0,0); }
-void ambientLight(float r, float g, float b, float x, float y, float z) {
+void PApplet::ambientLight(float r, float g, float b) { ambientLight(r,g,b,0,0,0); }
+void PApplet::ambientLight(float r, float g, float b, float x, float y, float z) {
     if (lightIndex >= 8) return;
     GLenum lt = GL_LIGHT0 + lightIndex++;
 
@@ -1759,7 +1689,7 @@ void ambientLight(float r, float g, float b, float x, float y, float z) {
 // Directional light: parallel rays from an infinite distance (w=0).
 // 'nx,ny,nz' is the direction the light TRAVELS (toward the scene).
 // OpenGL position with w=0 points TOWARD the light source, so we negate.
-void directionalLight(float r, float g, float b, float nx, float ny, float nz) {
+void PApplet::directionalLight(float r, float g, float b, float nx, float ny, float nz) {
     if (lightIndex >= 8) return;
     GLenum lt = GL_LIGHT0 + lightIndex++;
 
@@ -1794,7 +1724,7 @@ void directionalLight(float r, float g, float b, float nx, float ny, float nz) {
 }
 
 // Point light: emits in all directions from a world-space position.
-void pointLight(float r, float g, float b, float x, float y, float z) {
+void PApplet::pointLight(float r, float g, float b, float x, float y, float z) {
     if (lightIndex >= 8) return;
     GLenum lt = GL_LIGHT0 + lightIndex++;
 
@@ -1820,7 +1750,7 @@ void pointLight(float r, float g, float b, float x, float y, float z) {
 // Spot light: cone of light from a position toward a direction.
 // angle  = half-angle of the cone in radians (OpenGL takes degrees)
 // conc   = concentration exponent (higher = tighter beam)
-void spotLight(float r, float g, float b,
+void PApplet::spotLight(float r, float g, float b,
                float x,  float y,  float z,
                float nx, float ny, float nz,
                float angle, float conc) {
@@ -1868,7 +1798,7 @@ void spotLight(float r, float g, float b,
 }
 
 // Override attenuation on all active lights (call after the light functions)
-void lightFalloff(float c, float l, float q) {
+void PApplet::lightFalloff(float c, float l, float q) {
     for (int i = 0; i < lightIndex; i++) {
         GLenum lt = GL_LIGHT0 + i;
         glLightf(lt, GL_CONSTANT_ATTENUATION,  c);
@@ -1878,7 +1808,7 @@ void lightFalloff(float c, float l, float q) {
 }
 
 // Set specular colour on all active lights
-void lightSpecular(float r, float g, float b) {
+void PApplet::lightSpecular(float r, float g, float b) {
     // Store as pending so subsequent light calls pick it up
     pendingSpecR = lc(r); pendingSpecG = lc(g); pendingSpecB = lc(b);
     // Also apply to any already-created lights
@@ -1889,46 +1819,46 @@ void lightSpecular(float r, float g, float b) {
     }
 }
 
-void normal(float nx, float ny, float nz) { glNormal3f(nx, ny, nz); }
+void PApplet::normal(float nx, float ny, float nz) { glNormal3f(nx, ny, nz); }
 
 // =============================================================================
 // MATERIAL
 // =============================================================================
 
-void ambient(float r, float g, float b) {
+void PApplet::ambient(float r, float g, float b) {
     GLfloat col[] = { lc(r), lc(g), lc(b), 1.0f };
     glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, col);
 }
-void ambient(color c) {
+void PApplet::ambient(color c) {
     unsigned int v = c.value;
     ambient((v >> 16 & 0xFF) / 255.f,
             (v >>  8 & 0xFF) / 255.f,
             (v       & 0xFF) / 255.f);
 }
 
-void emissive(float r, float g, float b) {
+void PApplet::emissive(float r, float g, float b) {
     GLfloat col[] = { lc(r), lc(g), lc(b), 1.0f };
     glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, col);
 }
-void emissive(color c) {
+void PApplet::emissive(color c) {
     unsigned int v = c.value;
     emissive((v >> 16 & 0xFF) / 255.f,
              (v >>  8 & 0xFF) / 255.f,
              (v       & 0xFF) / 255.f);
 }
 
-void specular(float r, float g, float b) {
+void PApplet::specular(float r, float g, float b) {
     GLfloat col[] = { lc(r), lc(g), lc(b), 1.0f };
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, col);
 }
-void specular(color c) {
+void PApplet::specular(color c) {
     unsigned int v = c.value;
     specular((v >> 16 & 0xFF) / 255.f,
              (v >>  8 & 0xFF) / 255.f,
              (v       & 0xFF) / 255.f);
 }
 
-void shininess(float s) {
+void PApplet::shininess(float s) {
     glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, s);
 }
 
@@ -1954,57 +1884,55 @@ static const unsigned char g_font6x8[][6] = {
 
 // -- stb_truetype font state ---------------------------------------------------
 #if PROCESSING_HAS_STB_TRUETYPE
-struct TTFFont {
-    stbtt_fontinfo info;
-    std::vector<unsigned char> data;
-    GLuint texID = 0;
-    // Baked atlas: ASCII 32-126
-    stbtt_bakedchar chars[96];
-    int atlasW = 512, atlasH = 512;
-    float bakeSize = 0.0f;   // size the atlas was baked at
-    bool  loaded   = false;
-};
-static TTFFont g_ttf;
-
-static bool loadTTFFile(const std::string& path) {
+bool PApplet::loadTTFFile(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return false;
-    g_ttf.data = std::vector<unsigned char>(
+    // Load into local vector first, then move — ensures data pointer is stable
+    // before stbtt_InitFont stores a reference into it.
+    std::vector<unsigned char> tmp(
         (std::istreambuf_iterator<char>(f)),
          std::istreambuf_iterator<char>());
+    if (tmp.empty()) return false;
+    g_ttf.data = std::move(tmp);
+    g_ttf.data.shrink_to_fit(); // pin allocation before passing pointer to stbtt
     return stbtt_InitFont(&g_ttf.info, g_ttf.data.data(), 0) != 0;
 }
 
-static void bakeAtlas(float pixelSize) {
+void PApplet::bakeAtlas(float pixelSize) {
     if (!g_ttf.loaded) return;
-    if (std::fabs(pixelSize - g_ttf.bakeSize) < 0.5f) return; // already baked at this size
+    if (std::fabs(pixelSize - g_ttf.bakeSize) < 0.5f) return;
     g_ttf.bakeSize = pixelSize;
+    // Use a large atlas to guarantee all glyphs fit at any size
+    g_ttf.atlasW = 1024; g_ttf.atlasH = 1024;
     std::vector<unsigned char> bitmap(g_ttf.atlasW * g_ttf.atlasH);
-    stbtt_BakeFontBitmap(g_ttf.data.data(), 0, pixelSize,
-                         bitmap.data(), g_ttf.atlasW, g_ttf.atlasH,
-                         32, 96, g_ttf.chars);
-    // Upload as alpha-only texture
+    int ret = stbtt_BakeFontBitmap(
+        g_ttf.data.data(), 0, pixelSize,
+        bitmap.data(), g_ttf.atlasW, g_ttf.atlasH,
+        32, 96, g_ttf.chars);
+    if (ret == 0) { g_ttf.loaded = false; return; }
+    // Upload as RGBA texture
     if (g_ttf.texID == 0) glGenTextures(1, &g_ttf.texID);
     glBindTexture(GL_TEXTURE_2D, g_ttf.texID);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, g_ttf.atlasW, g_ttf.atlasH,
-                 0, GL_ALPHA, GL_UNSIGNED_BYTE, bitmap.data());
+    std::vector<unsigned char> rgba(g_ttf.atlasW * g_ttf.atlasH * 4);
+    for (int i = 0; i < g_ttf.atlasW * g_ttf.atlasH; i++) {
+        rgba[i*4+0] = rgba[i*4+1] = rgba[i*4+2] = 255;
+        rgba[i*4+3] = bitmap[i];
+    }
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, g_ttf.atlasW, g_ttf.atlasH,
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 #endif // PROCESSING_HAS_STB_TRUETYPE
 
 // -- Shared text state ---------------------------------------------------------
-static float g_textSize    = 14.0f;
-static int   g_textAlignX  = LEFT_ALIGN;
-static int   g_textAlignY  = BASELINE;
-static float g_textLeading = 0.0f;
 
 // -- Bitmap font rendering (fallback) -----------------------------------------
 static const int BF_GW = 6;
 static const int BF_GH = 8;
 
-static void drawBitmapStr(float x, float y, const std::string& s, int scale) {
+void PApplet::drawBitmapStr(float x, float y, const std::string& s, int scale) {
     glColor4f(fillR, fillG, fillB, fillA);
     glDisable(GL_TEXTURE_2D);
     float cx = x;
@@ -2029,13 +1957,13 @@ static void drawBitmapStr(float x, float y, const std::string& s, int scale) {
     }
 }
 
-static float bitmapStrWidth(const std::string& s, int scale) {
+float PApplet::bitmapStrWidth(const std::string& s, int scale) {
     return s.size() * (BF_GW+1) * scale;
 }
 
 // -- TTF rendering -------------------------------------------------------------
 #if PROCESSING_HAS_STB_TRUETYPE
-static float ttfStrWidth(const std::string& s) {
+float PApplet::ttfStrWidth(const std::string& s) {
     float x = 0;
     for (char ch : s) {
         if (ch < 32 || ch > 127) continue;
@@ -2047,7 +1975,7 @@ static float ttfStrWidth(const std::string& s) {
     return x;
 }
 
-static void drawTTFStr(float x, float y, const std::string& s) {
+void PApplet::drawTTFStr(float x, float y, const std::string& s) {
     if (!g_ttf.loaded) return;
     bakeAtlas(g_textSize);
 
@@ -2077,7 +2005,7 @@ static void drawTTFStr(float x, float y, const std::string& s) {
 #endif
 
 // -- Main renderText entry point -----------------------------------------------
-static float getLineWidth(const std::string& line) {
+float PApplet::getLineWidth(const std::string& line) {
 #if PROCESSING_HAS_STB_TRUETYPE
     if (g_ttf.loaded) return ttfStrWidth(line);
 #endif
@@ -2085,7 +2013,7 @@ static float getLineWidth(const std::string& line) {
     return bitmapStrWidth(line, sc);
 }
 
-static void renderText(const std::string& msg, float x, float y) {
+void PApplet::renderText(const std::string& msg, float x, float y) {
     if (msg.empty()) return;
 
     float leading = (g_textLeading > 0) ? g_textLeading : g_textSize * 1.25f;
@@ -2115,16 +2043,16 @@ static void renderText(const std::string& msg, float x, float y) {
     }
 }
 
-void text(const std::string& msg, float x, float y) { renderText(msg, x, y); }
-void text(int   v, float x, float y) { renderText(std::to_string(v), x, y); }
-void text(float v, float x, float y) {
+void PApplet::text(const std::string& msg, float x, float y) { renderText(msg, x, y); }
+void PApplet::text(int   v, float x, float y) { renderText(std::to_string(v), x, y); }
+void PApplet::text(float v, float x, float y) {
     std::ostringstream ss; ss << v; renderText(ss.str(), x, y);
 }
 
 // text(str, x, y, w, h) -- word-wrap into a bounding box, matching Processing Java.
 // Words are wrapped when they exceed width w. Lines are clipped at height h.
 // x,y is top-left corner of the box. Text starts at the baseline of the first line.
-void text(const std::string& msg, float x, float y, float w, float h) {
+void PApplet::text(const std::string& msg, float x, float y, float w, float h) {
     if (msg.empty() || w <= 0) return;
     float leading = (g_textLeading > 0) ? g_textLeading : g_textSize * 1.4f;
     float maxY = (h > 0) ? y + h : 1e9f;
@@ -2214,14 +2142,14 @@ void text(const std::string& msg, float x, float y, float w, float h) {
     }
 }
 
-void textSize(float size) {
+void PApplet::textSize(float size) {
     g_textSize = size;
 #if PROCESSING_HAS_STB_TRUETYPE
     if (g_ttf.loaded) bakeAtlas(size);
 #endif
 }
 
-void textAlign(int alignX, int alignY) {
+void PApplet::textAlign(int alignX, int alignY) {
     // Map standard constants (LEFT=37, RIGHT=39, CENTER=3) to align constants
     auto mapAlign=[](int a)->int{
         if(a==37||a==20) return LEFT_ALIGN;   // LEFT or LEFT_ALIGN
@@ -2233,12 +2161,12 @@ void textAlign(int alignX, int alignY) {
     g_textAlignX = mapAlign(alignX);
     if(alignY >= 0) g_textAlignY = mapAlign(alignY);
 }
-void textLeading(float v) { g_textLeading = v; }
-void textMode(int) {}
+void PApplet::textLeading(float v) { g_textLeading = v; }
+void PApplet::textMode(int) {}
 
-float textWidth(const std::string& s) { return getLineWidth(s); }
+float PApplet::textWidth(const std::string& s) { return getLineWidth(s); }
 
-float textAscent() {
+float PApplet::textAscent() {
 #if PROCESSING_HAS_STB_TRUETYPE
     if (g_ttf.loaded) {
         float sc = stbtt_ScaleForMappingEmToPixels(&g_ttf.info, g_textSize);
@@ -2250,7 +2178,7 @@ float textAscent() {
     return (BF_GH - 2) * sc;
 }
 
-float textDescent() {
+float PApplet::textDescent() {
 #if PROCESSING_HAS_STB_TRUETYPE
     if (g_ttf.loaded) {
         float sc = stbtt_ScaleForMappingEmToPixels(&g_ttf.info, g_textSize);
@@ -2265,9 +2193,8 @@ float textDescent() {
 // =============================================================================
 // IMAGE
 // =============================================================================
-static void drawImageRect(PImage& img,float x,float y,float w,float h);
 
-PImage* createImage(int w,int h,int mode){
+PImage* PApplet::createImage(int w,int h,int mode){
     PImage* img = new PImage(w,h);
     if(mode==3/*ARGB*/) {
         std::fill(img->pixels.begin(),img->pixels.end(),0x00000000);
@@ -2276,7 +2203,7 @@ PImage* createImage(int w,int h,int mode){
     return img;
 }
 
-PImage* loadImage(const std::string& path){
+PImage* PApplet::loadImage(const std::string& path){
     // Handle URLs: download with curl/wget and validate image magic bytes
     if (path.size()>7 && (path.substr(0,7)=="http://" || path.substr(0,8)=="https://")){
 #ifdef _WIN32
@@ -2374,7 +2301,7 @@ PImage* loadImage(const std::string& path){
     return new PImage(); // return empty (not null) so -> calls are safe
 }
 
-PGraphics* createGraphics(int w,int h){return new PGraphics(w,h);}
+PGraphics* PApplet::createGraphics(int w,int h){return new PGraphics(w,h);}
 
 // ── PImage::uploadTexture ────────────────────────────────────────────────────
 void PImage::uploadTexture() {
@@ -2401,7 +2328,7 @@ void PImage::uploadTexture() {
     dirty = false;
 }
 
-static void drawImageRect(PImage& img,float x,float y,float w,float h){
+void PApplet::drawImageRect(PImage& img,float x,float y,float w,float h){
     if(img.width==0||img.height==0) return;
     if(img.dirty) img.uploadTexture();
     if(img.texID==0) return;
@@ -2426,7 +2353,7 @@ static void drawImageRect(PImage& img,float x,float y,float w,float h){
 // ── image() canonical implementation ─────────────────────────────────────────
 // Single entry point: everything goes through drawImage_impl.
 // Takes a raw PImage pointer so no reference/ABI issues across TUs.
-static void drawImage_impl(PImage* img, float x, float y, float w, float h) {
+void PApplet::drawImage_impl(PImage* img, float x, float y, float w, float h) {
     if (!img || img->width == 0 || img->height == 0) return;
     // Apply imageMode to x,y,w,h
     float dx = x, dy = y, dw = w, dh = h;
@@ -2436,7 +2363,7 @@ static void drawImage_impl(PImage* img, float x, float y, float w, float h) {
 }
 
 // ── Public image() entry points ─────────────────────────────────────────────
-static void drawPGraphicsRect(PGraphics& pg, float x, float y, float w, float h){
+void PApplet::drawPGraphicsRect(PGraphics& pg, float x, float y, float w, float h){
     if(pg.width==0||pg.height==0) return;
     if(pg.texID==0) return;
     glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
@@ -2453,26 +2380,26 @@ static void drawPGraphicsRect(PGraphics& pg, float x, float y, float w, float h)
     glBindTexture(GL_TEXTURE_2D,0); glDisable(GL_TEXTURE_2D); glDisable(GL_BLEND);
     glColor4f(1,1,1,1);
 }
-void image(PGraphics& pg, float x, float y){ drawPGraphicsRect(pg,x,y,(float)pg.width,(float)pg.height); }
-void image(PGraphics& pg, float x, float y, float w, float h){ drawPGraphicsRect(pg,x,y,w,h); }
-void image(PImage* img, float x, float y) {
+void PApplet::image(PGraphics& pg, float x, float y){ drawPGraphicsRect(pg,x,y,(float)pg.width,(float)pg.height); }
+void PApplet::image(PGraphics& pg, float x, float y, float w, float h){ drawPGraphicsRect(pg,x,y,w,h); }
+void PApplet::image(PImage* img, float x, float y) {
     if(!img || img->width==0 || img->height==0) return;
     drawImage_impl(img, x, y, (float)img->width, (float)img->height);
 }
-void image(PImage* img, float x, float y, float w, float h) {
+void PApplet::image(PImage* img, float x, float y, float w, float h) {
     if(!img || img->width==0 || img->height==0) return;
     drawImage_impl(img, x, y, w, h);
 }
 
-void imageMode(int m){currentImageMode=m;}
-void tint(float gray)           {tint(gray, colorMaxA);}
-void tint(float gray, float a) {
+void PApplet::imageMode(int m){currentImageMode=m;}
+void PApplet::tint(float gray)           {tint(gray, colorMaxA);}
+void PApplet::tint(float gray, float a) {
     // tint(gray, alpha) -- both in 0-255 range like Processing Java
     tintR = tintG = tintB = gray / 255.f;
     tintA = a / 255.f;
     doTint = true;
 }
-void tint(float r, float g, float b, float a) {
+void PApplet::tint(float r, float g, float b, float a) {
     // tint(r, g, b, alpha) -- all in 0-255 range
     tintR = r / 255.f;
     tintG = g / 255.f;
@@ -2480,10 +2407,10 @@ void tint(float r, float g, float b, float a) {
     tintA = a / 255.f;
     doTint = true;
 }
-void noTint(){doTint=false;}
+void PApplet::noTint(){doTint=false;}
 
-void filter(int mode) { filter(mode, 0.5f); }
-void filter(int mode, float /*param*/) {
+void PApplet::filter(int mode) { filter(mode, 0.5f); }
+void PApplet::filter(int mode, float /*param*/) {
     int total = winWidth * winHeight;
     std::vector<unsigned char> buf(total * 4);
     glReadPixels(0, 0, winWidth, winHeight, GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
@@ -2505,7 +2432,7 @@ void filter(int mode, float /*param*/) {
     }
     glDrawPixels(winWidth, winHeight, GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
 }
-void loadPixels() {
+void PApplet::loadPixels() {
     int total = winWidth * winHeight;
     pixels.resize(total);
 
@@ -2521,7 +2448,7 @@ void loadPixels() {
     }
 }
 
-void updatePixels() {
+void PApplet::updatePixels() {
     int total = winWidth * winHeight;
     std::vector<unsigned char> rgba(total * 4);
 
@@ -2533,13 +2460,13 @@ void updatePixels() {
     }
     glDrawPixels(winWidth, winHeight, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
 }
-color get(int x, int y) {
+color PApplet::get(int x, int y) {
     unsigned char p[4];
     glReadPixels(x, winHeight - 1 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, p);
     return colorVal(p[0], p[1], p[2], p[3]);
 }
 
-void set(int x, int y, color c) {
+void PApplet::set(int x, int y, color c) {
     unsigned int v = c.value;
     unsigned char p[] = {
         (unsigned char)((v >> 16) & 0xFF),  // R
@@ -2555,7 +2482,7 @@ void set(int x, int y, color c) {
 // BLEND / CLIP
 // =============================================================================
 
-void blendMode(int mode) {
+void PApplet::blendMode(int mode) {
     glEnable(GL_BLEND);
     // Reset equation first (SUBTRACT changes it)
     glBlendEquation(GL_FUNC_ADD);
@@ -2571,13 +2498,13 @@ void blendMode(int mode) {
     }
 }
 
-void clip(float x, float y, float w, float h) {
+void PApplet::clip(float x, float y, float w, float h) {
     // Scissor coordinates are in GL space (Y=0 at bottom), so flip Y
     glEnable(GL_SCISSOR_TEST);
     glScissor((int)x, winHeight - (int)(y + h), (int)w, (int)h);
 }
 
-void noClip() {
+void PApplet::noClip() {
     glDisable(GL_SCISSOR_TEST);
 }
 
@@ -2585,66 +2512,90 @@ void noClip() {
 // SAVE
 // =============================================================================
 
-void saveFrame(const std::string& fn){
-    std::cout<<"saveFrame: "<<fn<<" (enable stb_image_write in Processing.cpp)\n";
+void PApplet::saveFrame(const std::string& filename) {
+    std::string fn = filename;
+    size_t pos = fn.find("####");
+    if (pos != std::string::npos) {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%04d", frameCount);
+        fn.replace(pos, 4, buf);
+    }
+    int w = pixelWidth  > 0 ? pixelWidth  : logicalW;
+    int h = pixelHeight > 0 ? pixelHeight : logicalH;
+    std::vector<unsigned char> px(w * h * 3);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, px.data());
+    for (int y = 0; y < h / 2; y++)
+        for (int x = 0; x < w * 3; x++)
+            std::swap(px[y*w*3+x], px[(h-1-y)*w*3+x]);
+    std::string ext = fn.size() > 4 ? fn.substr(fn.size()-4) : "";
+    for (auto& c : ext) c = tolower(c);
+    int ok = 0;
+    if (ext == ".png")                ok = stbi_write_png(fn.c_str(), w, h, 3, px.data(), w*3);
+    else if (ext == ".jpg" || ext == "jpeg") ok = stbi_write_jpg(fn.c_str(), w, h, 3, px.data(), 95);
+    else if (ext == ".bmp")           ok = stbi_write_bmp(fn.c_str(), w, h, 3, px.data());
+    else if (ext == ".tga" || ext == ".tif" || ext == ".tiff")
+                                      ok = stbi_write_tga(fn.c_str(), w, h, 3, px.data());
+    else { fn += ".png"; ok = stbi_write_png(fn.c_str(), w, h, 3, px.data(), w*3); }
+    if (ok) std::cout << "Saved: " << fn << "\n";
+    else    std::cout << "save: failed to write " << fn << "\n";
 }
-void save(const std::string& fn){saveFrame(fn);}
+void PApplet::save(const std::string& fn){saveFrame(fn);}
 
 // =============================================================================
 // GLFW CALLBACKS
 // =============================================================================
 
-static bool mouseWasPressed=false;
-
 static void cursor_pos_cb(GLFWwindow*, double x, double y) {
-    mouseInWindow = true;
-    mouseDX += (float)x - mouseX;
-    mouseDY += (float)y - mouseY;
-    pmouseX = mouseX;
-    pmouseY = mouseY;
-    mouseX  = (float)x;
-    mouseY  = (float)y;
-    if (_mousePressed) { if (_onMouseDragged) _onMouseDragged(); }
-    else               { if (_onMouseMoved)   _onMouseMoved();   }
+    auto* p = PApplet::g_papplet; if(!p) return;
+    p->mouseInWindow = true;
+    p->mouseDX += (float)x - p->mouseX;
+    p->mouseDY += (float)y - p->mouseY;
+    p->pmouseX = p->mouseX;
+    p->pmouseY = p->mouseY;
+    p->mouseX  = (float)x;
+    p->mouseY  = (float)y;
+    if (p->_mousePressed) { p->mouseDragged(); }
+    else               { p->mouseMoved();   }
 }
 static void mouse_btn_cb(GLFWwindow*, int btn, int action, int mods) {
-    g_currentMods = mods;
+    auto* p = PApplet::g_papplet; if(!p) return;
+    p->g_currentMods = mods;
     if (action == GLFW_PRESS) {
-        _mousePressed = true;
-        if      (btn == GLFW_MOUSE_BUTTON_LEFT)   mouseButton = LEFT;
-        else if (btn == GLFW_MOUSE_BUTTON_RIGHT)  mouseButton = RIGHT;
-        else                                       mouseButton = CENTER;
-        if (_onMousePressed) _onMousePressed();
-        mouseWasPressed = true;
+        p->_mousePressed = true;
+        if      (btn == GLFW_MOUSE_BUTTON_LEFT)   p->mouseButton = LEFT;
+        else if (btn == GLFW_MOUSE_BUTTON_RIGHT)  p->mouseButton = RIGHT;
+        else                                       p->mouseButton = CENTER;
+        p->mousePressed();
+        p->mouseWasPressed = true;
     } else if (action == GLFW_RELEASE) {
-        _mousePressed = false;
-        if (_onMouseReleased) _onMouseReleased();
-        if (mouseWasPressed && _onMouseClicked) _onMouseClicked();
-        mouseWasPressed = false;
-        mouseButton = -1;
+        p->_mousePressed = false;
+        p->mouseReleased();
+        if (p->mouseWasPressed && p->_onMouseClicked) p->_onMouseClicked();
+        p->mouseWasPressed = false;
+        p->mouseButton = -1;
     }
 }
 static void scroll_cb(GLFWwindow*,double,double yoffset){
-    if(_onMouseWheel)_onMouseWheel((int)yoffset);
+    auto* p = PApplet::g_papplet; if(!p) return;
+    if(p->_onMouseWheel)p->_onMouseWheel((int)yoffset);
 }
-static char g_lastChar = 0;  // set by char_cb, consumed by key_cb
-
-static bool g_pendingKeyPressed = false; // key_cb deferred to after char_cb
 
 static void char_cb(GLFWwindow*, unsigned int codepoint) {
+    auto* p = PApplet::g_papplet; if(!p) return;
     // char_cb fires after key_cb for printable keys, with the correct
     // Unicode character (shift/caps/layout all applied).
     if (codepoint < 128) {
-        key = (char)codepoint;
+        p->key = (char)codepoint;
     }
-    // Fire deferred keyPressed() now that key has the correct char value
-    if (g_pendingKeyPressed) {
-        g_pendingKeyPressed = false;
-        if (_onKeyPressed) _onKeyPressed();
+    // Fire deferred keyPressed() now that p->key has the correct char value
+    if (p->g_pendingKeyPressed) {
+        p->g_pendingKeyPressed = false;
+        p->keyPressed();
     }
     // keyTyped() -- Processing standard: only printable chars, no action keys
     // Action keys (Ctrl, Shift, Alt, etc.) never reach char_cb, so this is correct.
-    if (_onKeyTyped) _onKeyTyped();
+    p->keyTyped();
 }
 
 // Translate GLFW key code to Java KeyEvent.VK_* value.
@@ -2695,27 +2646,28 @@ static int glfw_to_java_keycode(int k) {
 
 // Current modifier state -- set from key_cb mods parameter (reliable on Windows)
 static void key_cb(GLFWwindow* w, int k, int /*scancode*/, int action, int mods) {
-    g_currentMods = mods; // capture before callbacks fire
+    auto* p = PApplet::g_papplet; if(!p) return;
+    p->g_currentMods = mods; // capture before callbacks fire
     if (action == GLFW_PRESS || action == GLFW_REPEAT) {
-        _keyPressed = true;
-        g_pendingKeyPressed = false; // reset for each new key event
+        p->_keyPressed = true;
+        p->g_pendingKeyPressed = false; // reset for each new p->key event
 
         // Translate GLFW code -> Java KeyEvent.VK_* value (Processing reference standard)
-        keyCode = glfw_to_java_keycode(k);
+        p->keyCode = glfw_to_java_keycode(k);
 
-        // Set key=CODED for all non-printable/special keys.
-        // ASCII keys that Processing handles via key directly (not CODED):
+        // Set p->key=CODED for all non-printable/special keys.
+        // ASCII keys that Processing handles via p->key directly (not CODED):
         //   BACKSPACE(8), TAB(9), ENTER(10), ESC(27), DELETE(127)
         // Everything else that has no ASCII representation gets CODED.
         switch (k) {
-            case GLFW_KEY_BACKSPACE: key = (char)8;   break;
-            case GLFW_KEY_TAB:       key = (char)9;   break;
+            case GLFW_KEY_BACKSPACE: p->key = (char)8;   break;
+            case GLFW_KEY_TAB:       p->key = (char)9;   break;
             case GLFW_KEY_ENTER:
-            case GLFW_KEY_KP_ENTER:  key = (char)10;  break;
-            case GLFW_KEY_ESCAPE:    key = (char)27;  break;
-            case GLFW_KEY_SPACE:     key = (char)32;  break;
-            case GLFW_KEY_DELETE:    key = (char)127; break;
-            // All other special keys set key=CODED
+            case GLFW_KEY_KP_ENTER:  p->key = (char)10;  break;
+            case GLFW_KEY_ESCAPE:    p->key = (char)27;  break;
+            case GLFW_KEY_SPACE:     p->key = (char)32;  break;
+            case GLFW_KEY_DELETE:    p->key = (char)127; break;
+            // All other special keys set p->key=CODED
             case GLFW_KEY_UP: case GLFW_KEY_DOWN:
             case GLFW_KEY_LEFT: case GLFW_KEY_RIGHT:
             case GLFW_KEY_HOME: case GLFW_KEY_END:
@@ -2729,98 +2681,90 @@ static void key_cb(GLFWwindow* w, int k, int /*scancode*/, int action, int mods)
             case GLFW_KEY_F4: case GLFW_KEY_F5: case GLFW_KEY_F6:
             case GLFW_KEY_F7: case GLFW_KEY_F8: case GLFW_KEY_F9:
             case GLFW_KEY_F10: case GLFW_KEY_F11: case GLFW_KEY_F12:
-                key = (char)CODED;
+                p->key = (char)CODED;
                 break;
             default:
-                // Printable key: if a modifier (Ctrl/Alt) is held, char_cb will
+                // Printable p->key: if a modifier (Ctrl/Alt) is held, char_cb will
                 // NOT fire on Windows for Ctrl+letter combos. Fire immediately.
-                // If no modifier, defer to char_cb so key gets the correct char.
+                // If no modifier, defer to char_cb so p->key gets the correct char.
                 if (mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT | GLFW_MOD_SUPER)) {
                     // Ctrl/Alt/Meta combos: char_cb won't fire.
-                    // Set key to the lowercase letter and fire immediately.
+                    // Set p->key to the lowercase letter and fire immediately.
                     if (k >= GLFW_KEY_A && k <= GLFW_KEY_Z)
-                        key = (char)('a' + (k - GLFW_KEY_A));
-                    g_pendingKeyPressed = false; // fire immediately
+                        p->key = (char)('a' + (k - GLFW_KEY_A));
+                    p->g_pendingKeyPressed = false; // fire immediately
                 } else {
-                    // Plain printable key (possibly with Shift): defer to char_cb
-                    // so key gets the correct shifted/layout-aware character.
-                    g_pendingKeyPressed = true;
+                    // Plain printable p->key (possibly with Shift): defer to char_cb
+                    // so p->key gets the correct shifted/layout-aware character.
+                    p->g_pendingKeyPressed = true;
                 }
                 break;
         }
 
         // Fire keyPressed() now unless deferred to char_cb
-        if (!g_pendingKeyPressed) {
-            if (_onKeyPressed) _onKeyPressed();
-            // Java Processing: ESC closes the sketch unless keyPressed() set key=0
-            if (key == (char)27 && gWindow)
-                glfwSetWindowShouldClose(gWindow, GLFW_TRUE);
+        if (!p->g_pendingKeyPressed) {
+            p->keyPressed();
+            // Java Processing: ESC closes the sketch unless keyPressed() set p->key=0
+            if (p->key == (char)27 && p->gWindow)
+                glfwSetWindowShouldClose(p->gWindow, GLFW_TRUE);
         }
 
     } else if (action == GLFW_RELEASE) {
-        _keyPressed = false;
-        g_currentMods = mods; // update on release too
-        if (_onKeyReleased) _onKeyReleased();
+        p->_keyPressed = false;
+        p->g_currentMods = mods; // update on release too
+        p->keyReleased();
     }
 }
 static void focus_cb(GLFWwindow*,int f){
-    focused = (f == GLFW_TRUE);
-    if (!focused) g_pendingKeyPressed = false; // clear pending if focus lost
+    auto* p = PApplet::g_papplet; if(!p) return;
+    p->focused = (f == GLFW_TRUE);
+    if (!p->focused) p->g_pendingKeyPressed = false; // clear pending if focus lost
 }
-static void winpos_cb(GLFWwindow*,int,int){if(_onWindowMoved)_onWindowMoved();}
-static bool _setupDone = false; // set true after setup() returns and main loop starts
-
-static bool _inWinsizeCb = false; // prevent re-entry
+static void winpos_cb(GLFWwindow*,int,int){
+    auto* p = PApplet::g_papplet; if(!p) return;if(p->_onWindowMoved)p->_onWindowMoved();}
 static void winsize_cb(GLFWwindow*,int lw,int lh){
-    if(!lw||!lh||_inWinsizeCb)return;
-    _inWinsizeCb = true;
-    if(_setupDone){
-        if(isResizable){
+    auto* p = PApplet::g_papplet; if(!p) return;
+    if(!lw||!lh||p->_inWinsizeCb)return;
+    p->_inWinsizeCb = true;
+    if(p->_setupDone){
+        if(p->isResizable){
             // Update logical size for resizable sketches so width/height reflect new size
-            winWidth=lw; winHeight=lh;
-            logicalW=lw; logicalH=lh;
+            p->winWidth=lw; p->winHeight=lh;
+            p->logicalW=lw; p->logicalH=lh;
         }
-        if(_onWindowResized)_onWindowResized();
+        if(p->_onWindowResized)p->_onWindowResized();
     }
-    // setProjection uses logicalW/H for ortho, actual size for viewport.
-    setProjection(winWidth, winHeight);
+    // p->setProjection uses p->logicalW/H for ortho, actual size for viewport.
+    p->setProjection(p->winWidth, p->winHeight);
     // Only trigger redraw if size actually changed from last draw.
     // This prevents flashing from rapid i3 resize events.
     static int _lastDrawW = 0, _lastDrawH = 0;
-    if(_setupDone && !looping) {
+    if(p->_setupDone && !p->looping) {
         if(lw != _lastDrawW || lh != _lastDrawH) {
             _lastDrawW = lw; _lastDrawH = lh;
-            redrawOnce = true;
+            p->redrawOnce = true;
         }
     }
-    _inWinsizeCb = false;
+    p->_inWinsizeCb = false;
 }
 static void fbsize_cb(GLFWwindow*,int fw,int fh){
+    auto* p = PApplet::g_papplet; if(!p) return;
     if(!fw||!fh)return;
-    pixelWidth=fw;pixelHeight=fh;
+    p->pixelWidth=fw;p->pixelHeight=fh;
 }
 
 // =============================================================================
 // RUN
 // =============================================================================
 
-static bool tryLoadTTF(const std::string& path, float size); // forward decl
 
 // Called from main() before run() if --debug flag is present
-void enableDebugConsole() {
-#ifdef _WIN32
-    // Allocate a Windows console for debug output without needing -mconsole
-    if (AllocConsole()) {
-        FILE* f;
-        freopen_s(&f, "CONOUT$", "w", stdout);
-        freopen_s(&f, "CONOUT$", "w", stderr);
-        freopen_s(&f, "CONIN$",  "r", stdin);
-        fprintf(stderr, "[debug] processing-cpp debug console enabled\n");
-    }
-#endif
-}
+void PApplet::enableDebugConsole(){_doEnableDebugConsole();}
 
-void run(){
+void PApplet::run(){
+    g_papplet = this;
+    signal(SIGTERM, [](int){ if(PApplet::g_papplet && PApplet::g_papplet->gWindow) glfwSetWindowShouldClose(PApplet::g_papplet->gWindow, GLFW_TRUE); });
+    signal(SIGHUP,  [](int){ if(PApplet::g_papplet && PApplet::g_papplet->gWindow) glfwSetWindowShouldClose(PApplet::g_papplet->gWindow, GLFW_TRUE); });
     // Write directly to a file since -mwindows kills stderr on Windows
     setvbuf(stdout, nullptr, _IONBF, 0);
     std::srand((unsigned)std::time(nullptr));
@@ -2836,7 +2780,7 @@ void run(){
     GLFWmonitor* mon=glfwGetPrimaryMonitor();
     if(mon){const GLFWvidmode* vm=glfwGetVideoMode(mon);displayWidth=vm->width;displayHeight=vm->height;}
 
-    // Reset all style state to defaults BEFORE setup()
+    // Reset all style state to defaults BEFORE this->setup()
     doFill=true;doStroke=true;
     fillR=1;fillG=1;fillB=1;fillA=1;
     strokeR=0;strokeG=0;strokeB=0;strokeA=1;strokeW=1;
@@ -2847,7 +2791,7 @@ void run(){
     lightsEnabled=false;lightIndex=0;
     looping=true;
 
-    settings();
+    this->settings();
 
     glfwWindowHint(GLFW_RESIZABLE,isResizable?GLFW_TRUE:GLFW_FALSE);
     glfwWindowHint(GLFW_SAMPLES,4); // 4x MSAA for crisp P3D rendering; 2D noSmooth() disables at runtime
@@ -2885,9 +2829,9 @@ void run(){
     glShadeModel(GL_SMOOTH);
     glEnable(GL_NORMALIZE);
     smooth();
-    // Don't call setProjection here -- let size() in setup() do it
+    // Don't call setProjection here -- let size() in this->setup() do it
     // with the correct dimensions. Calling it now with winWidth=640,winHeight=480
-    // (defaults) would set the wrong ortho before setup() changes the size.
+    // (defaults) would set the wrong ortho before this->setup() changes the size.
     {int fw,fh;glfwGetFramebufferSize(gWindow,&fw,&fh);pixelWidth=fw;pixelHeight=fh;fbW=fw>0?fw:logicalW;fbH=fh>0?fh:logicalH;}
 
     // Enable sticky keys/buttons: GLFW will keep state as PRESSED until polled,
@@ -2963,9 +2907,9 @@ void run(){
 
     glfwFocusWindow(gWindow);  // ensure input focus on Windows
 
-    // Settle loop: poll+swap several times BEFORE setup() runs so i3/tiling WMs
+    // Settle loop: poll+swap several times BEFORE this->setup() runs so i3/tiling WMs
     // fully resize the window first. winsize_cb fires during these polls and
-    // sets the correct viewport. After settling, setup() and draw() use the
+    // sets the correct viewport. After settling, this->setup() and this->draw() use the
     // correct dimensions from the start -- no shifted first frame.
     _setupDone = true; // enable winsize_cb to update projection during settle
     // Initialize the framebuffer before the settle loop -- required on Windows
@@ -2983,7 +2927,7 @@ void run(){
     }
     if (!defaultP3D) setProjection(winWidth, winHeight);
 
-    setup();
+    this->setup();
     // 2D sketches: disable MSAA so pixels stay crisp (noSmooth() effect).
     // P3D sketches keep MSAA from window creation for smooth 3D edges.
     if (!defaultP3D) {
@@ -2997,13 +2941,13 @@ void run(){
         glMatrixMode(GL_MODELVIEW); glLoadIdentity();
     }
 
-    // If setup() called noLoop(): run draw() once then swap.
-    // Static sketches have an empty draw() -- no-op.
-    // Structured noLoop sketches (like Pie Chart) need draw() to show content.
+    // If this->setup() called noLoop(): run this->draw() once then swap.
+    // Static sketches have an empty this->draw() -- no-op.
+    // Structured noLoop sketches (like Pie Chart) need this->draw() to show content.
     if (!looping) {
         if (defaultP3D) {
-            // P3D static sketch: setup() already drew everything with the correct
-            // camera. Just apply projection state for the draw() call (which may
+            // P3D static sketch: this->setup() already drew everything with the correct
+            // camera. Just apply projection state for the this->draw() call (which may
             // be empty for static sketches, or may draw content for structured ones).
             glViewport(0, 0, fbW, fbH);
             glEnable(GL_DEPTH_TEST);
@@ -3011,13 +2955,13 @@ void run(){
             glDisable(GL_CULL_FACE);
             glFrontFace(GL_CW);
             glEnable(GL_NORMALIZE);
-            // Do NOT clear -- setup() already drew to the back buffer.
-            // Only clear if draw() will redraw everything (i.e. calls background()).
+            // Do NOT clear -- this->setup() already drew to the back buffer.
+            // Only clear if this->draw() will redraw everything (i.e. calls background()).
             applyDefaultCamera();
         } else {
             setProjection(logicalW, logicalH);
         }
-        ++frameCount; draw();
+        ++frameCount; this->draw();
                 mouseDX = 0; mouseDY = 0;  // reset delta each frame
         flushPoints(); // flush any pending points before swap
         saveToPersist(); // save back buffer before swap for next frame restore
@@ -3033,7 +2977,7 @@ void run(){
     glfwSetWindowShouldClose(gWindow, GLFW_FALSE);
     // For looping sketches: clear both buffers to bgColor so the
     // front-to-back blit starts from the correct background color.
-    // For static sketches (noLoop): don't clear - preserve what setup() drew.
+    // For static sketches (noLoop): don't clear - preserve what this->setup() drew.
     if(looping){
         for(int _b=0;_b<2;_b++){
             glClearColor(bgR,bgG,bgB,bgA);
@@ -3054,13 +2998,13 @@ void run(){
                 glFrontFace(GL_CW);
                 glEnable(GL_NORMALIZE);
                 // Do NOT clear color here -- the sketch calls background() itself.
-                // Clearing color would erase anything drawn in setup().
+                // Clearing color would erase anything drawn in this->setup().
                 flushPoints(); // flush any pending points from previous frame
             glClear(GL_DEPTH_BUFFER_BIT);
-                // Auto-apply the default Processing camera BEFORE draw() --
+                // Auto-apply the default Processing camera BEFORE this->draw() --
                 // matches Java Processing behaviour exactly. The sketch can
                 // override by calling camera() / perspective() itself.
-                // This means lights() called anywhere in draw() will always
+                // This means lights() called anywhere in this->draw() will always
                 // see the camera matrix and lock correctly in eye space.
                 applyDefaultCamera();
             } else {
@@ -3077,14 +3021,14 @@ void run(){
                 glDisable(GL_LIGHTING);
                 // Restore previous frame content from persist FBO.
                 // Sketches that call background() will overwrite this.
-                // Sketches that don't (like Keyboard) preserve their drawn content.
+                // Sketches that don't (like Continuous Lines) preserve their drawn content.
                 restoreFromPersist();
                 glClear(GL_DEPTH_BUFFER_BIT);
             }
 
             // Reset all light slots each frame so lights from the previous
             // frame don't accumulate. The sketch re-establishes its lights
-            // in each draw() call.
+            // in each this->draw() call.
             for (int _li = 0; _li < 8; _li++) {
                 glDisable(GL_LIGHT0 + _li);
                 // Reset each slot to black so disabled lights contribute nothing
@@ -3125,16 +3069,17 @@ void run(){
                 lightsEnabled=false; lightIndex=0;
                 _staticSketchSetup();
             } else {
-                // Run draw() every frame -- no mouseInWindow guard.
+                // Run this->draw() every frame -- no mouseInWindow guard.
                 // The Hue sketch first-frame issue is handled by the settle loop
                 // ensuring mouseX/mouseY are 0 which is acceptable.
                 // Reset tint state each frame (Processing Java behavior)
                 doTint=false; tintR=1; tintG=1; tintB=1; tintA=1;
                 glGetError();
-                ++frameCount; draw(); pmouseX=mouseX; pmouseY=mouseY; mouseDX=0; mouseDY=0;
+                ++frameCount; this->draw(); pmouseX=mouseX; pmouseY=mouseY; mouseDX=0; mouseDY=0;
                 glGetError(); // consume any GL errors
             }
 
+            saveToPersist();
             glfwSwapBuffers(gWindow);
         }
         glfwPollEvents();
@@ -3219,9 +3164,9 @@ static JSONValue parseJSONValue(const std::string& s, size_t& i){
     return JSONValue(std::stoi(num));
 }
 
-JSONValue parseJSON(const std::string& src){ size_t i=0; return parseJSONValue(src,i); }
+JSONValue PApplet::parseJSON(const std::string& src){ size_t i=0; return parseJSONValue(src,i); }
 
-std::string toJSONString(const JSONValue& v, int indent){
+std::string PApplet::toJSONString(const JSONValue& v, int indent){
     std::string pad(indent*2,' ');
     std::string pad2((indent+1)*2,' ');
     switch(v.type){
@@ -3260,12 +3205,12 @@ static std::string readFileString(const std::string& path){
     return std::string((std::istreambuf_iterator<char>(f)),std::istreambuf_iterator<char>());
 }
 
-JSONValue loadJSONObject(const std::string& path){ return parseJSON(readFileString(path)); }
-JSONValue loadJSONArray(const std::string& path) { return parseJSON(readFileString(path)); }
-bool saveJSONObject(const std::string& path,const JSONValue& v,int indent){
+JSONValue PApplet::loadJSONObject(const std::string& path){ return parseJSON(readFileString(path)); }
+JSONValue PApplet::loadJSONArray(const std::string& path) { return parseJSON(readFileString(path)); }
+bool PApplet::saveJSONObject(const std::string& path,const JSONValue& v,int indent){
     std::ofstream f(path); if(!f)return false; f<<toJSONString(v,indent); return true;
 }
-bool saveJSONArray(const std::string& path,const JSONValue& v,int indent){
+bool PApplet::saveJSONArray(const std::string& path,const JSONValue& v,int indent){
     return saveJSONObject(path,v,indent);
 }
 
@@ -3307,8 +3252,8 @@ static XML parseXMLNode(const std::string& s, size_t& i){
     return node;
 }
 
-XML parseXML(const std::string& src){ size_t i=0; return parseXMLNode(src,i); }
-XML loadXML(const std::string& path){ return parseXML(readFileString(path)); }
+XML PApplet::parseXML(const std::string& src){ size_t i=0; return parseXMLNode(src,i); }
+XML PApplet::loadXML(const std::string& path){ return parseXML(readFileString(path)); }
 
 std::string XML::toString(int indent) const {
     std::string pad(indent*2,' ');
@@ -3321,13 +3266,13 @@ std::string XML::toString(int indent) const {
     r+="</"+name+">\n";
     return r;
 }
-bool saveXML(const std::string& path,const XML& x){ std::ofstream f(path);if(!f)return false;f<<x.toString();return true; }
+bool PApplet::saveXML(const std::string& path,const XML& x){ std::ofstream f(path);if(!f)return false;f<<x.toString();return true; }
 
 // =============================================================================
 // TABLE IMPLEMENTATION
 // =============================================================================
 
-Table* loadTable(const std::string& path,const std::string& options){
+Table* PApplet::loadTable(const std::string& path,const std::string& options){
     Table* t=new Table();
     bool hasHeader=options.find("header")!=std::string::npos;
     char delim=path.find(".tsv")!=std::string::npos?'\t':',';
@@ -3346,7 +3291,7 @@ Table* loadTable(const std::string& path,const std::string& options){
     }
     return t;
 }
-bool saveTable(const std::string& path,const Table& t,const std::string& ext){
+bool PApplet::saveTable(const std::string& path,const Table& t,const std::string& ext){
     std::ofstream f(path);if(!f)return false;
     char delim=ext=="tsv"?'\t':',';
     if(!t.columns.empty()){for(size_t i=0;i<t.columns.size();i++){if(i)f<<delim;f<<t.columns[i];}f<<"\n";}
@@ -3357,10 +3302,8 @@ bool saveTable(const std::string& path,const Table& t,const std::string& ext){
 // =============================================================================
 // PSHAPE IMPLEMENTATION
 // =============================================================================
-
-static int shapeDrawMode=CORNER;
-void shapeMode(int mode){ shapeDrawMode=mode; }
-PShape createShape(int kind){ return PShape(kind); }
+void PApplet::shapeMode(int mode){ shapeDrawMode=mode; }
+PShape PApplet::createShape(int kind){ return PShape(kind); }
 
 // ── Minimal SVG loader ────────────────────────────────────────────────────────
 // Parses basic SVG shapes (path, rect, circle, ellipse, polygon, polyline, line)
@@ -3718,8 +3661,6 @@ struct ObjVertex {
     float u,v;     // texcoord
 };
 
-static std::string objDir; // directory of the OBJ file
-
 // Parse MTL file, return map of material name -> texture PImage*
 static std::unordered_map<std::string,GLuint> objLoadMtl(const std::string& mtlPath){
     std::unordered_map<std::string,GLuint> mats;
@@ -3735,7 +3676,7 @@ static std::unordered_map<std::string,GLuint> objLoadMtl(const std::string& mtlP
             std::string texFile; ss>>texFile;
             // Try relative to obj dir
             std::vector<std::string> tries={
-                objDir+texFile, objDir+"data/"+texFile,
+                _s_objDir+texFile, _s_objDir+"data/"+texFile,
                 "data/"+texFile, texFile
             };
             for(auto& t:tries){
@@ -3771,7 +3712,7 @@ static PShape* objLoad(const std::string& path){
 
     // Get directory for relative texture paths
     size_t slash=found.find_last_of("/\\");
-    objDir=(slash==std::string::npos)?"":found.substr(0,slash+1);
+    _s_objDir=(slash==std::string::npos)?"":found.substr(0,slash+1);
 
     std::vector<std::array<float,3>> vp,vn;
     std::vector<std::array<float,2>> vt;
@@ -3804,7 +3745,7 @@ static PShape* objLoad(const std::string& path){
         std::string tok; ss>>tok;
         if(tok=="mtllib"){
             std::string mtlFile; ss>>mtlFile;
-            std::vector<std::string> mtlTries={objDir+mtlFile,"data/"+mtlFile,mtlFile};
+            std::vector<std::string> mtlTries={_s_objDir+mtlFile,"data/"+mtlFile,mtlFile};
             for(auto& t:mtlTries){
                 std::ifstream test(t);
                 if(test.is_open()){mats=objLoadMtl(t);break;}
@@ -3887,7 +3828,7 @@ static PShape* objLoad(const std::string& path){
     return root;
 }
 
-PShape* loadShape(const std::string& path){
+PShape* PApplet::loadShape(const std::string& path){
     auto ext=[&](const std::string& e)->bool{
         return path.size()>=e.size()&&path.substr(path.size()-e.size())==e;
     };
@@ -3897,7 +3838,7 @@ PShape* loadShape(const std::string& path){
     return new PShape();
 }
 
-static void drawPShape(const PShape& s,float x,float y,float w=-1,float h=-1,bool parentStyleEnabled=true){
+void PApplet::drawPShape(const PShape& s,float x,float y,float w,float h,bool parentStyleEnabled){
     if(!s.visible)return;
     bool se = s.styleEnabled && parentStyleEnabled;
     glPushMatrix();
@@ -4007,34 +3948,28 @@ static void drawPShape(const PShape& s,float x,float y,float w=-1,float h=-1,boo
     }
     glPopMatrix();
 }
-void shape(const PShape& s,float x,float y)          { drawPShape(s,x,y); }
-void shape(const PShape& s,float x,float y,float w,float h){ drawPShape(s,x,y,w,h); }
+void PApplet::shape(const PShape& s,float x,float y)          { drawPShape(s,x,y); }
+void PApplet::shape(const PShape& s,float x,float y,float w,float h){ drawPShape(s,x,y,w,h); }
 
 // =============================================================================
 // PFONT / TYPOGRAPHY
 // =============================================================================
-
-static PFont currentFont;
-
 // Internal helper -- try to load a TTF by path
-static bool tryLoadTTF(const std::string& path, float size) {
+bool PApplet::tryLoadTTF(const std::string& path, float size) {
 #if PROCESSING_HAS_STB_TRUETYPE
     if (loadTTFFile(path)) {
         g_ttf.loaded = true;
         g_textSize   = size;
-        bakeAtlas(size);
-        // font load success -- silent (stderr only for failures)
+        // bakeAtlas deferred to first text() call — GL context not ready yet
+        g_ttf.bakeSize = -1.0f; // force bake on next text() call
         return true;
     }
-    // Silent on individual failures -- caller reports if all fail
-#else
-    std::cerr << "[font] stb_truetype not available -- put stb_truetype.h in src/\n";
 #endif
     return false;
 }
 
 // loadFont -- loads a .ttf file; falls back to bitmap font gracefully
-PFont loadFont(const std::string& filename) {
+PFont PApplet::loadFont(const std::string& filename) {
     PFont f(filename, g_textSize);
     tryLoadTTF(filename, g_textSize);
     return f;
@@ -4042,7 +3977,7 @@ PFont loadFont(const std::string& filename) {
 
 // createFont -- creates font from a name/path and size
 static std::vector<PFont> _fontPool;
-PFont* createFont(const std::string& name, float size, bool /*smooth*/) {
+PFont* PApplet::createFont(const std::string& name, float size, bool /*smooth*/) {
     PFont f(name, size);
     // Try as file path first, then common system paths
     // Strip extension from name if already present, to avoid double extensions
@@ -4122,12 +4057,12 @@ PFont* createFont(const std::string& name, float size, bool /*smooth*/) {
 }
 
 // textFont -- switch to a previously loaded font
-void textFont(const PFont& font) {
+void PApplet::textFont(const PFont& font) {
     currentFont = font;
     g_textSize  = font.size;
     tryLoadTTF(font.name, font.size);
 }
-void textFont(const PFont& font, float size) {
+void PApplet::textFont(const PFont& font, float size) {
     currentFont      = font;
     currentFont.size = size;
     g_textSize       = size;
@@ -4137,17 +4072,14 @@ void textFont(const PFont& font, float size) {
 // =============================================================================
 // TEXTURE
 // =============================================================================
-
-static int textureModeVal=IMAGE;
-static int textureWrapVal=CLAMP;
-void textureMode(int mode){ textureModeVal=mode; }
-void textureWrap(int mode){
+void PApplet::textureMode(int mode){ textureModeVal=mode; }
+void PApplet::textureWrap(int mode){
     textureWrapVal=mode;
     GLint wrap=mode==REPEAT?GL_REPEAT:GL_CLAMP_TO_EDGE;
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,wrap);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,wrap);
 }
-void texture(PImage& img){
+void PApplet::texture(PImage& img){
     if(img.dirty)img.uploadTexture();
     if(img.texID){ glEnable(GL_TEXTURE_2D);glBindTexture(GL_TEXTURE_2D,img.texID); }
 }
@@ -4156,29 +4088,29 @@ void texture(PImage& img){
 // FILE / IO HELPERS
 // =============================================================================
 
-BufferedReader* createReader(const std::string& path){ return new BufferedReader(path); }
-PrintWriter*    createWriter(const std::string& path){ return new PrintWriter(path); }
+BufferedReader* PApplet::createReader(const std::string& path){ return new BufferedReader(path); }
+PrintWriter* PApplet::createWriter(const std::string& path){ return new PrintWriter(path); }
 
-std::string selectInput(const std::string& prompt,const std::string&){
+std::string PApplet::selectInput(const std::string& prompt,const std::string&){
     std::string cmd="zenity --file-selection --title=\""+prompt+"\" 2>/dev/null";
     FILE* p=popen(cmd.c_str(),"r"); if(!p)return "";
     char buf[4096]=""; fgets(buf,sizeof(buf),p); pclose(p);
     std::string r(buf); if(!r.empty()&&r.back()=='\n')r.pop_back(); return r;
 }
-std::string selectOutput(const std::string& prompt,const std::string&){
+std::string PApplet::selectOutput(const std::string& prompt,const std::string&){
     std::string cmd="zenity --file-selection --save --title=\""+prompt+"\" 2>/dev/null";
     FILE* p=popen(cmd.c_str(),"r"); if(!p)return "";
     char buf[4096]=""; fgets(buf,sizeof(buf),p); pclose(p);
     std::string r(buf); if(!r.empty()&&r.back()=='\n')r.pop_back(); return r;
 }
-std::string selectFolder(const std::string& prompt){
+std::string PApplet::selectFolder(const std::string& prompt){
     std::string cmd="zenity --file-selection --directory --title=\""+prompt+"\" 2>/dev/null";
     FILE* p=popen(cmd.c_str(),"r"); if(!p)return "";
     char buf[4096]=""; fgets(buf,sizeof(buf),p); pclose(p);
     std::string r(buf); if(!r.empty()&&r.back()=='\n')r.pop_back(); return r;
 }
 
-PImage* requestImage(const std::string& path){
+PImage* PApplet::requestImage(const std::string& path){
     // Create a placeholder: width=-1 means "still loading", width=0 means "failed"
     // We use a heap PImage and fill it in from a background thread.
     // The sketch checks img->width != 0 && img->width != -1 to detect completion.
@@ -4263,9 +4195,7 @@ static std::string readShaderFile(const std::string& path){
     return std::string((std::istreambuf_iterator<char>(f)),std::istreambuf_iterator<char>());
 }
 
-static PShader* activeShader=nullptr;
-
-PShader* loadShader(const std::string& fragPath,const std::string& vertPath){
+PShader* PApplet::loadShader(const std::string& fragPath,const std::string& vertPath){
     std::string fSrc=readShaderFile(fragPath);
     std::string vSrc=vertPath.empty()?
         "#version 120\nvoid main(){gl_Position=ftransform();gl_TexCoord[0]=gl_MultiTexCoord0;gl_FrontColor=gl_Color;}":
@@ -4275,14 +4205,14 @@ PShader* loadShader(const std::string& fragPath,const std::string& vertPath){
     s->compile();
     return s;
 }
-void shader(PShader& s){ s.bind(); activeShader=&s; }
-void resetShader(){ glUseProgram(0); activeShader=nullptr; }
+void PApplet::shader(PShader& s){ s.bind(); activeShader=&s; }
+void PApplet::resetShader(){ glUseProgram(0); activeShader=nullptr; }
 
 // =============================================================================
 // DISPLAY blend() and copy()
 // =============================================================================
 
-void blend(int sx,int sy,int sw,int sh,int dx,int dy,int dw,int dh,int mode){
+void PApplet::blend(int sx,int sy,int sw,int sh,int dx,int dy,int dw,int dh,int mode){
     std::vector<unsigned char> src(sw*sh*4);
     glReadPixels(sx,winHeight-(sy+sh),sw,sh,GL_RGBA,GL_UNSIGNED_BYTE,src.data());
     std::vector<unsigned char> dst(dw*dh*4);
@@ -4302,7 +4232,7 @@ void blend(int sx,int sy,int sw,int sh,int dx,int dy,int dw,int dh,int mode){
     glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
 }
 
-void copy(int sx,int sy,int sw,int sh,int dx,int dy,int dw,int dh){
+void PApplet::copy(int sx,int sy,int sw,int sh,int dx,int dy,int dw,int dh){
     blend(sx,sy,sw,sh,dx,dy,dw,dh,BLEND);
 }
 
@@ -4313,7 +4243,7 @@ void copy(int sx,int sy,int sw,int sh,int dx,int dy,int dw,int dh){
 PImage getRegion(int x,int y,int w,int h){
     PImage img(w,h);
     std::vector<unsigned char> buf(w*h*4);
-    glReadPixels(x,winHeight-(y+h),w,h,GL_RGBA,GL_UNSIGNED_BYTE,buf.data());
+    glReadPixels(x,(PApplet::g_papplet?PApplet::g_papplet->winHeight:0)-(y+h),w,h,GL_RGBA,GL_UNSIGNED_BYTE,buf.data());
     for(int iy=0;iy<h;iy++) for(int ix=0;ix<w;ix++){
         int si=((h-1-iy)*w+ix)*4;
         int di=iy*w+ix;
@@ -4321,6 +4251,59 @@ PImage getRegion(int x,int y,int w,int h){
     }
     img.dirty=true;
     return img;
+}
+
+std::vector<std::string> PApplet::loadStrings(const std::string& path) {
+    std::vector<std::string> lines;
+    std::string sketchDir;
+    if (const char* sp = std::getenv("PROCESSING_SKETCH_PATH")) sketchDir = std::string(sp) + "/";
+    std::ifstream f(path);
+    if (!f) f.open(sketchDir + path);
+    if (!f) f.open(sketchDir + "data/" + path);
+    std::string line;
+    while (std::getline(f, line)) lines.push_back(line);
+    return lines;
+}
+bool PApplet::saveStrings(const std::string& path, const std::vector<std::string>& lines) {
+    std::ofstream f(path); if (!f) return false;
+    for (auto& l : lines) f << l << "\n"; return true;
+}
+std::vector<unsigned char> PApplet::loadBytes(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    return std::vector<unsigned char>((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+}
+bool PApplet::saveBytes(const std::string& path, const std::vector<unsigned char>& data) {
+    std::ofstream f(path, std::ios::binary); if (!f) return false;
+    f.write(reinterpret_cast<const char*>(data.data()), data.size()); return true;
+}
+std::vector<std::string> PApplet::split(const std::string& s, char delim) {
+    std::vector<std::string> r; std::string t;
+    for (char c : s) { if (c==delim){r.push_back(t);t.clear();}else t+=c; }
+    r.push_back(t); return r;
+}
+std::vector<std::string> PApplet::splitTokens(const std::string& s, const std::string& delims) {
+    std::vector<std::string> r; std::string t;
+    for (char c : s) { if (delims.find(c)!=std::string::npos){if(!t.empty()){r.push_back(t);t.clear();}}else t+=c; }
+    if (!t.empty()) r.push_back(t); return r;
+}
+std::string PApplet::join(const std::vector<std::string>& v, const std::string& sep) {
+    std::string r; for (size_t i=0;i<v.size();i++){if(i)r+=sep;r+=v[i];} return r;
+}
+std::string PApplet::trim(const std::string& s) {
+    size_t a=s.find_first_not_of(" \t\n\r"), b=s.find_last_not_of(" \t\n\r");
+    return a==std::string::npos?"":s.substr(a,b-a+1);
+}
+std::string PApplet::nf(float v, int digits) {
+    std::ostringstream ss; ss<<std::fixed<<std::setprecision(digits)<<v; return ss.str();
+}
+std::string PApplet::nf(int v, int d) {
+    std::ostringstream ss; ss<<std::setw(d)<<std::setfill('0')<<v; return ss.str();
+}
+std::string PApplet::hex(int v) {
+    std::ostringstream ss; ss<<std::uppercase<<std::hex<<std::setw(8)<<std::setfill('0')<<v; return ss.str();
+}
+std::string PApplet::binary(int v) {
+    std::string r; for(int i=31;i>=0;i--) r+=((v>>i)&1)?'1':'0'; return r;
 }
 
 } // namespace Processing

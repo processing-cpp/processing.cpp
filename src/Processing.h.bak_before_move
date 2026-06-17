@@ -1,13 +1,4 @@
 #pragma once
-#if __has_include("stb_truetype.h") && !defined(PROCESSING_HAS_STB_TRUETYPE)
-#  define PROCESSING_HAS_STB_TRUETYPE 1
-#endif
-#if PROCESSING_HAS_STB_TRUETYPE
-// Include stb_truetype header-only (no implementation) for type definitions
-#  ifndef STB_TRUETYPE_IMPLEMENTATION
-#    include "stb_truetype.h"
-#  endif
-#endif
 #ifndef _WIN32
 #include <dirent.h>
 #endif
@@ -950,58 +941,6 @@ struct PApplet; // forward decl for template bodies
 inline void fill(color c, int a) { fill(c, (float)a); }
 
 
-
-// ── Forward declarations for template helpers ─────────────────────────────────
-// These break infinite recursion in the arithmetic-overload templates below.
-// Implementations are after struct PApplet (which defines g_papplet).
-struct PApplet;
-namespace _api {
-    void line(float,float,float,float);
-    void line(float,float,float,float,float,float);
-    void rect(float,float,float,float);
-    void rect(float,float,float,float,float);
-    void ellipse(float,float,float,float);
-    void circle(float,float,float);
-    void point(float,float);
-    void point(float,float,float);
-    void triangle(float,float,float,float,float,float);
-    void quad(float,float,float,float,float,float,float,float);
-    void arc(float,float,float,float,float,float);
-    void arc(float,float,float,float,float,float,int);
-    void translate(float,float);
-    void translate(float,float,float);
-    void scale(float,float);
-    void vertex(float,float);
-    void vertex(float,float,float);
-    void vertex(float,float,float,float);
-    void bezier(float,float,float,float,float,float,float,float);
-    void curve(float,float,float,float,float,float,float,float);
-    void text(float,float,float);
-    void text(const std::string&,float,float);
-    void text(const std::string&,float,float,float,float);
-    float map(float,float,float,float,float);
-    float constrain(float,float,float);
-    float lerp(float,float,float);
-    void fill(float);
-    void fill(float,float);
-    void fill(float,float,float);
-    void fill(float,float,float,float);
-    void stroke(float);
-    void stroke(float,float);
-    void stroke(float,float,float);
-    void stroke(float,float,float,float);
-    void background(float);
-    void background(float,float);
-    void background(float,float,float);
-    void background(float,float,float,float);
-    void tint(float);
-    void tint(float,float);
-    void tint(float,float,float);
-    void tint(float,float,float,float);
-    void strokeWeight(float);
-    void rotate(float);
-}
-
 // int overloads
 // ---------------------------------------------------------------------------
 // Mixed-type overloads for fill, stroke, background, tint.
@@ -1012,67 +951,67 @@ namespace _api {
 template<typename A, typename B,
          typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
 inline void fill(A gray, B a)
-    { _api::fill((float)gray,(float)a); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->fill((float)gray,(float)a); }
 
 template<typename A, typename B, typename C,
          typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
 inline void fill(A r, B g, C b)
-    { _api::fill((float)r,(float)g,(float)b); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->fill((float)r,(float)g,(float)b); }
 
 template<typename A, typename B, typename C, typename D,
          typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
 inline void fill(A r, B g, C b, D a)
-    { _api::fill((float)r,(float)g,(float)b,(float)a); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->fill((float)r,(float)g,(float)b,(float)a); }
 
 template<typename A,
          typename=std::enable_if_t<std::is_arithmetic_v<A>>>
 inline void stroke(A gray)
-    { _api::stroke((float)gray); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->stroke((float)gray); }
 
 template<typename A, typename B,
          typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
 inline void stroke(A gray, B a)
-    { _api::stroke((float)gray,(float)a); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->stroke((float)gray,(float)a); }
 
 template<typename A, typename B, typename C,
          typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
 inline void stroke(A r, B g, C b)
-    { _api::stroke((float)r,(float)g,(float)b); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->stroke((float)r,(float)g,(float)b); }
 
 template<typename A, typename B, typename C, typename D,
          typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
 inline void stroke(A r, B g, C b, D a)
-    { _api::stroke((float)r,(float)g,(float)b,(float)a); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->stroke((float)r,(float)g,(float)b,(float)a); }
 
 template<typename A,
          typename=std::enable_if_t<std::is_arithmetic_v<A>>>
 inline void strokeWeight(A w)
-    { _api::strokeWeight((float)w); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->strokeWeight((float)w); }
 
 template<typename A,
          typename=std::enable_if_t<std::is_arithmetic_v<A>>>
 inline void fill(A gray)
-    { _api::fill((float)gray); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->fill((float)gray); }
 
 template<typename A,
          typename=std::enable_if_t<std::is_arithmetic_v<A>>>
 inline void background(A gray)
-    { _api::background((float)gray); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->background((float)gray); }
 
 template<typename A, typename B,
          typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
 inline void background(A gray, B a)
-    { _api::background((float)gray,(float)a); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->background((float)gray,(float)a); }
 
 template<typename A, typename B, typename C,
          typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
 inline void background(A r, B g, C b)
-    { _api::background((float)r,(float)g,(float)b); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->background((float)r,(float)g,(float)b); }
 
 template<typename A, typename B, typename C, typename D,
          typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
 inline void background(A r, B g, C b, D a)
-    { _api::background((float)r,(float)g,(float)b,(float)a); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->background((float)r,(float)g,(float)b,(float)a); }
 
 
 // Integer-only templates: these cast int args to float and call the float overloads.
@@ -1080,22 +1019,22 @@ inline void background(A r, B g, C b, D a)
 // above and don't recurse back into the template.
 template<typename A, typename=std::enable_if_t<std::is_arithmetic_v<A>>>
 inline void tint(A gray)
-    { _api::tint((float)gray); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->tint((float)gray); }
 
 template<typename A, typename B,
          typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
 inline void tint(A gray, B a)
-    { _api::tint((float)gray,(float)a); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->tint((float)gray,(float)a); }
 
 template<typename A, typename B, typename C,
          typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
 inline void tint(A r, B g, C b)
-    { _api::tint((float)r,(float)g,(float)b); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->tint((float)r,(float)g,(float)b); }
 
 template<typename A, typename B, typename C, typename D,
          typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
 inline void tint(A r, B g, C b, D a)
-    { _api::tint((float)r,(float)g,(float)b,(float)a); }
+    { if(PApplet::g_papplet) PApplet::g_papplet->tint((float)r,(float)g,(float)b,(float)a); }
 
 // =============================================================================
 // SHAPE ATTRIBUTES
@@ -1728,77 +1667,77 @@ inline PVector createVector(float x, float y, float z=0) { return PVector(x, y, 
 // line()
 template<typename A,typename B,typename C,typename D,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
-inline void line(A x1,B y1,C x2,D y2){ _api::line((float)x1,(float)y1,(float)x2,(float)y2); }
+inline void line(A x1,B y1,C x2,D y2){ line((float)x1,(float)y1,(float)x2,(float)y2); }
 template<typename A,typename B,typename C,typename D,typename E,typename F,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>>>
-inline void line(A x1,B y1,C z1,D x2,E y2,F z2){ _api::line((float)x1,(float)y1,(float)z1,(float)x2,(float)y2,(float)z2); }
+inline void line(A x1,B y1,C z1,D x2,E y2,F z2){ line((float)x1,(float)y1,(float)z1,(float)x2,(float)y2,(float)z2); }
 
 // rect()
 template<typename A,typename B,typename C,typename D,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
-inline void rect(A x,B y,C w,D h2){ _api::rect((float)x,(float)y,(float)w,(float)h2); }
+inline void rect(A x,B y,C w,D h2){ rect((float)x,(float)y,(float)w,(float)h2); }
 template<typename A,typename B,typename C,typename D,typename E,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>>>
-inline void rect(A x,B y,C w,D h2,E r){ _api::rect((float)x,(float)y,(float)w,(float)h2,(float)r); }
+inline void rect(A x,B y,C w,D h2,E r){ rect((float)x,(float)y,(float)w,(float)h2,(float)r); }
 
 // ellipse() / circle()
 template<typename A,typename B,typename C,typename D,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
-inline void ellipse(A x,B y,C w,D h2){ _api::ellipse((float)x,(float)y,(float)w,(float)h2); }
+inline void ellipse(A x,B y,C w,D h2){ ellipse((float)x,(float)y,(float)w,(float)h2); }
 template<typename A,typename B,typename C,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
-inline void circle(A x,B y,C d){ _api::circle((float)x,(float)y,(float)d); }
+inline void circle(A x,B y,C d){ circle((float)x,(float)y,(float)d); }
 
 // point()
 template<typename A,typename B,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
-inline void point(A x,B y){ _api::point((float)x,(float)y); }
+inline void point(A x,B y){ point((float)x,(float)y); }
 template<typename A,typename B,typename C,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
-inline void point(A x,B y,C z){ _api::point((float)x,(float)y,(float)z); }
+inline void point(A x,B y,C z){ point((float)x,(float)y,(float)z); }
 
 // triangle()
 template<typename A,typename B,typename C,typename D,typename E,typename F,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>>>
-inline void triangle(A x1,B y1,C x2,D y2,E x3,F y3){ _api::triangle((float)x1,(float)y1,(float)x2,(float)y2,(float)x3,(float)y3); }
+inline void triangle(A x1,B y1,C x2,D y2,E x3,F y3){ triangle((float)x1,(float)y1,(float)x2,(float)y2,(float)x3,(float)y3); }
 
 // quad()
 template<typename A,typename B,typename C,typename D,typename E,typename F,typename G,typename H,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>&&std::is_arithmetic_v<G>&&std::is_arithmetic_v<H>>>
-inline void quad(A x1,B y1,C x2,D y2,E x3,F y3,G x4,H y4){ _api::quad((float)x1,(float)y1,(float)x2,(float)y2,(float)x3,(float)y3,(float)x4,(float)y4); }
+inline void quad(A x1,B y1,C x2,D y2,E x3,F y3,G x4,H y4){ quad((float)x1,(float)y1,(float)x2,(float)y2,(float)x3,(float)y3,(float)x4,(float)y4); }
 
 // arc()
 template<typename A,typename B,typename C,typename D,typename E,typename F,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>>>
-inline void arc(A x,B y,C w,D h2,E start,F stop){ _api::arc((float)x,(float)y,(float)w,(float)h2,(float)start,(float)stop); }
+inline void arc(A x,B y,C w,D h2,E start,F stop){ arc((float)x,(float)y,(float)w,(float)h2,(float)start,(float)stop); }
 template<typename A,typename B,typename C,typename D,typename E,typename F,typename G,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>&&std::is_arithmetic_v<G>>>
-inline void arc(A x,B y,C w,D h2,E start,F stop,G mode){ _api::arc((float)x,(float)y,(float)w,(float)h2,(float)start,(float)stop,(int)mode); }
+inline void arc(A x,B y,C w,D h2,E start,F stop,G mode){ arc((float)x,(float)y,(float)w,(float)h2,(float)start,(float)stop,(int)mode); }
 
 // translate() / rotate() / scale()
 template<typename A,typename B,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
-inline void translate(A x,B y){ _api::translate((float)x,(float)y); }
+inline void translate(A x,B y){ translate((float)x,(float)y); }
 template<typename A,typename B,typename C,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
-inline void translate(A x,B y,C z){ _api::translate((float)x,(float)y,(float)z); }
+inline void translate(A x,B y,C z){ translate((float)x,(float)y,(float)z); }
 template<typename A,
     typename=std::enable_if_t<std::is_arithmetic_v<A>>>
-inline void rotate(A a){ _api::rotate((float)a); }
+inline void rotate(A a){ rotate((float)a); }
 template<typename A,typename B,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
-inline void scale(A s1,B s2){ _api::scale((float)s1,(float)s2); }
+inline void scale(A s1,B s2){ scale((float)s1,(float)s2); }
 
 // vertex()
 template<typename A,typename B,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
-inline void vertex(A x,B y){ _api::vertex((float)x,(float)y); }
+inline void vertex(A x,B y){ vertex((float)x,(float)y); }
 template<typename A,typename B,typename C,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
-inline void vertex(A x,B y,C z){ _api::vertex((float)x,(float)y,(float)z); }
+inline void vertex(A x,B y,C z){ vertex((float)x,(float)y,(float)z); }
 template<typename A,typename B,typename C,typename D,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
-inline void vertex(A x,B y,C u,D v2){ _api::vertex((float)x,(float)y,(float)u,(float)v2); }
+inline void vertex(A x,B y,C u,D v2){ vertex((float)x,(float)y,(float)u,(float)v2); }
 
 // text() position
 template<typename A,typename B,
@@ -1827,18 +1766,18 @@ inline void text(char c,A x,B y,C w,D h2){ text(std::string(1,c),(float)x,(float
 template<typename V,typename A,typename B,typename C,typename D,
     typename=std::enable_if_t<std::is_arithmetic_v<V>&&std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
 inline float map(V value,A start1,B stop1,C start2,D stop2){
-    return _api::map((float)value,(float)start1,(float)stop1,(float)start2,(float)stop2);
+    return map((float)value,(float)start1,(float)stop1,(float)start2,(float)stop2);
 }
 
 // constrain()
 template<typename V,typename A,typename B,
     typename=std::enable_if_t<std::is_arithmetic_v<V>&&std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
-inline float constrain(V val,A lo,B hi){ return _api::constrain((float)val,(float)lo,(float)hi); }
+inline float constrain(V val,A lo,B hi){ return constrain((float)val,(float)lo,(float)hi); }
 
 // lerp()
 template<typename A,typename B,typename C,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
-inline float lerp(A a,B b2,C t){ return _api::lerp((float)a,(float)b2,(float)t); }
+inline float lerp(A a,B b2,C t){ return lerp((float)a,(float)b2,(float)t); }
 
 // bezier() -- 8 arithmetic params
 template<typename A,typename B,typename C,typename D,
@@ -1931,7 +1870,6 @@ struct PApplet {
     bool  _keyPressed = false;
     int   keyCode = 0;
     char  key = 0;
-    std::unordered_set<int> keys; // all currently held keycodes (FPS-style)
 
     int   frameCount = 1;
     float currentFrameRate = 60.0f;
@@ -2292,10 +2230,6 @@ struct PApplet {
     void text(const std::string& msg, float x, float y, float w, float h);
     void text(int val, float x, float y);
     void text(float val, float x, float y);
-    void text(char c, float x, float y) { text(std::string(1,c), x, y); }
-    void text(char c, float x, float y, float w, float h) { text(std::string(1,c), x, y, w, h); }
-    template<typename X,typename Y,typename=std::enable_if_t<std::is_arithmetic_v<X>&&std::is_arithmetic_v<Y>>>
-    void text(char c, X x, Y y) { text(std::string(1,c),(float)x,(float)y); }
     void textSize(float size);
     void textAlign(int alignX, int alignY=-1);
     void textLeading(float leading);
@@ -2627,54 +2561,6 @@ protected:
 };
 
 inline PApplet* PApplet::g_papplet = nullptr;
-// ── _api:: implementations (after PApplet is complete) ───────────────────────
-namespace _api {
-    inline void line(float x1,float y1,float x2,float y2){ if(PApplet::g_papplet) PApplet::g_papplet->line(x1,y1,x2,y2); }
-    inline void line(float x1,float y1,float z1,float x2,float y2,float z2){ if(PApplet::g_papplet) PApplet::g_papplet->line(x1,y1,z1,x2,y2,z2); }
-    inline void rect(float x,float y,float w,float h){ if(PApplet::g_papplet) PApplet::g_papplet->rect(x,y,w,h); }
-    inline void rect(float x,float y,float w,float h,float r){ if(PApplet::g_papplet) PApplet::g_papplet->rect(x,y,w,h,r); }
-    inline void ellipse(float x,float y,float w,float h){ if(PApplet::g_papplet) PApplet::g_papplet->ellipse(x,y,w,h); }
-    inline void circle(float x,float y,float d){ if(PApplet::g_papplet) PApplet::g_papplet->circle(x,y,d); }
-    inline void point(float x,float y){ if(PApplet::g_papplet) PApplet::g_papplet->point(x,y); }
-    inline void point(float x,float y,float z){ if(PApplet::g_papplet) PApplet::g_papplet->point(x,y,z); }
-    inline void triangle(float x1,float y1,float x2,float y2,float x3,float y3){ if(PApplet::g_papplet) PApplet::g_papplet->triangle(x1,y1,x2,y2,x3,y3); }
-    inline void quad(float x1,float y1,float x2,float y2,float x3,float y3,float x4,float y4){ if(PApplet::g_papplet) PApplet::g_papplet->quad(x1,y1,x2,y2,x3,y3,x4,y4); }
-    inline void arc(float x,float y,float w,float h,float s,float e){ if(PApplet::g_papplet) PApplet::g_papplet->arc(x,y,w,h,s,e); }
-    inline void arc(float x,float y,float w,float h,float s,float e,int m){ if(PApplet::g_papplet) PApplet::g_papplet->arc(x,y,w,h,s,e,m); }
-    inline void translate(float x,float y){ if(PApplet::g_papplet) PApplet::g_papplet->translate(x,y); }
-    inline void translate(float x,float y,float z){ if(PApplet::g_papplet) PApplet::g_papplet->translate(x,y,z); }
-    inline void rotate(float a){ if(PApplet::g_papplet) PApplet::g_papplet->rotate(a); }
-    inline void scale(float s1,float s2){ if(PApplet::g_papplet) PApplet::g_papplet->scale(s1,s2); }
-    inline void vertex(float x,float y){ if(PApplet::g_papplet) PApplet::g_papplet->vertex(x,y); }
-    inline void vertex(float x,float y,float z){ if(PApplet::g_papplet) PApplet::g_papplet->vertex(x,y,z); }
-    inline void vertex(float x,float y,float u,float v){ if(PApplet::g_papplet) PApplet::g_papplet->vertex(x,y,u,v); }
-    inline void bezier(float x1,float y1,float cx1,float cy1,float cx2,float cy2,float x2,float y2){ if(PApplet::g_papplet) PApplet::g_papplet->bezier(x1,y1,cx1,cy1,cx2,cy2,x2,y2); }
-    inline void curve(float x0,float y0,float x1,float y1,float x2,float y2,float x3,float y3){ if(PApplet::g_papplet) PApplet::g_papplet->curve(x0,y0,x1,y1,x2,y2,x3,y3); }
-    inline void text(float v,float x,float y){ if(PApplet::g_papplet) PApplet::g_papplet->text(v,x,y); }
-    inline void text(const std::string& s,float x,float y){ if(PApplet::g_papplet) PApplet::g_papplet->text(s,x,y); }
-    inline void text(const std::string& s,float x,float y,float w,float h){ if(PApplet::g_papplet) PApplet::g_papplet->text(s,x,y,w,h); }
-    inline float map(float v,float i0,float i1,float o0,float o1){ return PApplet::map(v,i0,i1,o0,o1); }
-    inline float constrain(float v,float lo,float hi){ return PApplet::constrain(v,lo,hi); }
-    inline float lerp(float a,float b,float t){ return PApplet::lerp(a,b,t); }
-    inline void fill(float g){ if(PApplet::g_papplet) PApplet::g_papplet->fill(g); }
-    inline void fill(float g,float a){ if(PApplet::g_papplet) PApplet::g_papplet->fill(g,a); }
-    inline void fill(float r,float g,float b){ if(PApplet::g_papplet) PApplet::g_papplet->fill(r,g,b); }
-    inline void fill(float r,float g,float b,float a){ if(PApplet::g_papplet) PApplet::g_papplet->fill(r,g,b,a); }
-    inline void stroke(float g){ if(PApplet::g_papplet) PApplet::g_papplet->stroke(g); }
-    inline void stroke(float g,float a){ if(PApplet::g_papplet) PApplet::g_papplet->stroke(g,a); }
-    inline void stroke(float r,float g,float b){ if(PApplet::g_papplet) PApplet::g_papplet->stroke(r,g,b); }
-    inline void stroke(float r,float g,float b,float a){ if(PApplet::g_papplet) PApplet::g_papplet->stroke(r,g,b,a); }
-    inline void background(float g){ if(PApplet::g_papplet) PApplet::g_papplet->background(g); }
-    inline void background(float g,float a){ if(PApplet::g_papplet) PApplet::g_papplet->background(g,a); }
-    inline void background(float r,float g,float b){ if(PApplet::g_papplet) PApplet::g_papplet->background(r,g,b); }
-    inline void background(float r,float g,float b,float a){ if(PApplet::g_papplet) PApplet::g_papplet->background(r,g,b,a); }
-    inline void tint(float g){ if(PApplet::g_papplet) PApplet::g_papplet->tint(g); }
-    inline void tint(float g,float a){ if(PApplet::g_papplet) PApplet::g_papplet->tint(g,a); }
-    inline void tint(float r,float g,float b){ if(PApplet::g_papplet) PApplet::g_papplet->tint(r,g,b); }
-    inline void tint(float r,float g,float b,float a){ if(PApplet::g_papplet) PApplet::g_papplet->tint(r,g,b,a); }
-    inline void strokeWeight(float w){ if(PApplet::g_papplet) PApplet::g_papplet->strokeWeight(w); }
-} // namespace _api
-
 
 
 
