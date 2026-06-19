@@ -292,8 +292,6 @@ static float _colorMaxA(){
 
 color::color(int gray)              { value = _makeColor((float)gray, _colorMaxA()).value; }
 color::color(int gray, int a)       { value = _makeColor((float)gray, (float)a).value; }
-color::color(int r, int g, int b)   { value = _makeColor((float)r,(float)g,(float)b,_colorMaxA()).value; }
-color::color(int r,int g,int b,int a){ value = _makeColor((float)r,(float)g,(float)b,(float)a).value; }
 color::color(float gray)            { value = _makeColor(gray, _colorMaxA()).value; }
 color::color(float gray, float a)   { value = _makeColor(gray, a).value; }
 color::color(float r,float g,float b){ value = _makeColor(r,g,b,_colorMaxA()).value; }
@@ -579,6 +577,7 @@ void PApplet::fullScreen() {
     }
 }
 void PApplet::frameRate(int fps){currentFrameRate=fps;targetFrameTime=1.0/fps;}
+void PApplet::vsync(bool on){if(gWindow) glfwSwapInterval(on?1:0);}
 void PApplet::noLoop(){looping=false;}
 void PApplet::loop()  {looping=true;}
 void PApplet::redraw(){redrawOnce=true;}
@@ -722,20 +721,24 @@ void PApplet::setBg(float r,float g,float b,float a){
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 }
 void PApplet::background(float gray, float a) {
+    _backgroundCalledThisFrame = true;
     color c = makeColor(gray, a);
     unsigned int v = c.value;
     setBg((v>>16&0xFF)/255.f, (v>>8&0xFF)/255.f, (v&0xFF)/255.f, (v>>24&0xFF)/255.f);
 }
 void PApplet::background(float r, float g, float b, float a) {
+    _backgroundCalledThisFrame = true;
     color c = makeColor(r, g, b, a);
     unsigned int v = c.value;
     setBg((v>>16&0xFF)/255.f, (v>>8&0xFF)/255.f, (v&0xFF)/255.f, (v>>24&0xFF)/255.f);
 }
 void PApplet::background(color c) {
+    _backgroundCalledThisFrame = true;
     unsigned int v = c.value;
     setBg((v>>16&0xFF)/255.f, (v>>8&0xFF)/255.f, (v&0xFF)/255.f, (v>>24&0xFF)/255.f);
 }
 void PApplet::background(const PImage& img) {
+    _backgroundCalledThisFrame = true;
     // Draw image as full-canvas background
     if (img.width == 0 || img.height == 0) return;
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1900,19 +1903,28 @@ bool PApplet::loadTTFFile(const std::string& path) {
 
 void PApplet::bakeAtlas(float pixelSize) {
     if (!g_ttf.loaded) return;
-    if (std::fabs(pixelSize - g_ttf.bakeSize) < 0.5f) return;
-    g_ttf.bakeSize = pixelSize;
-    // Use a large atlas to guarantee all glyphs fit at any size
+    // Cache key: rounded to nearest 0.5px to avoid float noise
+    int cacheKey = (int)std::round(pixelSize * 2.0f);
+    // Check cache — if already baked this size, just activate it
+    auto it = g_ttf.atlasCache.find(cacheKey);
+    if (it != g_ttf.atlasCache.end()) {
+        g_ttf.current = &it->second;
+        g_ttf.texID   = g_ttf.current->texID;
+        g_ttf.chars   = g_ttf.current->chars;
+        g_ttf.bakeSize = pixelSize;
+        return;
+    }
+    // Not cached — bake a new atlas for this size
+    TTFAtlas atlas;
     g_ttf.atlasW = 1024; g_ttf.atlasH = 1024;
     std::vector<unsigned char> bitmap(g_ttf.atlasW * g_ttf.atlasH);
     int ret = stbtt_BakeFontBitmap(
         g_ttf.data.data(), 0, pixelSize,
         bitmap.data(), g_ttf.atlasW, g_ttf.atlasH,
-        32, 96, g_ttf.chars);
+        32, 96, atlas.chars);
     if (ret == 0) { g_ttf.loaded = false; return; }
-    // Upload as RGBA texture
-    if (g_ttf.texID == 0) glGenTextures(1, &g_ttf.texID);
-    glBindTexture(GL_TEXTURE_2D, g_ttf.texID);
+    glGenTextures(1, &atlas.texID);
+    glBindTexture(GL_TEXTURE_2D, atlas.texID);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     std::vector<unsigned char> rgba(g_ttf.atlasW * g_ttf.atlasH * 4);
@@ -1923,6 +1935,12 @@ void PApplet::bakeAtlas(float pixelSize) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, g_ttf.atlasW, g_ttf.atlasH,
                  0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
     glBindTexture(GL_TEXTURE_2D, 0);
+    // Store in cache
+    g_ttf.atlasCache[cacheKey] = std::move(atlas);
+    g_ttf.current = &g_ttf.atlasCache[cacheKey];
+    g_ttf.texID   = g_ttf.current->texID;
+    g_ttf.chars   = g_ttf.current->chars;
+    g_ttf.bakeSize = pixelSize;
 }
 #endif // PROCESSING_HAS_STB_TRUETYPE
 
@@ -2563,17 +2581,29 @@ static void mouse_btn_cb(GLFWwindow*, int btn, int action, int mods) {
     p->g_currentMods = mods;
     if (action == GLFW_PRESS) {
         p->_mousePressed = true;
+        if(btn>=0&&btn<8) p->mouseButtons[btn]=true;
+        { int mb=(btn==GLFW_MOUSE_BUTTON_LEFT)?37:(btn==GLFW_MOUSE_BUTTON_RIGHT)?39:3;
+          if(mb<128) p->mouseDown[mb]=true; }
         if      (btn == GLFW_MOUSE_BUTTON_LEFT)   p->mouseButton = LEFT;
         else if (btn == GLFW_MOUSE_BUTTON_RIGHT)  p->mouseButton = RIGHT;
         else                                       p->mouseButton = CENTER;
+        p->_eventDrewSomething=true;
+        p->_eventDrewSomething=true;
         p->mousePressed();
         p->mouseWasPressed = true;
     } else if (action == GLFW_RELEASE) {
-        p->_mousePressed = false;
+        if(btn>=0&&btn<8) p->mouseButtons[btn]=false;
+        { int mb=(btn==GLFW_MOUSE_BUTTON_LEFT)?37:(btn==GLFW_MOUSE_BUTTON_RIGHT)?39:3;
+          if(mb<128) p->mouseDown[mb]=false; }
+        bool anyMouse=false;
+        for(int i=0;i<8;i++) if(p->mouseButtons[i]){anyMouse=true;break;}
+        p->_mousePressed=anyMouse;
+        p->mouseButton = p->mouseButtons[GLFW_MOUSE_BUTTON_LEFT]   ? LEFT  :
+                         p->mouseButtons[GLFW_MOUSE_BUTTON_RIGHT]  ? RIGHT :
+                         p->mouseButtons[GLFW_MOUSE_BUTTON_MIDDLE] ? CENTER : -1;
         p->mouseReleased();
-        if (p->mouseWasPressed && p->_onMouseClicked) p->_onMouseClicked();
-        p->mouseWasPressed = false;
-        p->mouseButton = -1;
+        if(p->mouseWasPressed) p->mouseClicked();
+        p->mouseWasPressed=false;
     }
 }
 static void scroll_cb(GLFWwindow*,double,double yoffset){
@@ -2591,6 +2621,7 @@ static void char_cb(GLFWwindow*, unsigned int codepoint) {
     // Fire deferred keyPressed() now that p->key has the correct char value
     if (p->g_pendingKeyPressed) {
         p->g_pendingKeyPressed = false;
+        p->_eventDrewSomething=true;
         p->keyPressed();
     }
     // keyTyped() -- Processing standard: only printable chars, no action keys
@@ -2645,11 +2676,62 @@ static int glfw_to_java_keycode(int k) {
 }
 
 // Current modifier state -- set from key_cb mods parameter (reliable on Windows)
+
+// Map GLFW keycode -> Processing/Java keyCode constant
+static int glfw_to_processing_keycode(int k) {
+    if(k >= GLFW_KEY_A && k <= GLFW_KEY_Z) return 'A' + (k - GLFW_KEY_A); // 65-90
+    if(k >= GLFW_KEY_0 && k <= GLFW_KEY_9) return '0' + (k - GLFW_KEY_0); // 48-57
+    switch(k) {
+        case GLFW_KEY_UP:           return 38;
+        case GLFW_KEY_DOWN:         return 40;
+        case GLFW_KEY_LEFT:         return 37;
+        case GLFW_KEY_RIGHT:        return 39;
+        case GLFW_KEY_LEFT_SHIFT:
+        case GLFW_KEY_RIGHT_SHIFT:  return 16;  // SHIFT
+        case GLFW_KEY_LEFT_CONTROL:
+        case GLFW_KEY_RIGHT_CONTROL:return 17;  // CONTROL
+        case GLFW_KEY_LEFT_ALT:
+        case GLFW_KEY_RIGHT_ALT:    return 18;  // ALT
+        case GLFW_KEY_SPACE:        return 32;
+        case GLFW_KEY_ENTER:
+        case GLFW_KEY_KP_ENTER:     return 10;
+        case GLFW_KEY_BACKSPACE:    return 8;
+        case GLFW_KEY_TAB:          return 9;
+        case GLFW_KEY_ESCAPE:       return 27;
+        case GLFW_KEY_DELETE:       return 127;
+        case GLFW_KEY_HOME:         return 36;
+        case GLFW_KEY_END:          return 35;
+        case GLFW_KEY_PAGE_UP:      return 33;
+        case GLFW_KEY_PAGE_DOWN:    return 34;
+        case GLFW_KEY_INSERT:       return 155;
+        case GLFW_KEY_F1:           return 112;
+        case GLFW_KEY_F2:           return 113;
+        case GLFW_KEY_F3:           return 114;
+        case GLFW_KEY_F4:           return 115;
+        case GLFW_KEY_F5:           return 116;
+        case GLFW_KEY_F6:           return 117;
+        case GLFW_KEY_F7:           return 118;
+        case GLFW_KEY_F8:           return 119;
+        case GLFW_KEY_F9:           return 120;
+        case GLFW_KEY_F10:          return 121;
+        case GLFW_KEY_F11:          return 122;
+        case GLFW_KEY_F12:          return 123;
+        default:                    return -1;
+    }
+}
+
 static void key_cb(GLFWwindow* w, int k, int /*scancode*/, int action, int mods) {
     auto* p = PApplet::g_papplet; if(!p) return;
     p->g_currentMods = mods; // capture before callbacks fire
     if (action == GLFW_PRESS || action == GLFW_REPEAT) {
         p->_keyPressed = true;
+        if(k>=0&&k<349) p->keys[k]=true;
+        { int pk=glfw_to_processing_keycode(k); if(pk>=0&&pk<256) {
+            p->keysDown[pk]=true;
+            // Also store lowercase so K['w'] and K['W'] both work
+            if(pk>='A'&&pk<='Z') p->keysDown[pk+32]=true;
+            if(pk>='a'&&pk<='z') p->keysDown[pk-32]=true;
+          } }
         p->g_pendingKeyPressed = false; // reset for each new p->key event
 
         // Translate GLFW code -> Java KeyEvent.VK_* value (Processing reference standard)
@@ -2703,6 +2785,7 @@ static void key_cb(GLFWwindow* w, int k, int /*scancode*/, int action, int mods)
 
         // Fire keyPressed() now unless deferred to char_cb
         if (!p->g_pendingKeyPressed) {
+            if(action==GLFW_PRESS) p->_eventDrewSomething=true;
             p->keyPressed();
             // Java Processing: ESC closes the sketch unless keyPressed() set p->key=0
             if (p->key == (char)27 && p->gWindow)
@@ -2710,7 +2793,15 @@ static void key_cb(GLFWwindow* w, int k, int /*scancode*/, int action, int mods)
         }
 
     } else if (action == GLFW_RELEASE) {
-        p->_keyPressed = false;
+        if(k>=0&&k<349) p->keys[k]=false;
+        { int pk=glfw_to_processing_keycode(k); if(pk>=0&&pk<256) {
+            p->keysDown[pk]=false;
+            if(pk>='A'&&pk<='Z') p->keysDown[pk+32]=false;
+            if(pk>='a'&&pk<='z') p->keysDown[pk-32]=false;
+          } }
+        // check if any key still held
+        bool anyHeld=false; for(int i=0;i<349;i++) if(p->keys[i]){anyHeld=true;break;}
+        p->_keyPressed=anyHeld;
         p->g_currentMods = mods; // update on release too
         p->keyReleased();
     }
@@ -2799,7 +2890,25 @@ void PApplet::run(){
     gWindow=glfwCreateWindow(winWidth,winHeight,g_sketchName.c_str(),nullptr,nullptr);
     // Prevent freeze when dragging title bar on Windows
     glfwSetWindowRefreshCallback(gWindow,[](GLFWwindow* w){
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+        // Originally just glClear()+swap "to prevent freeze when dragging the
+        // title bar on Windows" -- but this unconditionally WIPES the screen
+        // on every OS/WM-triggered refresh event (resize, focus change,
+        // workspace switch, tiling re-layout, etc.), with no attempt to
+        // redraw actual sketch content. On tiling WMs like i3 that send
+        // refresh events frequently, this is what made noLoop() sketches
+        // (which never swap again after their one real draw) appear to
+        // "show the image, then go blank a few frames later" -- the WM's
+        // very next refresh event was clearing it out from under them.
+        // Restoring from the persist FBO (the last frame we know is
+        // correct) instead of blank-clearing keeps the window responsive
+        // during the same blocking scenarios (e.g. title-bar drag) while
+        // never destroying real content.
+        auto* p = PApplet::g_papplet;
+        if (p && p->persistFBO) {
+            p->restoreFromPersist();
+        } else {
+            glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+        }
         glfwSwapBuffers(w);
     });
     if(!gWindow){
@@ -2811,6 +2920,7 @@ void PApplet::run(){
         glfwTerminate(); return;
     }
     glfwMakeContextCurrent(gWindow);
+    glfwSwapInterval(1); // vsync on by default
     GLenum glewErr = glewInit();
     if(glewErr != GLEW_OK){
 #ifdef _WIN32
@@ -2966,6 +3076,19 @@ void PApplet::run(){
         flushPoints(); // flush any pending points before swap
         saveToPersist(); // save back buffer before swap for next frame restore
         glfwSwapBuffers(gWindow);
+        // For noLoop() sketches, this is the ONLY draw that will ever happen --
+        // the main loop below never swaps again (looping||redrawOnce stays
+        // false forever after this point). With double buffering, a single
+        // swap leaves the correct image in only ONE of the two buffers; the
+        // other buffer still holds stale content from the settle loop above.
+        // If anything outside our control (window manager/compositor on
+        // tiling WMs like i3, focus changes, etc.) forces an implicit buffer
+        // flip later, that stale buffer becomes visible and the sketch
+        // appears to "go blank" after a few frames. Restoring from the
+        // persist FBO we just saved and swapping again primes BOTH buffers
+        // with the correct content, so no swap-parity assumption is needed.
+        restoreFromPersist();
+        glfwSwapBuffers(gWindow);
     }
 
     redrawOnce = looping;
@@ -3022,7 +3145,7 @@ void PApplet::run(){
                 // Restore previous frame content from persist FBO.
                 // Sketches that call background() will overwrite this.
                 // Sketches that don't (like Continuous Lines) preserve their drawn content.
-                restoreFromPersist();
+                if(!_backgroundCalledThisFrame) restoreFromPersist();
                 glClear(GL_DEPTH_BUFFER_BIT);
             }
 
@@ -3075,14 +3198,19 @@ void PApplet::run(){
                 // Reset tint state each frame (Processing Java behavior)
                 doTint=false; tintR=1; tintG=1; tintB=1; tintA=1;
                 glGetError();
+                _backgroundCalledThisFrame = false;
                 ++frameCount; this->draw(); pmouseX=mouseX; pmouseY=mouseY; mouseDX=0; mouseDY=0;
                 glGetError(); // consume any GL errors
             }
 
-            saveToPersist();
+            // Only save persist FBO if sketch uses persistence (no background() call)
+            if(!_backgroundCalledThisFrame) saveToPersist();
             glfwSwapBuffers(gWindow);
         }
         glfwPollEvents();
+        // Only re-save persist if an event callback drew something.
+        // Checked via _eventDrewSomething flag set in keyPressed/mousePressed.
+        if(persistFBO && _eventDrewSomething) { saveToPersist(); _eventDrewSomething=false; }
         auto now=std::chrono::steady_clock::now();
         double elapsed=std::chrono::duration<double>(now-last).count();
         if(elapsed>0) measuredFrameRate=measuredFrameRate*0.9f+(float)(1.0/elapsed)*0.1f;

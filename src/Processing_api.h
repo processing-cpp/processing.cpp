@@ -11,6 +11,10 @@ inline float sq(float x)                   { return PApplet::sq(x); }
 inline float lerp(float a,float b,float t) { return PApplet::lerp(a,b,t); }
 inline float map(float v,float i0,float i1,float o0,float o1) { return PApplet::map(v,i0,i1,o0,o1); }
 inline float constrain(float v,float lo,float hi) { return PApplet::constrain(v,lo,hi); }
+inline float max(float a,float b)         { return PApplet::max(a,b); }
+inline float min(float a,float b)         { return PApplet::min(a,b); }
+inline float max(float a,float b,float c) { return PApplet::max(a,b,c); }
+inline float min(float a,float b,float c) { return PApplet::min(a,b,c); }
 inline float dist(float x1,float y1,float x2,float y2) { return PApplet::dist(x1,y1,x2,y2); }
 inline float dist(float x1,float y1,float z1,float x2,float y2,float z2) { return PApplet::dist(x1,y1,z1,x2,y2,z2); }
 inline float mag(float x,float y)          { return PApplet::mag(x,y); }
