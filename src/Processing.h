@@ -750,12 +750,23 @@ struct color {
     color() : value(0xFF000000) {}         // default: opaque black
     color(unsigned int v) : value(v) {}  // allows color pix = img->get(x,y)
 
-    // These constructors call makeColor() which applies colorMode.
     // Defined in Processing.cpp so the colorMode globals are accessible.
+    //
+    // 3-arg and 4-arg int overloads were intentionally removed: they were
+    // pure pass-throughs that cast to float and called the exact same
+    // _makeColor() the float overloads call directly, so removing them
+    // changes no runtime behavior -- it only removes the possibility of
+    // ambiguous overload resolution on mixed-type calls like
+    // color(map(...), map(...), 50).
+    //
+    // 1-arg and 2-arg int overloads are KEPT: color(int) would otherwise be
+    // ambiguous between color(float) (grayscale) and color(unsigned int)
+    // (raw packed ARGB pixel value, e.g. color pix = img->get(x,y)) -- two
+    // different, equally-valid implicit conversions for the same int
+    // literal. color(int gray) as an EXACT match resolves that in favor
+    // of "grayscale", matching real Processing semantics.
     color(int gray);
     color(int gray, int a);
-    color(int r, int g, int b);
-    color(int r, int g, int b, int a);
     // Use explicit cast: color(0,153,204,(int)a) or color(0.f,153.f,204.f,a)
     color(float gray);
     color(float gray, float a);
@@ -1303,6 +1314,110 @@ public:
 // TYPED LISTS / DICTS  --  match Processing Java's IntList, FloatDict, etc.
 // =============================================================================
 
+// =============================================================================
+// String -- real wrapper class with Java's String API, NOT a textual
+// rename to std::string. Inherits std::string for storage/operators
+// (+, ==, <<, etc. all keep working), and adds Java-named methods so
+// sketch authors can transfer their Java/Processing knowledge directly:
+// length(), charAt(), equals(), equalsIgnoreCase(), substring(),
+// indexOf(), lastIndexOf(), toLowerCase(), toUpperCase(), trim(),
+// contains(), startsWith(), endsWith(), replace(), isEmpty(), concat(),
+// compareTo(). Regex-based methods (matches/replaceAll/split with regex)
+// are intentionally NOT implemented -- real Processing sketches rarely
+// use them, and a correct regex engine is a much bigger addition.
+// =============================================================================
+class String : public std::string {
+public:
+    String() : std::string() {}
+    String(const std::string& s) : std::string(s) {}
+    String(const char* s) : std::string(s) {}
+    String(char c) : std::string(1, c) {}
+    String(const std::string& s, size_t pos, size_t len = npos) : std::string(s, pos, len) {}
+
+    int length() const { return (int)size(); }
+    bool isEmpty() const { return empty(); }
+
+    char charAt(int index) const { return at((size_t)index); }
+
+    bool equals(const std::string& other) const { return *this == other; }
+    bool equalsIgnoreCase(const std::string& other) const {
+        if (size() != other.size()) return false;
+        for (size_t i = 0; i < size(); i++)
+            if (tolower((unsigned char)(*this)[i]) != tolower((unsigned char)other[i])) return false;
+        return true;
+    }
+
+    String substring(int beginIndex) const {
+        if (beginIndex < 0) beginIndex = 0;
+        if ((size_t)beginIndex > size()) beginIndex = (int)size();
+        return String(substr((size_t)beginIndex));
+    }
+    String substring(int beginIndex, int endIndex) const {
+        if (beginIndex < 0) beginIndex = 0;
+        if (endIndex > (int)size()) endIndex = (int)size();
+        if (endIndex < beginIndex) endIndex = beginIndex;
+        return String(substr((size_t)beginIndex, (size_t)(endIndex - beginIndex)));
+    }
+
+    int indexOf(const std::string& needle) const {
+        size_t p = find(needle);
+        return p == npos ? -1 : (int)p;
+    }
+    int indexOf(const std::string& needle, int fromIndex) const {
+        size_t p = find(needle, (size_t)std::max(0, fromIndex));
+        return p == npos ? -1 : (int)p;
+    }
+    int lastIndexOf(const std::string& needle) const {
+        size_t p = rfind(needle);
+        return p == npos ? -1 : (int)p;
+    }
+
+    String toLowerCase() const {
+        std::string r = *this;
+        for (auto& c : r) c = (char)tolower((unsigned char)c);
+        return String(r);
+    }
+    String toUpperCase() const {
+        std::string r = *this;
+        for (auto& c : r) c = (char)toupper((unsigned char)c);
+        return String(r);
+    }
+
+    String trim() const {
+        size_t start = find_first_not_of(" \t\n\r\f\v");
+        if (start == npos) return String("");
+        size_t end = find_last_not_of(" \t\n\r\f\v");
+        return String(substr(start, end - start + 1));
+    }
+
+    bool contains(const std::string& needle) const { return find(needle) != npos; }
+    bool startsWith(const std::string& prefix) const {
+        return size() >= prefix.size() && compare(0, prefix.size(), prefix) == 0;
+    }
+    bool endsWith(const std::string& suffix) const {
+        return size() >= suffix.size() && compare(size() - suffix.size(), suffix.size(), suffix) == 0;
+    }
+
+    String replace(char oldChar, char newChar) const {
+        std::string r = *this;
+        for (auto& c : r) if (c == oldChar) c = newChar;
+        return String(r);
+    }
+    String replace(const std::string& oldStr, const std::string& newStr) const {
+        std::string r = *this;
+        size_t pos = 0;
+        while ((pos = r.find(oldStr, pos)) != npos) {
+            r.replace(pos, oldStr.size(), newStr);
+            pos += newStr.size();
+        }
+        return String(r);
+    }
+
+    String concat(const std::string& other) const { return String(*this + other); }
+
+    int compareTo(const std::string& other) const { return compare(other); }
+};
+
 class IntList {
 public:
     std::vector<int> data;
@@ -1372,6 +1487,32 @@ public:
     void        remove(int i)                   { data.erase(data.begin()+i); }
     void        clear()                         { data.clear(); }
     std::string& operator[](int i)              { return data[i]; }
+};
+
+// =============================================================================
+// ArrayList<T> -- Java-style generic list, backed by std::vector. Real
+// Processing/Java method names (add/get/remove/size/isEmpty/contains),
+// NOT a textual rewrite to std::vector, since std::vector's own method
+// names (push_back/operator[]/erase) don't match what sketch source
+// written against Java's ArrayList API actually calls.
+template<typename T>
+class ArrayList {
+public:
+    std::vector<T> data;
+    ArrayList() = default;
+    ArrayList(std::initializer_list<T> l) : data(l) {}
+    void  add(const T& v)           { data.push_back(v); }
+    void  add(int i, const T& v)    { data.insert(data.begin()+i, v); }
+    void  set(int i, const T& v)    { data[i]=v; }
+    T     get(int i)            const{ return data[i]; }
+    int   size()                const{ return (int)data.size(); }
+    bool  isEmpty()              const{ return data.empty(); }
+    bool  contains(const T& v)  const{ return std::find(data.begin(),data.end(),v)!=data.end(); }
+    void  remove(int i)              { data.erase(data.begin()+i); }
+    void  clear()                    { data.clear(); }
+    T&    operator[](int i)          { return data[i]; }
+    auto  begin() { return data.begin(); }
+    auto  end()   { return data.end(); }
 };
 
 // =============================================================================
@@ -1931,7 +2072,12 @@ struct PApplet {
     bool  _keyPressed = false;
     int   keyCode = 0;
     char  key = 0;
-    std::unordered_set<int> keys; // all currently held keycodes (FPS-style)
+    bool  keys[349] = {};        // all currently held GLFW keycodes (AAA-style flat array)
+    bool  mouseButtons[8] = {};  // all currently held mouse buttons (GLFW_MOUSE_BUTTON_*)
+    bool  keysDown[256] = {};    // Processing-keycode-indexed, mirrors upper/lower letters
+    bool  mouseDown[128] = {};   // Processing mouse-button-indexed (LEFT/RIGHT/CENTER)
+    bool  _eventDrewSomething = false;        // set true if keyPressed()/mousePressed() drew
+    bool  _backgroundCalledThisFrame = false; // set true if background() was called this frame
 
     int   frameCount = 1;
     float currentFrameRate = 60.0f;
@@ -2005,6 +2151,7 @@ struct PApplet {
     void size(int w, int h, int renderer);
     void fullScreen();
     void frameRate(int fps);
+    void vsync(bool on); // vsync(true)=cap to display refresh, vsync(false)=uncapped
     void noLoop();
     void loop();
     void redraw();
@@ -2538,11 +2685,17 @@ struct PApplet {
     int   g_textAlignY = BASELINE;
     float g_textLeading = 0.0f;
 #if PROCESSING_HAS_STB_TRUETYPE
+    struct TTFAtlas {
+        GLuint texID = 0;
+        stbtt_bakedchar chars[96];
+    };
     struct TTFFont {
         stbtt_fontinfo info;
         std::vector<unsigned char> data;
+        std::unordered_map<int, TTFAtlas> atlasCache; // keyed by round(pixelSize*2)
+        TTFAtlas* current = nullptr;
         GLuint texID = 0;
-        stbtt_bakedchar chars[96];
+        stbtt_bakedchar* chars = nullptr;
         int atlasW = 512, atlasH = 512;
         float bakeSize = 0.0f;
         bool  loaded   = false;

@@ -9,6 +9,8 @@ inline float radians(float d)              { return PApplet::radians(d); }
 inline float degrees(float r)              { return PApplet::degrees(r); }
 inline float sq(float x)                   { return PApplet::sq(x); }
 inline float lerp(float a,float b,float t) { return PApplet::lerp(a,b,t); }
+inline bool* getKeysDown()  { return PApplet::g_papplet ? PApplet::g_papplet->keysDown  : nullptr; }
+inline bool* getMouseDown() { return PApplet::g_papplet ? PApplet::g_papplet->mouseDown : nullptr; }
 inline float map(float v,float i0,float i1,float o0,float o1) { return PApplet::map(v,i0,i1,o0,o1); }
 inline float constrain(float v,float lo,float hi) { return PApplet::constrain(v,lo,hi); }
 inline float max(float a,float b)         { return PApplet::max(a,b); }
