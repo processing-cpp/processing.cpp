@@ -646,7 +646,21 @@ bool PApplet::isAltDown() {
 
 void PApplet::windowRatio(int w,int h){if(gWindow)glfwSetWindowAspectRatio(gWindow,w,h);}
 void PApplet::pixelDensity(int d){pixelDensityValue=d;}
-void PApplet::smooth()  {smoothing=true; glEnable(GL_LINE_SMOOTH);glHint(GL_LINE_SMOOTH_HINT,GL_NICEST);glEnable(GL_POINT_SMOOTH);glHint(GL_POINT_SMOOTH_HINT,GL_NICEST);glEnable(GL_MULTISAMPLE);}
+void PApplet::smooth(int level) {
+    // The MAIN window's actual MSAA sample count is fixed at window-creation
+    // time (GLFW_SAMPLES is a window hint, can't change after the window
+    // exists) -- so smooth(level) can't retroactively change the main
+    // canvas's hardware sample count the way real Processing's P2D/P3D
+    // renderers can. What we CAN do: store the requested level (used by
+    // PGraphics buffers below, which DO get to choose their own sample
+    // count fresh at creation time), and toggle the same smoothing flags
+    // smooth() always has, regardless of which level was requested.
+    smoothing = true;
+    smoothLevel = level;
+    glEnable(GL_LINE_SMOOTH);glHint(GL_LINE_SMOOTH_HINT,GL_NICEST);
+    glEnable(GL_POINT_SMOOTH);glHint(GL_POINT_SMOOTH_HINT,GL_NICEST);
+    glEnable(GL_MULTISAMPLE);
+}
 void PApplet::noSmooth(){smoothing=false;glDisable(GL_LINE_SMOOTH);glDisable(GL_POLYGON_SMOOTH);glDisable(GL_POINT_SMOOTH);glDisable(GL_MULTISAMPLE);}
 void PApplet::hint(int which){
     switch(which){
@@ -916,15 +930,33 @@ void PApplet::rect(float x, float y, float w, float h) {
     }
 
     if (doStroke) {
-        // Expand stroke outward by half strokeWeight so it sits outside the fill
-        float half = strokeW * 0.5f;
+        // Real Processing centers the stroke ON the rectangle's boundary
+        // (half the weight extends inward over the fill, half extends
+        // outward) -- NOT entirely outside it. The previous version drew
+        // the stroke loop expanded fully outward, which meant increasing
+        // strokeWeight never visually shrank the filled interior (it
+        // does in real Processing, since the inward half of a thick
+        // stroke covers part of the fill), and glLineWidth-rendered
+        // GL_LINE_LOOP gives flat, unmitered corners at large widths
+        // (visible gaps/seams at corners instead of a clean joined
+        // outline). Drawing the stroke as actual filled quad geometry --
+        // matching real Processing's approach -- fixes both: correct
+        // centering AND clean mitered corners via overlapping quads.
         applyStroke();
-        glLineWidth(strokeW);
-        glBegin(GL_LINE_LOOP);
-            glVertex2f(x - half,     y - half    );
-            glVertex2f(x + w + half, y - half    );
-            glVertex2f(x + w + half, y + h + half);
-            glVertex2f(x - half,     y + h + half);
+        float half = strokeW * 0.5f;
+        float xo = x - half, yo = y - half;       // outer edge
+        float xi = x + half, yi = y + half;       // inner edge (top-left side)
+        float xow = x + w + half, yoh = y + h + half; // outer edge (bottom-right side)
+        float xiw = x + w - half, yih = y + h - half; // inner edge (bottom-right side)
+        glBegin(GL_QUADS);
+            // Top edge
+            glVertex2f(xo,  yo); glVertex2f(xow, yo); glVertex2f(xow, yi); glVertex2f(xo,  yi);
+            // Bottom edge
+            glVertex2f(xo,  yih); glVertex2f(xow, yih); glVertex2f(xow, yoh); glVertex2f(xo,  yoh);
+            // Left edge (between top and bottom strips already drawn)
+            glVertex2f(xo,  yi); glVertex2f(xi,  yi); glVertex2f(xi,  yih); glVertex2f(xo,  yih);
+            // Right edge
+            glVertex2f(xiw, yi); glVertex2f(xow, yi); glVertex2f(xow, yih); glVertex2f(xiw, yih);
         glEnd();
         restoreLighting();
     }
@@ -1044,7 +1076,7 @@ void PApplet::initPhongShader() {
     const char* vs = R"VERT(
 varying vec3 vN;
 varying vec3 vP;
-void PApplet::main(){
+void main(){
     // gl_NormalMatrix = inverse-transpose of modelview upper 3x3
     vN = gl_NormalMatrix * gl_Normal;
     vP = vec3(gl_ModelViewMatrix * gl_Vertex);
@@ -1058,7 +1090,7 @@ varying vec3 vP;
 uniform int uNumLights;
 uniform float uLightConc[8];
 uniform float uLightCutCos[8];
-void PApplet::main(){
+void main(){
     vec3 N = normalize(vN);
     vec3 V = normalize(-vP);
     vec3 col = gl_Color.rgb * gl_LightModel.ambient.rgb;
@@ -2384,6 +2416,21 @@ void PApplet::drawImage_impl(PImage* img, float x, float y, float w, float h) {
 void PApplet::drawPGraphicsRect(PGraphics& pg, float x, float y, float w, float h){
     if(pg.width==0||pg.height==0) return;
     if(pg.texID==0) return;
+    {
+        GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
+        double mv[16], proj[16];
+        glGetDoublev(GL_MODELVIEW_MATRIX, mv);
+        glGetDoublev(GL_PROJECTION_MATRIX, proj);
+        fprintf(stderr, "=== DEBUG drawPGraphicsRect ===\n");
+        fprintf(stderr, "  requested draw rect: x=%.1f y=%.1f w=%.1f h=%.1f\n", x, y, w, h);
+        fprintf(stderr, "  pg.width=%d pg.height=%d\n", pg.width, pg.height);
+        fprintf(stderr, "  current GL viewport: x=%d y=%d w=%d h=%d\n", vp[0], vp[1], vp[2], vp[3]);
+        fprintf(stderr, "  logicalW=%d logicalH=%d fbW=%d fbH=%d width=%d height=%d\n", logicalW, logicalH, fbW, fbH, width, height);
+        // proj[0] and proj[5] are the X/Y scale factors of an orthographic
+        // projection matrix -- these directly tell us the effective
+        // "units per screen pixel" mapping in each axis at draw time.
+        fprintf(stderr, "  projection matrix scale: proj[0]=%.6f proj[5]=%.6f\n", proj[0], proj[5]);
+    }
     glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_TEXTURE_2D); glBindTexture(GL_TEXTURE_2D,pg.texID);
     glColor4f(1,1,1,1);
@@ -3038,9 +3085,20 @@ void PApplet::run(){
     if (!defaultP3D) setProjection(winWidth, winHeight);
 
     this->setup();
-    // 2D sketches: disable MSAA so pixels stay crisp (noSmooth() effect).
-    // P3D sketches keep MSAA from window creation for smooth 3D edges.
-    if (!defaultP3D) {
+    // Real Processing's actual default is smooth(2) -- antialiased --
+    // even for plain 2D sketches (P2D/P3D both default to smooth(2); the
+    // legacy JAVA2D software renderer defaults to smooth(3)/bicubic).
+    // This previously UNCONDITIONALLY disabled MSAA for every 2D sketch,
+    // on the assumption that 2D wants "crisp" pixels by default -- that's
+    // backwards from real Processing's actual behavior, and it's why
+    // PGraphics buffers (and the main canvas) never looked antialiased
+    // even after wiring up multisample framebuffers: GL_MULTISAMPLE was
+    // globally disabled the whole time regardless of framebuffer setup.
+    // Only disable smoothing if the sketch explicitly called noSmooth()
+    // (smoothing==false) BEFORE this point -- otherwise leave the
+    // defaults smooth()/setup() already enabled (smooth() runs earlier in
+    // PApplet::run(), before this->setup(), as part of normal startup).
+    if (!defaultP3D && !smoothing) {
         glDisable(GL_MULTISAMPLE);
         glDisable(GL_POINT_SMOOTH);
         glDisable(GL_LINE_SMOOTH);

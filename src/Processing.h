@@ -449,14 +449,85 @@ public:
     GLuint rbo = 0; // renderbuffer (depth+stencil)
     bool   active = false;
 
+    // Independent per-buffer style state. Real Processing's PGraphics has
+    // its OWN fill/stroke/text/etc. settings, completely separate from the
+    // main canvas's -- setting fill() on the main canvas must never affect
+    // a PGraphics buffer, and vice versa. Previously every PGraphics method
+    // forwarded directly to the single global PApplet::g_papplet singleton,
+    // meaning style state silently bled between the main canvas and every
+    // buffer (e.g. a thick green main-canvas stroke would incorrectly show
+    // up on an ellipse drawn inside a buffer that never set its own
+    // stroke). beginDraw()/endDraw() now swap PApplet's current style out
+    // for this buffer's OWN remembered style, and swap it back after,
+    // exactly mirroring how Java's PGraphics keeps independent state.
+    struct StyleSnapshot {
+        // Defaults match PApplet's own real defaults (white fill, black
+        // stroke) -- these are also real Processing's documented
+        // beginDraw() defaults ("Sets the default properties"), NOT an
+        // arbitrary choice. The earlier version of this struct had
+        // fillR=0 (black fill), which is backwards -- every fresh
+        // PGraphics buffer with no explicit fill()/stroke() calls should
+        // look exactly like a freshly created Processing sketch: white
+        // fill, black stroke, weight 1.
+        float fillR=1, fillG=1, fillB=1, fillA=1;
+        float strokeR=0, strokeG=0, strokeB=0, strokeA=1;
+        float strokeW=1;
+        bool  doFill=true, doStroke=true, smoothing=true;
+        // BUG FIX: these were raw 0/0/0 literals, which silently meant
+        // CORNER mode (CORNER=0) for ellipseMode specifically, when real
+        // Processing's actual default is CENTER (=3). That made every
+        // fresh PGraphics buffer's ellipse() calls interpret their first
+        // two arguments as the bounding box's top-left corner instead of
+        // its center, shifting every default-mode ellipse by half its
+        // width/height toward the bottom-right. rectMode's and
+        // imageMode's real defaults ARE actually CORNER (=0), so those
+        // two were correct by coincidence -- only currentEllipseMode
+        // needed the real CENTER constant.
+        // Using literal values, not the CORNER/CENTER named constants:
+        // those constants are declared later in this file, after
+        // PGraphics's own definition, so they're not in scope yet here.
+        // CORNER=0, CENTER=3 (see the static constexpr declarations
+        // further down in this file).
+        int   currentRectMode=0 /*CORNER*/, currentEllipseMode=3 /*CENTER*/, currentImageMode=0 /*CORNER*/;
+        float tintR=1, tintG=1, tintB=1, tintA=1;
+        bool  doTint=false;
+        int   colorModeVal=0;
+        float colorMaxH=255.f, colorMaxS=255.f, colorMaxB=255.f, colorMaxA=255.f;
+        float g_textSize=14.0f;
+        int   g_textAlignX=0, g_textAlignY=0;
+        float g_textLeading=0.0f;
+        bool  initialized=false; // false until beginDraw() runs once and sets real Processing defaults
+    };
+    StyleSnapshot myStyle;       // this buffer's OWN persistent style
+    StyleSnapshot _savedMainStyle; // main canvas's style, stashed during beginDraw()..endDraw()
+
+    // Multisampled render target: PGraphics now matches real Processing's
+    // default antialiasing (smooth(2) on P2D/P3D) by rendering into a
+    // multisample renderbuffer-backed FBO, then resolving (blitting) down
+    // into the plain texture-backed FBO that drawPGraphicsRect samples
+    // from. Without this, the main canvas's window-level MSAA never
+    // applied to off-screen buffers at all.
+    GLuint msaaFbo = 0;
+    GLuint msaaColorRbo = 0;
+    GLuint msaaDepthRbo = 0;
+    int    samples = 0; // 0 = no multisampling
+
     PGraphics() = default;
 
     PGraphics(int w, int h) : PImage(w, h) {
-        // Create framebuffer
+        // Can't reach PApplet::g_papplet here -- PApplet's complete type
+        // isn't available yet at this point in the header (PGraphics is
+        // defined before it). Default directly to real Processing's own
+        // P2D/P3D default (smooth(2)) rather than reaching across that
+        // forward-reference gap. A sketch wanting a different level for
+        // its buffers can extend this later if needed.
+        samples = 2;
+
+        // Resolve target: plain, non-multisampled FBO + texture --
+        // unchanged from before, just filled via a blit-resolve now.
         glGenFramebuffers(1, &fbo);
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
-        // Colour attachment texture
         if (texID == 0) glGenTextures(1, &texID);
         glBindTexture(GL_TEXTURE_2D, texID);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -464,41 +535,43 @@ public:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texID, 0);
 
-        // Depth+stencil renderbuffer
         glGenRenderbuffers(1, &rbo);
         glBindRenderbuffer(GL_RENDERBUFFER, rbo);
         glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, w, h);
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        // Multisample render target: only created if antialiasing was
+        // actually requested. beginDraw() binds THIS one; endDraw() blits
+        // it down into the resolve target above.
+        if (samples > 0) {
+            glGenFramebuffers(1, &msaaFbo);
+            glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo);
+            glGenRenderbuffers(1, &msaaColorRbo);
+            glBindRenderbuffer(GL_RENDERBUFFER, msaaColorRbo);
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA8, w, h);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, msaaColorRbo);
+            glGenRenderbuffers(1, &msaaDepthRbo);
+            glBindRenderbuffer(GL_RENDERBUFFER, msaaDepthRbo);
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH24_STENCIL8, w, h);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, msaaDepthRbo);
+            GLenum msaaStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+            if (msaaStatus != GL_FRAMEBUFFER_COMPLETE) {
+                glDeleteFramebuffers(1, &msaaFbo); msaaFbo = 0;
+                glDeleteRenderbuffers(1, &msaaColorRbo); msaaColorRbo = 0;
+                glDeleteRenderbuffers(1, &msaaDepthRbo); msaaDepthRbo = 0;
+                samples = 0;
+            }
+            fprintf(stderr, "=== DEBUG PGraphics MSAA setup: samples=%d msaaFbo=%u w=%d h=%d ===\n", samples, msaaFbo, w, h);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
     }
 
     GLint savedViewport[4] = {};
-    void beginDraw() {
-        glGetIntegerv(GL_VIEWPORT, savedViewport);
-        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-        glViewport(0, 0, width, height);
-        // Y-up (natural OpenGL/FBO) - content stored right-side-up in texture
-        glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
-        glOrtho(0, width, height, 0, -1, 1);
-        glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
-        // FBO stores Y flipped vs screen - compensate so Processing Y-down coords work
-        glScalef(1.0f, -1.0f, 1.0f);
-        glTranslatef(0.0f, -(float)height, 0.0f);
-        active = true;
-    }
-    void endDraw() {
-        glMatrixMode(GL_PROJECTION); glPopMatrix();
-        glMatrixMode(GL_MODELVIEW);  glPopMatrix();
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        active = false;
-        // Restore saved main canvas viewport and projection
-        extern int logicalW, logicalH;
-        glViewport(savedViewport[0],savedViewport[1],savedViewport[2],savedViewport[3]);
-        glMatrixMode(GL_PROJECTION);glLoadIdentity();
-        glOrtho(0,logicalW,logicalH,0,-1,1);
-        glMatrixMode(GL_MODELVIEW);glLoadIdentity();
-    }
+    void beginDraw(); // defined after PApplet (needs its complete type for style swap)
+    void _endDrawImpl(); // body of endDraw(), out-of-line for the same reason
+    void endDraw() { _endDrawImpl(); }
 
     // Drawing methods forwarded to Processing -- implemented after full decls
     void background(float g); void background(float r, float g, float b); void background(float r, float g, float b, float a);
@@ -511,6 +584,9 @@ public:
     void point(float x, float y);
     void triangle(float x1,float y1,float x2,float y2,float x3,float y3);
     void text(const std::string& s, float x, float y);
+    void textSize(float size);
+    void textAlign(int alignX);
+    void textAlign(int alignX, int alignY);
     void translate(float x, float y); void rotate(float a); void scale(float s);
     void pushMatrix(); void popMatrix();
     void beginShape(); void endShape(int mode=0); void vertex(float x, float y);
@@ -526,13 +602,34 @@ public:
     // Allow assignment from pointer (PGraphics pg; pg = createGraphics(w,h))
     PGraphics& operator=(PGraphics* p) {
         if(p && p!=this){
-            // Transfer ownership
+            // Transfer ownership. This previously only moved fbo/rbo/
+            // texID/width/height/active -- missing the MSAA fields added
+            // later (msaaFbo/msaaColorRbo/msaaDepthRbo/samples) meant a
+            // freshly created buffer's real multisample resources were
+            // silently discarded the moment "PGraphics pg; pg =
+            // createGraphics(...);" ran, leaving pg with samples=0 even
+            // though the temporary object had samples=2 -- antialiasing
+            // was being thrown away before the sketch ever got to draw
+            // anything. Also missing: myStyle/_savedMainStyle (the
+            // independent per-buffer style state added today), which
+            // would have reset to defaults on every reassignment instead
+            // of being the NEW buffer's own fresh defaults as intended --
+            // actually correct to take p's (a fresh buffer SHOULD start
+            // with fresh defaults), but worth being explicit about so
+            // future fields don't get silently dropped the same way.
             if(fbo) glDeleteFramebuffers(1,&fbo);
             if(rbo) glDeleteRenderbuffers(1,&rbo);
+            if(msaaFbo) glDeleteFramebuffers(1,&msaaFbo);
+            if(msaaColorRbo) glDeleteRenderbuffers(1,&msaaColorRbo);
+            if(msaaDepthRbo) glDeleteRenderbuffers(1,&msaaDepthRbo);
             fbo=p->fbo; rbo=p->rbo; texID=p->texID;
+            msaaFbo=p->msaaFbo; msaaColorRbo=p->msaaColorRbo; msaaDepthRbo=p->msaaDepthRbo;
+            samples=p->samples;
             width=p->width; height=p->height;
             active=p->active;
+            myStyle=p->myStyle; _savedMainStyle=p->_savedMainStyle;
             p->fbo=0; p->rbo=0; p->texID=0;
+            p->msaaFbo=0; p->msaaColorRbo=0; p->msaaDepthRbo=0;
             delete p;
         }
         return *this;
@@ -1495,8 +1592,48 @@ public:
 // NOT a textual rewrite to std::vector, since std::vector's own method
 // names (push_back/operator[]/erase) don't match what sketch source
 // written against Java's ArrayList API actually calls.
+//
+// In Java, ArrayList<T> ALWAYS stores references for object types --
+// there are no value-type objects in Java at all, so this was never a
+// choice the sketch author made, it's just how every Java object type
+// behaves. PImage/PFont/PShape/PGraphics specifically are non-copyable in
+// our C++ port (they own unique GPU resources -- copying one would either
+// crash via double-free or silently alias the same resource from two
+// "different" objects), which is the correct C++ translation of "this is
+// reference-like in Java." Rather than forcing sketch authors to notice
+// and write ArrayList<PGraphics*> for exactly these four types, ArrayList
+// detects non-copy-constructible T automatically and stores T* internally
+// -- the PUBLIC API (add/get/etc.) still looks and behaves like Java's,
+// the indirection is an implementation detail, exactly mirroring how
+// "PGraphics pg; pg = createGraphics(...);" already becomes a pointer
+// under the hood without the sketch author needing to write one.
+// Default rule: T is reference-like (stored as T*) UNLESS it's one of
+// Java's true value types -- primitives (int/float/bool/char/etc.) or
+// std::string/String. This matches Java's ACTUAL semantics exactly:
+// every object/class type in Java is reference-like, full stop --
+// primitives are the only exception. Our earlier version used
+// "!std::is_copy_constructible<T>" as the trigger, which correctly
+// caught PImage/PFont/PShape/PGraphics (non-copyable in C++, so they
+// were forced to be pointer-stored) but WRONGLY left ordinary,
+// copyable user-defined classes (e.g. a sketch's own "Particle" class)
+// as value-stored -- meaning ArrayList<Particle>.get(i) returned a
+// COPY, so calling p.update() on that copy never mutated what was
+// actually stored in the list. In Java, Particle is reference-like
+// just like everything else; "happens to be copyable in C++" was never
+// the right signal for "should behave like a Java primitive."
 template<typename T>
-class ArrayList {
+struct IsJavaValueType : std::integral_constant<bool,
+    std::is_arithmetic<T>::value ||      // int, float, double, bool, char, etc.
+    std::is_same<T, std::string>::value
+> {};
+
+template<typename T, bool IsRefLike = !IsJavaValueType<T>::value>
+class ArrayList;
+
+// Value-storage specialization: used for ordinary copyable types
+// (int, float, String, user structs without unique GPU resources, etc.)
+template<typename T>
+class ArrayList<T, false> {
 public:
     std::vector<T> data;
     ArrayList() = default;
@@ -1511,6 +1648,32 @@ public:
     void  remove(int i)              { data.erase(data.begin()+i); }
     void  clear()                    { data.clear(); }
     T&    operator[](int i)          { return data[i]; }
+    auto  begin() { return data.begin(); }
+    auto  end()   { return data.end(); }
+};
+
+// Reference-storage specialization: used automatically for non-copyable
+// T (PImage, PFont, PShape, PGraphics). Stores T* internally; the public
+// API still takes/returns in terms that match how Java code calls it --
+// add() takes a T* (matching what createGraphics()/loadImage() etc.
+// already return), get() returns T* (matching Java's reference
+// semantics: "PGraphics pg = list.get(i);" should give you the SAME
+// object, not a copy).
+template<typename T>
+class ArrayList<T, true> {
+public:
+    std::vector<T*> data;
+    ArrayList() = default;
+    void  add(T* v)                  { data.push_back(v); }
+    void  add(int i, T* v)            { data.insert(data.begin()+i, v); }
+    void  set(int i, T* v)            { data[i]=v; }
+    T*    get(int i)             const{ return data[i]; }
+    int   size()                 const{ return (int)data.size(); }
+    bool  isEmpty()               const{ return data.empty(); }
+    bool  contains(T* v)         const{ return std::find(data.begin(),data.end(),v)!=data.end(); }
+    void  remove(int i)               { data.erase(data.begin()+i); }
+    void  clear()                     { data.clear(); }
+    T*&   operator[](int i)           { return data[i]; }
     auto  begin() { return data.begin(); }
     auto  end()   { return data.end(); }
 };
@@ -2163,8 +2326,9 @@ struct PApplet {
     void windowResizable(bool r);
     void windowRatio(int w, int h);
     void pixelDensity(int d);
-    void smooth();
+    void smooth(int level = 2); // real Processing's P2D/P3D default is smooth(2)
     void noSmooth();
+    int  smoothLevel = 2; // current level, used by PGraphics to match the main canvas's AA quality
     void hint(int which);
     void cursor();
     void cursor(int type);
@@ -2831,6 +2995,150 @@ namespace _api {
 
 
 
+inline void PGraphics::beginDraw() {
+    // Guard against beginDraw() called again before a matching endDraw().
+    // savedViewport is a single field -- without this guard, a second
+    // beginDraw() would overwrite the FIRST call's saved (correct) main-
+    // canvas viewport with the buffer's OWN viewport (since that's what
+    // the first beginDraw() just set), so the eventual endDraw() restores
+    // the wrong thing entirely, corrupting the main canvas's viewport for
+    // the rest of the frame (everything renders squished into a viewport
+    // sized for the buffer instead of the real window). Calling
+    // beginDraw() twice without an intervening endDraw() is unusual
+    // sketch code to begin with, but it must not corrupt unrelated state.
+    if (active) return;
+    glGetIntegerv(GL_VIEWPORT, savedViewport);
+    // Render into the multisampled FBO when available (antialiased
+    // drawing); the resolve target (fbo) gets filled via a blit in
+    // _endDrawImpl(), not rendered into directly, when samples > 0.
+    glBindFramebuffer(GL_FRAMEBUFFER, samples > 0 ? msaaFbo : fbo);
+    glViewport(0, 0, width, height);
+    glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
+    glOrtho(0, width, height, 0, -1, 1);
+    glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+    glScalef(1.0f, -1.0f, 1.0f);
+    glTranslatef(0.0f, -(float)height, 0.0f);
+    active = true;
+    {
+        GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
+        double mv[16], proj[16];
+        glGetDoublev(GL_MODELVIEW_MATRIX, mv);
+        glGetDoublev(GL_PROJECTION_MATRIX, proj);
+        fprintf(stderr, "=== DEBUG PGraphics::beginDraw ===\n");
+        fprintf(stderr, "  width=%d height=%d\n", width, height);
+        fprintf(stderr, "  GL viewport: x=%d y=%d w=%d h=%d\n", vp[0], vp[1], vp[2], vp[3]);
+        fprintf(stderr, "  proj[0]=%.6f proj[5]=%.6f proj[12]=%.6f proj[13]=%.6f\n", proj[0], proj[5], proj[12], proj[13]);
+        fprintf(stderr, "  mv[0]=%.6f mv[5]=%.6f mv[12]=%.6f mv[13]=%.6f\n", mv[0], mv[5], mv[12], mv[13]);
+    }
+    // Swap PApplet's CURRENT style out (stash it for restoration in
+    // endDraw()) and swap THIS buffer's own remembered style in. On the
+    // very first beginDraw() for a fresh buffer, myStyle still holds the
+    // struct's default-initialized values (which match real Processing's
+    // actual PGraphics defaults: black fill, no stroke, etc.) -- exactly
+    // matching what a brand-new PGraphics should start with, independent
+    // of whatever the main canvas's style happened to be.
+    if (PApplet::g_papplet) {
+        auto* p = PApplet::g_papplet;
+        _savedMainStyle.fillR=p->fillR; _savedMainStyle.fillG=p->fillG; _savedMainStyle.fillB=p->fillB; _savedMainStyle.fillA=p->fillA;
+        _savedMainStyle.strokeR=p->strokeR; _savedMainStyle.strokeG=p->strokeG; _savedMainStyle.strokeB=p->strokeB; _savedMainStyle.strokeA=p->strokeA;
+        _savedMainStyle.strokeW=p->strokeW;
+        _savedMainStyle.doFill=p->doFill; _savedMainStyle.doStroke=p->doStroke; _savedMainStyle.smoothing=p->smoothing;
+        _savedMainStyle.currentRectMode=p->currentRectMode; _savedMainStyle.currentEllipseMode=p->currentEllipseMode; _savedMainStyle.currentImageMode=p->currentImageMode;
+        _savedMainStyle.tintR=p->tintR; _savedMainStyle.tintG=p->tintG; _savedMainStyle.tintB=p->tintB; _savedMainStyle.tintA=p->tintA;
+        _savedMainStyle.doTint=p->doTint;
+        _savedMainStyle.colorModeVal=p->colorModeVal;
+        _savedMainStyle.colorMaxH=p->colorMaxH; _savedMainStyle.colorMaxS=p->colorMaxS; _savedMainStyle.colorMaxB=p->colorMaxB; _savedMainStyle.colorMaxA=p->colorMaxA;
+        _savedMainStyle.g_textSize=p->g_textSize;
+        _savedMainStyle.g_textAlignX=p->g_textAlignX; _savedMainStyle.g_textAlignY=p->g_textAlignY;
+        _savedMainStyle.g_textLeading=p->g_textLeading;
+
+        p->fillR=myStyle.fillR; p->fillG=myStyle.fillG; p->fillB=myStyle.fillB; p->fillA=myStyle.fillA;
+        p->strokeR=myStyle.strokeR; p->strokeG=myStyle.strokeG; p->strokeB=myStyle.strokeB; p->strokeA=myStyle.strokeA;
+        p->strokeW=myStyle.strokeW;
+        p->doFill=myStyle.doFill; p->doStroke=myStyle.doStroke; p->smoothing=myStyle.smoothing;
+        p->currentRectMode=myStyle.currentRectMode; p->currentEllipseMode=myStyle.currentEllipseMode; p->currentImageMode=myStyle.currentImageMode;
+        p->tintR=myStyle.tintR; p->tintG=myStyle.tintG; p->tintB=myStyle.tintB; p->tintA=myStyle.tintA;
+        p->doTint=myStyle.doTint;
+        p->colorModeVal=myStyle.colorModeVal;
+        p->colorMaxH=myStyle.colorMaxH; p->colorMaxS=myStyle.colorMaxS; p->colorMaxB=myStyle.colorMaxB; p->colorMaxA=myStyle.colorMaxA;
+        p->g_textSize=myStyle.g_textSize;
+        p->g_textAlignX=myStyle.g_textAlignX; p->g_textAlignY=myStyle.g_textAlignY;
+        p->g_textLeading=myStyle.g_textLeading;
+    }
+    myStyle.initialized = true;
+}
+inline void PGraphics::_endDrawImpl() {
+    fprintf(stderr, "=== DEBUG _endDrawImpl ENTRY: samples=%d msaaFbo=%u fbo=%u width=%d height=%d this=%p ===\n", samples, msaaFbo, fbo, width, height, (void*)this);
+    glMatrixMode(GL_PROJECTION); glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);  glPopMatrix();
+    // Resolve the multisampled content down into the plain texture-backed
+    // FBO that drawPGraphicsRect actually samples from. Without this
+    // blit, anything rendered into msaaFbo would never reach the texture
+    // used for display -- the buffer would appear blank/stale.
+    if (samples > 0 && msaaFbo != 0) {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+        GLenum readStatus = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
+        GLenum drawStatus = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+        glBlitFramebuffer(0, 0, width, height, 0, 0, width, height,
+                           GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        GLenum err = glGetError();
+        fprintf(stderr, "=== DEBUG blit-resolve: readStatus=0x%x drawStatus=0x%x glError=0x%x ===\n", readStatus, drawStatus, err);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    active = false;
+    // Save whatever style this buffer ended up with (so the NEXT
+    // beginDraw() on this same buffer resumes where it left off, matching
+    // real Processing semantics -- a PGraphics remembers its own style
+    // across multiple begin/end cycles), then restore the main canvas's
+    // style exactly as it was before beginDraw() touched it.
+    if (PApplet::g_papplet) {
+        auto* p = PApplet::g_papplet;
+        myStyle.fillR=p->fillR; myStyle.fillG=p->fillG; myStyle.fillB=p->fillB; myStyle.fillA=p->fillA;
+        myStyle.strokeR=p->strokeR; myStyle.strokeG=p->strokeG; myStyle.strokeB=p->strokeB; myStyle.strokeA=p->strokeA;
+        myStyle.strokeW=p->strokeW;
+        myStyle.doFill=p->doFill; myStyle.doStroke=p->doStroke; myStyle.smoothing=p->smoothing;
+        myStyle.currentRectMode=p->currentRectMode; myStyle.currentEllipseMode=p->currentEllipseMode; myStyle.currentImageMode=p->currentImageMode;
+        myStyle.tintR=p->tintR; myStyle.tintG=p->tintG; myStyle.tintB=p->tintB; myStyle.tintA=p->tintA;
+        myStyle.doTint=p->doTint;
+        myStyle.colorModeVal=p->colorModeVal;
+        myStyle.colorMaxH=p->colorMaxH; myStyle.colorMaxS=p->colorMaxS; myStyle.colorMaxB=p->colorMaxB; myStyle.colorMaxA=p->colorMaxA;
+        myStyle.g_textSize=p->g_textSize;
+        myStyle.g_textAlignX=p->g_textAlignX; myStyle.g_textAlignY=p->g_textAlignY;
+        myStyle.g_textLeading=p->g_textLeading;
+
+        p->fillR=_savedMainStyle.fillR; p->fillG=_savedMainStyle.fillG; p->fillB=_savedMainStyle.fillB; p->fillA=_savedMainStyle.fillA;
+        p->strokeR=_savedMainStyle.strokeR; p->strokeG=_savedMainStyle.strokeG; p->strokeB=_savedMainStyle.strokeB; p->strokeA=_savedMainStyle.strokeA;
+        p->strokeW=_savedMainStyle.strokeW;
+        p->doFill=_savedMainStyle.doFill; p->doStroke=_savedMainStyle.doStroke; p->smoothing=_savedMainStyle.smoothing;
+        p->currentRectMode=_savedMainStyle.currentRectMode; p->currentEllipseMode=_savedMainStyle.currentEllipseMode; p->currentImageMode=_savedMainStyle.currentImageMode;
+        p->tintR=_savedMainStyle.tintR; p->tintG=_savedMainStyle.tintG; p->tintB=_savedMainStyle.tintB; p->tintA=_savedMainStyle.tintA;
+        p->doTint=_savedMainStyle.doTint;
+        p->colorModeVal=_savedMainStyle.colorModeVal;
+        p->colorMaxH=_savedMainStyle.colorMaxH; p->colorMaxS=_savedMainStyle.colorMaxS; p->colorMaxB=_savedMainStyle.colorMaxB; p->colorMaxA=_savedMainStyle.colorMaxA;
+        p->g_textSize=_savedMainStyle.g_textSize;
+        p->g_textAlignX=_savedMainStyle.g_textAlignX; p->g_textAlignY=_savedMainStyle.g_textAlignY;
+        p->g_textLeading=_savedMainStyle.g_textLeading;
+    }
+    glViewport(savedViewport[0],savedViewport[1],savedViewport[2],savedViewport[3]);
+    glMatrixMode(GL_PROJECTION);glLoadIdentity();
+    // BUG FIX: savedViewport[2]/[3] are FRAMEBUFFER PIXEL dimensions
+    // (fbW/fbH), captured via glGetIntegerv(GL_VIEWPORT,...) -- correct
+    // for restoring the viewport itself, but WRONG for glOrtho. The main
+    // render loop deliberately uses fbW/fbH for glViewport but
+    // logicalW/logicalH for glOrtho specifically so sketch coordinates
+    // map 1:1 regardless of HiDPI/Retina display scaling (see the
+    // matching comment in PApplet::run()). Using savedViewport's pixel
+    // dimensions for glOrtho here made every main-canvas draw call after
+    // endDraw() appear at the wrong scale/position on any HiDPI display.
+    if (PApplet::g_papplet) {
+        auto* p = PApplet::g_papplet;
+        glOrtho(0, p->logicalW, p->logicalH, 0, -1, 1);
+    } else {
+        glOrtho(0, savedViewport[2], savedViewport[3], 0, -1, 1);
+    }
+    glMatrixMode(GL_MODELVIEW);glLoadIdentity();
+}
 inline void PGraphics::background(float g)                          { if(PApplet::g_papplet) PApplet::g_papplet->background(g); }
 inline void PGraphics::background(float r, float g2, float b)       { if(PApplet::g_papplet) PApplet::g_papplet->background(r,g2,b,255); }
 inline void PGraphics::background(float r, float g2, float b, float a){ if(PApplet::g_papplet) PApplet::g_papplet->background(r,g2,b,a); }
@@ -2848,6 +3156,9 @@ inline void PGraphics::line(float x1, float y1, float x2, float y2) { if(PApplet
 inline void PGraphics::point(float x, float y)                      { if(PApplet::g_papplet) PApplet::g_papplet->point(x,y); }
 inline void PGraphics::triangle(float x1,float y1,float x2,float y2,float x3,float y3){ if(PApplet::g_papplet) PApplet::g_papplet->triangle(x1,y1,x2,y2,x3,y3); }
 inline void PGraphics::text(const std::string& s, float x, float y) { if(PApplet::g_papplet) PApplet::g_papplet->text(s,x,y); }
+inline void PGraphics::textSize(float size)                          { if(PApplet::g_papplet) PApplet::g_papplet->textSize(size); }
+inline void PGraphics::textAlign(int alignX)                         { if(PApplet::g_papplet) PApplet::g_papplet->textAlign(alignX,0); }
+inline void PGraphics::textAlign(int alignX, int alignY)             { if(PApplet::g_papplet) PApplet::g_papplet->textAlign(alignX,alignY); }
 inline void PGraphics::translate(float x, float y)                  { if(PApplet::g_papplet) PApplet::g_papplet->translate(x,y); }
 inline void PGraphics::rotate(float a)                              { if(PApplet::g_papplet) PApplet::g_papplet->rotate(a); }
 inline void PGraphics::scale(float s)                               { if(PApplet::g_papplet) PApplet::g_papplet->scale(s); }
