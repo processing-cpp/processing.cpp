@@ -2902,7 +2902,11 @@ void PApplet::enableDebugConsole(){_doEnableDebugConsole();}
 void PApplet::run(){
     g_papplet = this;
     signal(SIGTERM, [](int){ if(PApplet::g_papplet && PApplet::g_papplet->gWindow) glfwSetWindowShouldClose(PApplet::g_papplet->gWindow, GLFW_TRUE); });
+#ifndef _WIN32
+    // SIGHUP is POSIX-only -- Windows has no controlling-terminal/session
+    // concept, so there's no equivalent signal to catch here at all.
     signal(SIGHUP,  [](int){ if(PApplet::g_papplet && PApplet::g_papplet->gWindow) glfwSetWindowShouldClose(PApplet::g_papplet->gWindow, GLFW_TRUE); });
+#endif
     // Write directly to a file since -mwindows kills stderr on Windows
     setvbuf(stdout, nullptr, _IONBF, 0);
     std::srand((unsigned)std::time(nullptr));
