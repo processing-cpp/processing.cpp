@@ -25,6 +25,16 @@ import processing.app.RunnerListener;
 public class InstallWizard {
 
   /**
+   * Thrown when the user explicitly cancels the wizard (at the initial
+   * missing-dependencies prompt, or mid-install). Callers should treat
+   * this as "stop entirely" rather than falling back to other dialogs —
+   * the user made a deliberate choice not to proceed.
+   */
+  public static class CancelledByUser extends Exception {
+    public CancelledByUser() { super("Installation cancelled by user."); }
+  }
+
+  /**
    * Checks what's missing and, if anything is, shows a plain error dialog
    * first ("Missing: g++, glfw" + Install/Cancel). Only if the user clicks
    * Install does the full progress wizard open and start downloading.
@@ -34,7 +44,7 @@ public class InstallWizard {
    *         this returns; false if the user cancelled or installation
    *         could not be completed.
    */
-  public static boolean run(RunnerListener listener) {
+  public static boolean run(RunnerListener listener) throws CancelledByUser {
     String os = System.getProperty("os.name").toLowerCase();
     InstallWizard w = new InstallWizard();
 
@@ -52,6 +62,8 @@ public class InstallWizard {
     } else {
       // Unrecognized OS — we don't know how to install anything here, so
       // just tell the user exactly what's needed and let them sort it out.
+      // This isn't a cancellation, so it returns false rather than
+      // throwing — CppBuild's caller can still decide what to do next.
       java.util.List<String> generic = new java.util.ArrayList<>();
       generic.add("g++ (a C++17-capable compiler)");
       generic.add("glfw");
@@ -91,16 +103,22 @@ public class InstallWizard {
       }
     }
 
-    if (!proceed[0]) return false;
+    if (!proceed[0]) throw new CancelledByUser();
 
     // User confirmed — now open the real progress wizard and install.
+    // A cancel from inside the wizard itself also surfaces as
+    // CancelledByUser (checked via w.cancelled right after each call),
+    // distinguishing "user backed out" from "install genuinely failed".
+    boolean result;
     if (isWin) {
-      return w.runWindows(missing);
+      result = w.runWindows(missing);
     } else if (isMac) {
-      return w.runMac(missing);
+      result = w.runMac(missing);
     } else {
-      return w.runLinux(missing);
+      result = w.runLinux(missing);
     }
+    if (!result && w.cancelled.get()) throw new CancelledByUser();
+    return result;
   }
 
   // ── Shared dialog plumbing ────────────────────────────────────────────

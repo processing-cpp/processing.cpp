@@ -238,8 +238,10 @@ public class CppBuild {
       try { if (Runtime.getRuntime().exec(new String[]{"g++","--version"}).waitFor()==0) return; }
       catch (Exception ignored) {}
 
-      // Try the guided installer first. If it succeeds, we're done; if the
-      // user cancels or it fails, fall through to the existing dialog below.
+      // Try the guided installer first. If it succeeds, we're done. If the
+      // user cancels, InstallWizard throws CancelledByUser, which stops
+      // the build entirely instead of falling through. Only a genuine
+      // wizard failure (not a cancel) falls through to the dialog below.
       if (InstallWizard.run(listener)) return;
 
       Object[] opts = { "Install Automatically", "Download MSYS2", "Cancel" };
@@ -272,8 +274,8 @@ public class CppBuild {
       catch (Exception ignored) {}
       if (isMac) {
         // Try the guided installer first (Xcode Command Line Tools, then
-        // GLFW/GLEW via Homebrew if present). Falls through to the
-        // existing dialog below if cancelled or unsuccessful.
+        // GLFW/GLEW via Homebrew if present). A cancel throws and stops
+        // the build; only a genuine failure falls through to the dialog.
         if (InstallWizard.run(listener)) return;
 
         showGppDialog(
@@ -283,8 +285,8 @@ public class CppBuild {
           + "Click Download Homebrew if not installed.</html>",
           "Download Homebrew", "https://brew.sh", listener);
       } else {
-        // Try the guided installer first. Falls through to the existing
-        // package-manager dialog below if cancelled or unsuccessful.
+        // Try the guided installer first. A cancel throws and stops the
+        // build; only a genuine failure falls through to the dialog below.
         if (InstallWizard.run(listener)) return;
 
         // Detect package manager and offer auto-install
@@ -441,7 +443,7 @@ public class CppBuild {
     } catch (Exception e) { return false; }
   }
 
-  private void checkNativeLibs(RunnerListener listener, File binary) {
+  private void checkNativeLibs(RunnerListener listener, File binary) throws Exception {
     String os   = System.getProperty("os.name").toLowerCase();
     boolean win = os.contains("win");
     boolean mac = os.contains("mac");
@@ -466,7 +468,7 @@ public class CppBuild {
     return true;
   }
 
-  private void checkWindowsDLLs(RunnerListener listener, File binary) {
+  private void checkWindowsDLLs(RunnerListener listener, File binary) throws Exception {
     String[] required = { "glfw3.dll", "glew32.dll" };
     java.util.List<String> searchDirs = new java.util.ArrayList<>();
     searchDirs.add(binary.getParent());
@@ -557,7 +559,7 @@ public class CppBuild {
   }
 
   // ── macOS ──────────────────────────────────────────────────────────────────
-  private void checkMacLibs(RunnerListener listener) {
+  private void checkMacLibs(RunnerListener listener) throws Exception {
     // Check for glfw and glew via pkg-config or known Homebrew paths
     boolean glfwOk = new File("/opt/homebrew/lib/libglfw.dylib").exists()
                   || new File("/usr/local/lib/libglfw.dylib").exists()
@@ -626,7 +628,7 @@ public class CppBuild {
   }
 
   // ── Linux ──────────────────────────────────────────────────────────────────
-  private void checkLinuxLibs(RunnerListener listener) {
+  private void checkLinuxLibs(RunnerListener listener) throws Exception {
     boolean glfwOk = new File("/usr/lib/libglfw.so").exists()
                   || new File("/usr/lib/x86_64-linux-gnu/libglfw.so").exists()
                   || new File("/usr/lib/x86_64-linux-gnu/libglfw.so.3").exists()

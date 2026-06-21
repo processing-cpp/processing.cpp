@@ -395,6 +395,9 @@ public class CppEditor extends Editor {
           statusError("Build failed — see console for errors.");
           deactivateRun();
         }
+      } catch (InstallWizard.CancelledByUser e) {
+        statusNotice("Cancelled.");
+        deactivateRun();
       } catch (Exception e) {
         statusError(e.getMessage());
         deactivateRun();
