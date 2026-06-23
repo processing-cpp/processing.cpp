@@ -850,6 +850,7 @@ public class CppBuild {
     String code = sanitize(raw.toString());
     code = removeUserIncludes(code);
     warnReservedNames(code, listener);
+    checkForUnsupportedJavaArraySyntax(code, listener);
     code = javaToC(code);
     // pointerizeNewAssignedVars() was removed: it auto-rewrote sketch
     // declarations like "PImage img;" to "PImage* img;" based on
@@ -2240,6 +2241,67 @@ public class CppBuild {
    * no longer makes sense once the type is no longer a raw C array.
    */
 
+  // [E0004] "Unsupported Java Syntax" category. Detects real Java
+  // array-declaration syntax -- "int[] a = new int[5];", any number of
+  // dimensions ("int[][] grid = new int[5][5];"), any element type
+  // (primitive or class name), and arbitrary whitespace between the
+  // type, the brackets, and the variable name (Java itself allows all
+  // of this; the regex below mirrors that flexibility rather than only
+  // matching the single most common spacing).
+  //
+  // This pattern is real, valid JAVA but is NOT valid C++ at all -- it
+  // fails to even parse as C++ (square brackets after a bare type name,
+  // before the variable name, isn't legal C++ grammar), so without this
+  // check the sketch author would see a confusing, unrelated low-level
+  // syntax error from g++ instead of a direct, actionable message
+  // pointing them at Array<T>, the real CppMode way to write this.
+  //
+  // Scans a comment/string-blanked copy, not raw code, for the same
+  // reason every other text-pattern scan in this file does: a comment
+  // mentioning this exact syntax as an example shouldn't trigger a
+  // build-stopping error.
+  private void checkForUnsupportedJavaArraySyntax(String code, RunnerListener listener) {
+    String cleanCode = blankCommentsAndLiterals(code);
+    // Group 1: element type name (identifier, possibly with one or more
+    // trailing [] already, to tolerate "int[] []" oddities, though that
+    // itself isn't valid Java -- the main goal is the "[]...new T[...]"
+    // shape, not exhaustively validating Java grammar variants nobody
+    // actually writes).
+    // Group 2: one or more "[]" pairs (possibly whitespace-separated),
+    // i.e. the dimension markers on the DECLARED type.
+    // The "new" side separately allows one or more "[<expr>]" dimension
+    // sizes, each possibly containing whitespace or a simple expression.
+    java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+      "\\b([A-Za-z_]\\w*)\\s*((?:\\[\\s*\\]\\s*)+)\\s*[A-Za-z_]\\w*\\s*=\\s*new\\s+[A-Za-z_]\\w*\\s*((?:\\[[^\\]]*\\]\\s*)+)"
+    );
+    java.util.regex.Matcher m = p.matcher(cleanCode);
+    if (m.find()) {
+      String elementType = m.group(1);
+      int dims = 0;
+      java.util.regex.Matcher dimCount = java.util.regex.Pattern.compile("\\[\\s*\\]").matcher(m.group(2));
+      while (dimCount.find()) dims++;
+      StringBuilder suggestion = new StringBuilder();
+      for (int i = 0; i < dims; i++) suggestion.append("Array<");
+      suggestion.append(elementType);
+      for (int i = 0; i < dims; i++) suggestion.append(">");
+      String detailedMessage =
+        "E0004: Java-style array declaration (\"" + elementType + "[" +
+        (dims > 1 ? "]..." : "]") + " = new " + elementType + "[...]\") is not supported.\n" +
+        "Use " + suggestion + " instead, e.g.: " + suggestion + " a(10" +
+        (dims > 1 ? ", ...)" : ")") + "\n" +
+        "See https://processing-cpp.github.io/error/E0004";
+      // statusError() alone only writes to the status bar, which this
+      // codebase's OWN comments describe as "volatile" -- it disappears
+      // quickly and was never meant to hold a multi-line, detailed
+      // message. System.err.println() is what actually lands in the
+      // persistent console text area, matching the pattern Editor.java
+      // itself uses for exactly this same reason elsewhere.
+      System.err.println(detailedMessage);
+      listener.statusError("E0004: Unsupported Java array syntax -- see console for details.");
+      throw new RuntimeException("E0004: Unsupported Java array syntax -- see console for details.");
+    }
+  }
+
   private String javaToC(String code) {
     // Run color type propagation first
     code = fixColorTypes(code);
@@ -3141,26 +3203,34 @@ public class CppBuild {
     }
     cmd.add("-I" + modeSrc);
     cmd.add("-DPROCESSING_HAS_STB_IMAGE");
-    // Debug mode is controlled by a "DEBUG" file at the root of the
-    // CppMode folder (a sibling of src/), containing either "0" or "1".
-    // Shipped builds always have it set to "0". To see PDEBUG(...)
-    // output, edit that file to contain "1" and re-run the sketch --
+    // Debug mode (and the website base URL used in error messages) are
+    // both controlled by config/cppmode.properties, a single
+    // consolidated file at the root of the CppMode folder (a sibling of
+    // src/). Shipped builds always have debug=0. To see PDEBUG(...)
+    // output, edit that file to set debug=1 and re-run the sketch --
     // no environment variables to remember, no rebuilding CppBuild
     // itself, works the same regardless of which terminal (or none at
-    // all) launched the IDE.
-    java.io.File debugFile = new java.io.File(runtimeDir.getParentFile(), "DEBUG");
-    System.err.println("=== TRACE debugFile.getAbsolutePath()=" + debugFile.getAbsolutePath() + " exists=" + debugFile.exists() + " ===");
-    if (debugFile.exists()) {
+    // all) launched the IDE. This is the SAME file scripts/rebuild-
+    // engine.sh reads for the standalone engine-rebuild path, so both
+    // ways of building stay in sync automatically.
+    java.io.File configFile = new java.io.File(runtimeDir.getParentFile(), "config/cppmode.properties");
+    if (configFile.exists()) {
       try {
-        String contents = new String(java.nio.file.Files.readAllBytes(debugFile.toPath())).trim();
-        System.err.println("=== TRACE debugFile contents=[" + contents + "] equals1=" + "1".equals(contents) + " ===");
-        if ("1".equals(contents)) {
+        java.util.Properties props = new java.util.Properties();
+        try (java.io.InputStream in = new java.io.FileInputStream(configFile)) {
+          props.load(in);
+        }
+        if ("1".equals(props.getProperty("debug", "0").trim())) {
           cmd.add("-DPROCESSING_DEBUG");
         }
+        String websiteUrl = props.getProperty("website.base.url");
+        if (websiteUrl != null && !websiteUrl.trim().isEmpty()) {
+          cmd.add("-DPROCESSING_WEBSITE_URL=\"" + websiteUrl.trim() + "\"");
+        }
       } catch (java.io.IOException e) {
-        // If the DEBUG file can't be read for some reason, just proceed
-        // with a normal, non-debug build rather than failing the
-        // compile entirely over a missing diagnostic toggle.
+        // If the config file can't be read for some reason, just
+        // proceed with a normal, non-debug build rather than failing
+        // the compile entirely over a missing diagnostic toggle.
       }
     }
     cmd.add("-DPROCESSING_EXPORT");

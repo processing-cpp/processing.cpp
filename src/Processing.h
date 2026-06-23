@@ -127,6 +127,16 @@ inline std::string operator+(char c,   const std::string& s) { return std::strin
     // normal engine-build script.
     #define PROCESSING_BUILD_STAMP "UNKNOWN"
 #endif
+#ifndef PROCESSING_WEBSITE_URL
+    // Fallback only -- the REAL value always comes from
+    // config/cppmode.properties's website.base.url, read fresh by
+    // rebuild-engine.sh and passed in via -DPROCESSING_WEBSITE_URL at
+    // build time. Nothing in this source file ever hardcodes the actual
+    // URL string itself; this fallback only exists so a compile that
+    // bypasses the script entirely still produces a valid (if generic)
+    // message instead of a broken one.
+    #define PROCESSING_WEBSITE_URL "https://processing-cpp.github.io"
+#endif
 
 #ifdef PROCESSING_DEBUG
     #define PDEBUG(...) fprintf(stderr, "[PDEBUG] " __VA_ARGS__)
@@ -465,12 +475,12 @@ public:
     PImage(const PImage&) __attribute__((error(
         "E0002: PImage value-style copying is not supported. "
         "Declare PImage* instead of PImage. "
-        "See https://processing-cpp.github.io/error/E0002.html"
+        "See " PROCESSING_WEBSITE_URL "/error/E0002.html"
     )));
     PImage& operator=(const PImage&) __attribute__((error(
         "E0002: PImage value-style assignment is not supported. "
         "Declare PImage* instead of PImage. "
-        "See https://processing-cpp.github.io/error/E0002.html"
+        "See " PROCESSING_WEBSITE_URL "/error/E0002.html"
     )));
 
     // Movable
@@ -680,12 +690,12 @@ public:
     PGraphics(const PGraphics&) __attribute__((error(
         "E0001: PGraphics value-style copying is not supported. "
         "Declare PGraphics* instead of PGraphics. "
-        "See https://processing-cpp.github.io/error/E0001.html"
+        "See " PROCESSING_WEBSITE_URL "/error/E0001.html"
     )));
     PGraphics& operator=(const PGraphics&) __attribute__((error(
         "E0001: PGraphics value-style assignment is not supported. "
         "Declare PGraphics* instead of PGraphics. "
-        "See https://processing-cpp.github.io/error/E0001.html"
+        "See " PROCESSING_WEBSITE_URL "/error/E0001.html"
     )));
     // Allow assignment from pointer (PGraphics pg; pg = createGraphics(w,h))
     // [E0001] REMOVED: the legacy "PGraphics pg; pg = createGraphics(...);"
@@ -703,12 +713,13 @@ public:
     //
     // This explicit compile error is intentional: it tells you exactly
     // what to fix, rather than silently compiling against a value-style
-    // declaration that would behave incorrectly or unsafely.
-    // See: https://processing-cpp.github.io/error/E0001
+    // declaration that would behave incorrectly or unsafely. The actual
+    // URL in the error message below comes from PROCESSING_WEBSITE_URL
+    // (ultimately config/cppmode.properties), never hardcoded here.
     PGraphics& operator=(PGraphics* p) __attribute__((error(
         "E0001: PGraphics value-style assignment is not supported. "
         "Declare PGraphics* instead of PGraphics. "
-        "See https://processing-cpp.github.io/error/E0001"
+        "See " PROCESSING_WEBSITE_URL "/error/E0001"
     )));
 };
 
@@ -2217,8 +2228,171 @@ public:
 // as value-stored -- meaning ArrayList<Particle>.get(i) returned a
 // COPY, so calling p.update() on that copy never mutated what was
 // actually stored in the list. In Java, Particle is reference-like
-// just like everything else; "happens to be copyable in C++" was never
-// the right signal for "should behave like a Java primitive."
+// =============================================================================
+// Array<T> -- fixed-size array matching real Java array semantics
+// =============================================================================
+// Java's "int[] a = new int[10];" creates a FIXED-SIZE array: zero/false/
+// null-initialized by default, and bounds-checked at runtime (throwing
+// ArrayIndexOutOfBoundsException on an invalid index) -- this is
+// DIFFERENT from ArrayList<T> (growable, add()/remove()) and different
+// from a raw C-style array (no bounds checking at all in C++, undefined
+// behavior on out-of-range access rather than a clean, catchable error).
+//
+// Array<T> exists to be the faithful, safe translation of THIS specific
+// Java construct: fixed length (set once, at construction, matching
+// Java's own "can't resize an array" rule), default-initialized
+// elements, and a bounds-checked [] operator that throws std::out_of_range
+// (the closest C++ equivalent to Java's ArrayIndexOutOfBoundsException)
+// rather than silently reading/writing out-of-bounds memory.
+//
+// Real Java syntax ("int[] a = new int[10];") is intentionally NOT
+// supported directly -- see the E0004 compiler error attached to the
+// blocked overload below. CppBuild does not attempt to silently rewrite
+// this syntax, for the same reason pointerizeNewAssignedVars was
+// removed earlier: guessing at the user's intent via text rewriting is
+// exactly the category of fragile, comment-blind, scope-unaware
+// mechanism this whole session has been moving away from. Sketch
+// authors write Array<T> explicitly instead.
+template<typename T>
+class Array {
+    std::vector<T> data;
+public:
+    explicit Array(int size) : data(size > 0 ? (size_t)size : 0, T()) {}
+    Array(int size, const T& fillValue) : data(size > 0 ? (size_t)size : 0, fillValue) {}
+
+    int length() const { return (int)data.size(); }
+
+    // Bounds-checked access -- matches Java's ArrayIndexOutOfBoundsException
+    // semantics (a clean, catchable error) rather than C++'s usual
+    // undefined-behavior-on-out-of-range for operator[].
+    T& operator[](int index) {
+        if (index < 0 || index >= (int)data.size())
+            throw std::out_of_range(
+                "Array index " + std::to_string(index) +
+                " out of bounds for length " + std::to_string(data.size()));
+        return data[(size_t)index];
+    }
+    const T& operator[](int index) const {
+        if (index < 0 || index >= (int)data.size())
+            throw std::out_of_range(
+                "Array index " + std::to_string(index) +
+                " out of bounds for length " + std::to_string(data.size()));
+        return data[(size_t)index];
+    }
+
+    auto begin()       { return data.begin(); }
+    auto end()         { return data.end(); }
+    auto begin() const { return data.begin(); }
+    auto end()   const { return data.end(); }
+
+    // Matches Java's array-literal syntax: int[] a = {1, 2, 3};
+    Array(std::initializer_list<T> init) : data(init) {}
+
+    // Exposed so the free functions below (append/arrayCopy/concat/
+    // expand/reverse/shorten/sort/splice/subset) can build new Array<T>
+    // instances directly from a std::vector<T>.
+    static Array<T> fromVector(std::vector<T> v) {
+        Array<T> a(0);
+        a.data = std::move(v);
+        return a;
+    }
+    const std::vector<T>& rawData() const { return data; }
+    std::vector<T>&       rawData()       { return data; }
+};
+
+// =============================================================================
+// Array<T> utility functions -- matching real Processing's free-function
+// call style exactly: "arr = append(arr, val);" not "arr.append(val);",
+// since every one of these (except reverse/sort) returns a NEW array
+// rather than mutating in place, mirroring Java's own fixed-length-array
+// constraint.
+// =============================================================================
+
+template<typename T>
+Array<T> append(const Array<T>& arr, const T& value) {
+    std::vector<T> v = arr.rawData();
+    v.push_back(value);
+    return Array<T>::fromVector(std::move(v));
+}
+
+template<typename T>
+void arrayCopy(const Array<T>& src, Array<T>& dst) {
+    int n = std::min(src.length(), dst.length());
+    for (int i = 0; i < n; i++) dst[i] = src[i];
+}
+template<typename T>
+void arrayCopy(const Array<T>& src, int srcPos, Array<T>& dst, int dstPos, int length) {
+    for (int i = 0; i < length; i++) dst[dstPos + i] = src[srcPos + i];
+}
+
+template<typename T>
+Array<T> concat(const Array<T>& a, const Array<T>& b) {
+    std::vector<T> v = a.rawData();
+    const auto& bv = b.rawData();
+    v.insert(v.end(), bv.begin(), bv.end());
+    return Array<T>::fromVector(std::move(v));
+}
+
+template<typename T>
+Array<T> expand(const Array<T>& arr) {
+    int newSize = arr.length() == 0 ? 1 : arr.length() * 2;
+    std::vector<T> v = arr.rawData();
+    v.resize((size_t)newSize, T());
+    return Array<T>::fromVector(std::move(v));
+}
+template<typename T>
+Array<T> expand(const Array<T>& arr, int newSize) {
+    std::vector<T> v = arr.rawData();
+    v.resize((size_t)std::max(newSize, arr.length()), T());
+    return Array<T>::fromVector(std::move(v));
+}
+
+template<typename T>
+void reverse(Array<T>& arr) {
+    std::reverse(arr.rawData().begin(), arr.rawData().end());
+}
+
+template<typename T>
+Array<T> shorten(const Array<T>& arr) {
+    std::vector<T> v = arr.rawData();
+    if (!v.empty()) v.pop_back();
+    return Array<T>::fromVector(std::move(v));
+}
+
+template<typename T>
+void sort(Array<T>& arr) {
+    std::sort(arr.rawData().begin(), arr.rawData().end());
+}
+template<typename T>
+void sort(Array<T>& arr, int count) {
+    std::sort(arr.rawData().begin(), arr.rawData().begin() + std::min(count, arr.length()));
+}
+
+template<typename T>
+Array<T> splice(const Array<T>& arr, const T& value, int index) {
+    std::vector<T> v = arr.rawData();
+    v.insert(v.begin() + index, value);
+    return Array<T>::fromVector(std::move(v));
+}
+template<typename T>
+Array<T> splice(const Array<T>& arr, const Array<T>& values, int index) {
+    std::vector<T> v = arr.rawData();
+    const auto& vv = values.rawData();
+    v.insert(v.begin() + index, vv.begin(), vv.end());
+    return Array<T>::fromVector(std::move(v));
+}
+
+template<typename T>
+Array<T> subset(const Array<T>& arr, int start) {
+    const auto& v = arr.rawData();
+    return Array<T>::fromVector(std::vector<T>(v.begin() + start, v.end()));
+}
+template<typename T>
+Array<T> subset(const Array<T>& arr, int start, int count) {
+    const auto& v = arr.rawData();
+    return Array<T>::fromVector(std::vector<T>(v.begin() + start, v.begin() + start + count));
+}
+
 class Integer; class Float; class Double; class Long; class Byte; class Character;
 template<typename T>
 struct IsJavaValueType : std::integral_constant<bool,
@@ -2655,12 +2829,12 @@ public:
     PShader(const PShader&) __attribute__((error(
         "E0003: PShader value-style copying is not supported. "
         "Declare PShader* instead of PShader. "
-        "See https://processing-cpp.github.io/error/E0003.html"
+        "See " PROCESSING_WEBSITE_URL "/error/E0003.html"
     )));
     PShader& operator=(const PShader&) __attribute__((error(
         "E0003: PShader value-style assignment is not supported. "
         "Declare PShader* instead of PShader. "
-        "See https://processing-cpp.github.io/error/E0003.html"
+        "See " PROCESSING_WEBSITE_URL "/error/E0003.html"
     )));
     PShader(PShader&& o) noexcept
         : program(o.program),vert(o.vert),frag(o.frag),
