@@ -59,6 +59,7 @@
 #include <fstream>
 #include <regex>
 #include <cstdlib>
+#include <cstdarg>
 #include <ctime>
 #include <chrono>
 #include <string>
@@ -102,6 +103,37 @@ inline std::string operator+(double n, const std::string& s) { return std::to_st
 inline std::string operator+(char c,   const std::string& s) { return std::string(1, c) + s; }
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+
+// =============================================================================
+// DEBUG OUTPUT -- toggle with -DPROCESSING_DEBUG at compile time
+// =============================================================================
+// Use PDEBUG(...) anywhere you'd normally reach for a raw fprintf(stderr,...)
+// call while investigating something. It's a no-op (compiles to nothing,
+// zero runtime cost) unless PROCESSING_DEBUG is defined, so debug prints
+// can be left in the source permanently without ever reaching a normal
+// build or a user's console -- no more hunting down and deleting stray
+// fprintf calls by hand once an investigation is done.
+//
+// Usage (same argument style as fprintf, always include the trailing \n):
+//   PDEBUG("beginDraw: width=%d height=%d\n", width, height);
+//
+// To actually see the output during local debugging, rebuild with:
+//   g++ -DPROCESSING_DEBUG ... (alongside the other -D flags already used)
+#ifndef PROCESSING_BUILD_STAMP
+    // Fallback for any compile that doesn't go through rebuild-engine.sh
+    // (e.g. the IDE's own per-sketch compile, which links the pre-built
+    // Processing.o but never defines this itself). Seeing "UNKNOWN" at
+    // runtime is itself a useful signal that something bypassed the
+    // normal engine-build script.
+    #define PROCESSING_BUILD_STAMP "UNKNOWN"
+#endif
+
+#ifdef PROCESSING_DEBUG
+    #define PDEBUG(...) fprintf(stderr, "[PDEBUG] " __VA_ARGS__)
+#else
+    #define PDEBUG(...) do {} while (0)
+#endif
+
 
 namespace Processing {
 
@@ -430,8 +462,16 @@ public:
     virtual ~PImage() { if (texID) glDeleteTextures(1, &texID); }
 
     // Non-copyable (owns GPU resource -- use PImage* for assignment)
-    PImage(const PImage&)            = delete;
-    PImage& operator=(const PImage&) = delete;
+    PImage(const PImage&) __attribute__((error(
+        "E0002: PImage value-style copying is not supported. "
+        "Declare PImage* instead of PImage. "
+        "See https://processing-cpp.github.io/error/E0002.html"
+    )));
+    PImage& operator=(const PImage&) __attribute__((error(
+        "E0002: PImage value-style assignment is not supported. "
+        "Declare PImage* instead of PImage. "
+        "See https://processing-cpp.github.io/error/E0002.html"
+    )));
 
     // Movable
     PImage(PImage&& o) noexcept
@@ -511,6 +551,7 @@ public:
     GLuint msaaColorRbo = 0;
     GLuint msaaDepthRbo = 0;
     int    samples = 0; // 0 = no multisampling
+    bool   is3D = false; // true if created via createGraphics(w,h,P3D)
 
     PGraphics() = default;
 
@@ -521,7 +562,7 @@ public:
         // P2D/P3D default (smooth(2)) rather than reaching across that
         // forward-reference gap. A sketch wanting a different level for
         // its buffers can extend this later if needed.
-        samples = 2;
+        samples = 0; // TEMPORARY: forced off to test if MSAA itself is the bug
 
         // Resolve target: plain, non-multisampled FBO + texture --
         // unchanged from before, just filled via a blit-resolve now.
@@ -563,9 +604,12 @@ public:
                 glDeleteRenderbuffers(1, &msaaDepthRbo); msaaDepthRbo = 0;
                 samples = 0;
             }
-            fprintf(stderr, "=== DEBUG PGraphics MSAA setup: samples=%d msaaFbo=%u w=%d h=%d ===\n", samples, msaaFbo, w, h);
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
+    }
+
+    PGraphics(int w, int h, bool threeD) : PGraphics(w, h) {
+        is3D = threeD;
     }
 
     GLint savedViewport[4] = {};
@@ -587,53 +631,85 @@ public:
     void textSize(float size);
     void textAlign(int alignX);
     void textAlign(int alignX, int alignY);
+    void translate(float x, float y, float z);
+    void rotateX(float angle);
+    void rotateY(float angle);
+    void rotateZ(float angle);
+    void box(float size);
+    void box(float w, float h, float d);
+    void sphere(float r);
+    void lights();
+    void noLights();
+    void ambientLight(float r, float g, float b);
+    void ambientLight(float r, float g, float b, float x, float y, float z);
+    void directionalLight(float r, float g, float b, float nx, float ny, float nz);
+    void pointLight(float r, float g, float b, float x, float y, float z);
+    void spotLight(float r, float g, float b, float x, float y, float z,
+                   float nx, float ny, float nz, float angle, float conc);
+    void lightFalloff(float c, float l, float q);
+    void lightSpecular(float r, float g, float b);
     void translate(float x, float y); void rotate(float a); void scale(float s);
     void pushMatrix(); void popMatrix();
     void beginShape(); void endShape(int mode=0); void vertex(float x, float y);
     void clear();
 
     ~PGraphics() {
+        // Defensive cleanup: a PGraphics can be destroyed (via delete, or
+        // by going out of scope) while its beginDraw() was never matched
+        // with an endDraw() -- e.g. "pg = createGraphics(...)" reassigns
+        // a pointer, leaking the OLD PGraphics it pointed to if nothing
+        // explicitly deleted it first; if something DOES eventually
+        // delete it (or CppBuild auto-inserts a delete for exactly this
+        // case), the destructor running mid-beginDraw() needs to
+        // gracefully unwind that state rather than leaving the matrix
+        // stack unbalanced or GL bindings dangling on whatever context
+        // outlives this object.
+        if (active) {
+            PDEBUG("PGraphics::~PGraphics: destroying while still active "
+                   "(beginDraw() never matched with endDraw()) -- "
+                   "auto-closing now. this=%p\n", (void*)this);
+            _endDrawImpl();
+        }
+        if (msaaFbo)       glDeleteFramebuffers(1, &msaaFbo);
+        if (msaaColorRbo)  glDeleteRenderbuffers(1, &msaaColorRbo);
+        if (msaaDepthRbo)  glDeleteRenderbuffers(1, &msaaDepthRbo);
         if (fbo) glDeleteFramebuffers(1,  &fbo);
         if (rbo) glDeleteRenderbuffers(1, &rbo);
     }
 
-    PGraphics(const PGraphics&)            = delete;
-    PGraphics& operator=(const PGraphics&) = delete;
+    PGraphics(const PGraphics&) __attribute__((error(
+        "E0001: PGraphics value-style copying is not supported. "
+        "Declare PGraphics* instead of PGraphics. "
+        "See https://processing-cpp.github.io/error/E0001.html"
+    )));
+    PGraphics& operator=(const PGraphics&) __attribute__((error(
+        "E0001: PGraphics value-style assignment is not supported. "
+        "Declare PGraphics* instead of PGraphics. "
+        "See https://processing-cpp.github.io/error/E0001.html"
+    )));
     // Allow assignment from pointer (PGraphics pg; pg = createGraphics(w,h))
-    PGraphics& operator=(PGraphics* p) {
-        if(p && p!=this){
-            // Transfer ownership. This previously only moved fbo/rbo/
-            // texID/width/height/active -- missing the MSAA fields added
-            // later (msaaFbo/msaaColorRbo/msaaDepthRbo/samples) meant a
-            // freshly created buffer's real multisample resources were
-            // silently discarded the moment "PGraphics pg; pg =
-            // createGraphics(...);" ran, leaving pg with samples=0 even
-            // though the temporary object had samples=2 -- antialiasing
-            // was being thrown away before the sketch ever got to draw
-            // anything. Also missing: myStyle/_savedMainStyle (the
-            // independent per-buffer style state added today), which
-            // would have reset to defaults on every reassignment instead
-            // of being the NEW buffer's own fresh defaults as intended --
-            // actually correct to take p's (a fresh buffer SHOULD start
-            // with fresh defaults), but worth being explicit about so
-            // future fields don't get silently dropped the same way.
-            if(fbo) glDeleteFramebuffers(1,&fbo);
-            if(rbo) glDeleteRenderbuffers(1,&rbo);
-            if(msaaFbo) glDeleteFramebuffers(1,&msaaFbo);
-            if(msaaColorRbo) glDeleteRenderbuffers(1,&msaaColorRbo);
-            if(msaaDepthRbo) glDeleteRenderbuffers(1,&msaaDepthRbo);
-            fbo=p->fbo; rbo=p->rbo; texID=p->texID;
-            msaaFbo=p->msaaFbo; msaaColorRbo=p->msaaColorRbo; msaaDepthRbo=p->msaaDepthRbo;
-            samples=p->samples;
-            width=p->width; height=p->height;
-            active=p->active;
-            myStyle=p->myStyle; _savedMainStyle=p->_savedMainStyle;
-            p->fbo=0; p->rbo=0; p->texID=0;
-            p->msaaFbo=0; p->msaaColorRbo=0; p->msaaDepthRbo=0;
-            delete p;
-        }
-        return *this;
-    }
+    // [E0001] REMOVED: the legacy "PGraphics pg; pg = createGraphics(...);"
+    // value-style assignment is no longer supported. PGraphics owns
+    // unique GPU resources (FBO, renderbuffers, texture) -- unlike
+    // PShape/PFont, which hold only plain CPU-side data and are safely
+    // copyable, copying or reassigning a PGraphics VALUE has no safe
+    // meaning. Declare it as a pointer instead:
+    //
+    //   PGraphics* pg;
+    //   pg = createGraphics(w, h);
+    //   pg->beginDraw();
+    //   ...
+    //   pg->endDraw();
+    //
+    // This explicit compile error is intentional: it tells you exactly
+    // what to fix, rather than silently compiling against a value-style
+    // declaration that would behave incorrectly or unsafely.
+    // See: https://processing-cpp.github.io/error/E0001
+    PGraphics& operator=(PGraphics* p) __attribute__((error(
+        "E0001: PGraphics value-style assignment is not supported. "
+        "Declare PGraphics* instead of PGraphics. "
+        "See https://processing-cpp.github.io/error/E0001"
+    )));
 };
 
 // =============================================================================
@@ -701,7 +777,7 @@ public:
 // ---------------------------------------------------------------------------
 
 // key == CODED when a non-ASCII special key is pressed; then check keyCode
-static constexpr int CODED     = 0xFF;
+static constexpr int CODED     = 0xFFFF; // matches real Processing's PConstants.CODED exactly (was incorrectly 0xFF, off by a factor of 256)
 
 // Coded keys (keyCode values, Java KeyEvent.VK_*)
 static constexpr int UP        = 38;
@@ -912,6 +988,15 @@ inline std::string str(int v)   { return std::to_string(v); }
 inline std::string str(float v) { return std::to_string(v); }
 inline std::string str(bool v)  { return v ? "true" : "false"; }
 inline std::string str(char v)  { return std::string(1, v); }
+// char16_t overload -- matches Java's actual "char" type for key/keyTyped
+// etc., which is 16-bit (UTF-16). For values within the basic ASCII/
+// Latin-1 range (which covers everything our engine's keyboard handling
+// actually produces), this prints the single character exactly like
+// str(char) does. CODED (0xFFFF) itself isn't really meant to be
+// printed as text at all (matching real Processing -- see PConstants.
+// CODED's own doc comment, "key will be CODED"), so this just produces
+// SOME single-character output for it rather than special-casing it.
+inline std::string str(char16_t v)  { return std::string(1, (char)v); }
 inline bool        toBoolean(const std::string& s)  { return s=="true"||s=="1"||s=="yes"; }
 inline int         toInt(const std::string& s)      { return std::stoi(s); }
 inline float       toFloat(const std::string& s)    { try { return std::stof(s); } catch (...) { return 0.0f; } }
@@ -1513,7 +1598,238 @@ public:
     String concat(const std::string& other) const { return String(*this + other); }
 
     int compareTo(const std::string& other) const { return compare(other); }
+
+    // split(delim) -- one of the most commonly used String methods in
+    // real Processing sketches (parsing CSV/delimited text). Matches
+    // Java's String.split(String regex) for the simple, non-regex,
+    // single-character-or-literal-delimiter case. Returns
+    // std::vector<String> rather than ArrayList<String> -- ArrayList<T>
+    // is declared LATER in this file, so referencing it here would be a
+    // forward-reference compile error; std::vector works identically
+    // for a simple for-loop over the results and has no ordering
+    // dependency.
+    // Edge cases handled to match Java's actual behavior:
+    //   - empty input string -> single-element vector containing ""
+    //   - delimiter not found -> whole string as the only element
+    //   - consecutive delimiters -> empty-string elements between them
+    //     (Java does NOT collapse them, and neither do we)
+    //   - empty delimiter -> returns the original string unsplit
+    std::vector<String> split(const std::string& delim) const {
+        std::vector<String> result;
+        if (delim.empty()) {
+            result.push_back(String(*this));
+            return result;
+        }
+        size_t start = 0, pos;
+        while ((pos = find(delim, start)) != npos) {
+            result.push_back(String(substr(start, pos - start)));
+            start = pos + delim.size();
+        }
+        result.push_back(String(substr(start)));
+        return result;
+    }
+
+    // toCharArray() -- matches Java's String.toCharArray(). An empty
+    // string correctly returns an empty vector, not a vector containing
+    // one null char.
+    std::vector<char> toCharArray() const {
+        return std::vector<char>(begin(), end());
+    }
+
+    // ===== Java API additions (added by apply_java_additions.py) =====
+
+    // String(char[]) -- round-trip with toCharArray()
+    String(const std::vector<char>& chars) : std::string(chars.begin(), chars.end()) {}
+    String(const char* chars, size_t count) : std::string(chars, count) {}
+
+    // compareToIgnoreCase -- case-insensitive lexicographic compare
+    int compareToIgnoreCase(const std::string& other) const {
+        size_t n = std::min(size(), other.size());
+        for (size_t i = 0; i < n; i++) {
+            char a = (char)tolower((unsigned char)(*this)[i]);
+            char b = (char)tolower((unsigned char)other[i]);
+            if (a != b) return (int)(unsigned char)a - (int)(unsigned char)b;
+        }
+        return (int)size() - (int)other.size();
+    }
+
+    // matches()/replaceAll() with regex intentionally NOT implemented --
+    // same rationale as split(): real Processing sketches rarely use
+    // them, and a correct regex engine is a much bigger addition. Use
+    // std::regex directly in sketch code if needed.
+
+    // ---- static methods ----
+
+    // String.valueOf(...) -- Java's universal "stringify a primitive".
+    static String valueOf(int v)         { return String(std::to_string(v)); }
+    static String valueOf(long v)        { return String(std::to_string(v)); }
+    static String valueOf(float v)       { return String(std::to_string(v)); }
+    static String valueOf(double v)      { return String(std::to_string(v)); }
+    static String valueOf(bool v)        { return String(v ? "true" : "false"); }
+    static String valueOf(char v)        { return String(v); }
+    static String valueOf(const std::vector<char>& chars) { return String(chars); }
+
+    // String.join(delim, ...) -- Java 8+.
+    static String join(const std::string& delim, std::initializer_list<std::string> parts) {
+        String result;
+        bool first = true;
+        for (const auto& p : parts) {
+            if (!first) result += delim;
+            result += p;
+            first = false;
+        }
+        return result;
+    }
+    template<typename Container>
+    static String join(const std::string& delim, const Container& parts) {
+        String result;
+        bool first = true;
+        for (const auto& p : parts) {
+            if (!first) result += delim;
+            result += p;
+            first = false;
+        }
+        return result;
+    }
+
+    // String.format(...) -- printf-style formatting matching Java's
+    // String.format(String, Object...) for the common specifiers real
+    // Processing sketches use: %d %f %s %c %x %o %% with width/precision
+    // flags (e.g. "%05.2f", "%-10s"). Built on vsnprintf.
+    static String format(const char* fmt, ...) {
+        va_list args;
+        va_start(args, fmt);
+        va_list args_copy;
+        va_copy(args_copy, args);
+        int needed = std::vsnprintf(nullptr, 0, fmt, args_copy);
+        va_end(args_copy);
+        if (needed < 0) { va_end(args); return String(""); }
+        std::vector<char> buf((size_t)needed + 1);
+        std::vsnprintf(buf.data(), buf.size(), fmt, args);
+        va_end(args);
+        return String(std::string(buf.data(), (size_t)needed));
+    }
 };
+
+// =============================================================================
+// PRIMITIVE WRAPPER CLASSES -- Integer, Float, Double, Long, Byte, Character
+// =============================================================================
+// Real Java wrapper classes, matching real semantics: a constructor
+// taking the primitive (or a String, parsed via the matching parseXxx
+// logic), an xxxValue() accessor, a static valueOf() factory, a static
+// parseXxx() parser, an implicit conversion operator back to the
+// primitive (covers Java's autoboxing/unboxing convenience without
+// needing the user to call xxxValue() everywhere), and toString()/
+// compareTo() for parity with String's own wrapper-class methods.
+//
+// Previously these six types were rewritten as plain text to their bare
+// primitive equivalents (Integer->int, Float->float, etc.) -- the same
+// category of bug fixed for String->std::string: it silently changed
+// the user's declared type, breaking anything relying on real wrapper-
+// object behavior (valueOf(), parseXxx(), nullability via a sentinel,
+// etc.), even though most everyday Processing code never notices since
+// implicit conversion makes these usable almost everywhere a bare
+// primitive would be.
+template<typename PrimT>
+class NumberWrapperBase {
+protected:
+    PrimT v;
+public:
+    NumberWrapperBase() : v(PrimT()) {}
+    NumberWrapperBase(PrimT val) : v(val) {}
+    operator PrimT() const { return v; }
+    int compareTo(const NumberWrapperBase& other) const {
+        if (v < other.v) return -1;
+        if (v > other.v) return 1;
+        return 0;
+    }
+    bool equals(const NumberWrapperBase& other) const { return v == other.v; }
+    String toString() const { return String(std::to_string(v)); }
+};
+
+class Integer : public NumberWrapperBase<int> {
+public:
+    Integer() : NumberWrapperBase<int>() {}
+    Integer(int val) : NumberWrapperBase<int>(val) {}
+    explicit Integer(const std::string& s) : NumberWrapperBase<int>(std::stoi(s)) {}
+    int intValue() const { return v; }
+    static Integer valueOf(int val) { return Integer(val); }
+    static Integer valueOf(const std::string& s) { return Integer(std::stoi(s)); }
+    static int parseInt(const std::string& s) { return std::stoi(s); }
+};
+
+class Float : public NumberWrapperBase<float> {
+public:
+    Float() : NumberWrapperBase<float>() {}
+    Float(float val) : NumberWrapperBase<float>(val) {}
+    explicit Float(const std::string& s) : NumberWrapperBase<float>(std::stof(s)) {}
+    float floatValue() const { return v; }
+    static Float valueOf(float val) { return Float(val); }
+    static Float valueOf(const std::string& s) { return Float(std::stof(s)); }
+    static float parseFloat(const std::string& s) { return std::stof(s); }
+};
+
+class Double : public NumberWrapperBase<double> {
+public:
+    Double() : NumberWrapperBase<double>() {}
+    Double(double val) : NumberWrapperBase<double>(val) {}
+    explicit Double(const std::string& s) : NumberWrapperBase<double>(std::stod(s)) {}
+    double doubleValue() const { return v; }
+    static Double valueOf(double val) { return Double(val); }
+    static Double valueOf(const std::string& s) { return Double(std::stod(s)); }
+    static double parseDouble(const std::string& s) { return std::stod(s); }
+};
+
+class Long : public NumberWrapperBase<long> {
+public:
+    Long() : NumberWrapperBase<long>() {}
+    Long(long val) : NumberWrapperBase<long>(val) {}
+    explicit Long(const std::string& s) : NumberWrapperBase<long>(std::stol(s)) {}
+    long longValue() const { return v; }
+    static Long valueOf(long val) { return Long(val); }
+    static Long valueOf(const std::string& s) { return Long(std::stol(s)); }
+    static long parseLong(const std::string& s) { return std::stol(s); }
+};
+
+class Byte : public NumberWrapperBase<signed char> {
+public:
+    Byte() : NumberWrapperBase<signed char>() {}
+    Byte(signed char val) : NumberWrapperBase<signed char>(val) {}
+    explicit Byte(const std::string& s) : NumberWrapperBase<signed char>((signed char)std::stoi(s)) {}
+    signed char byteValue() const { return v; }
+    static Byte valueOf(signed char val) { return Byte(val); }
+    static Byte valueOf(const std::string& s) { return Byte((signed char)std::stoi(s)); }
+    static signed char parseByte(const std::string& s) { return (signed char)std::stoi(s); }
+};
+
+// Character is NOT a Number subclass in real Java (it extends Object
+// directly), so it doesn't share NumberWrapperBase -- no compareTo via
+// numeric ordering makes sense to inherit from that template here,
+// though char does have a natural ordering, so compareTo is still
+// provided directly.
+class Character {
+    char v;
+public:
+    Character() : v('\0') {}
+    Character(char val) : v(val) {}
+    operator char() const { return v; }
+    char charValue() const { return v; }
+    static Character valueOf(char val) { return Character(val); }
+    int compareTo(const Character& other) const {
+        if (v < other.v) return -1;
+        if (v > other.v) return 1;
+        return 0;
+    }
+    bool equals(const Character& other) const { return v == other.v; }
+    String toString() const { return String(std::string(1, v)); }
+    static bool isDigit(char c) { return c >= '0' && c <= '9'; }
+    static bool isLetter(char c) { return std::isalpha((unsigned char)c) != 0; }
+    static bool isUpperCase(char c) { return std::isupper((unsigned char)c) != 0; }
+    static bool isLowerCase(char c) { return std::islower((unsigned char)c) != 0; }
+    static char toUpperCase(char c) { return (char)std::toupper((unsigned char)c); }
+    static char toLowerCase(char c) { return (char)std::tolower((unsigned char)c); }
+};
+
 
 class IntList {
 public:
@@ -1542,6 +1858,118 @@ public:
     int& operator[](int i)        { return data[i]; }
     auto begin() { return data.begin(); }
     auto end()   { return data.end(); }
+
+    // ===== Java/Processing API additions (apply_java_additions.py) =====
+    explicit IntList(int length) : data((size_t)std::max(0, length), 0) {}
+
+    static IntList fromRange(int stop) { return fromRange(0, stop); }
+    static IntList fromRange(int start, int stop) {
+        IntList r;
+        for (int i = start; i < stop; i++) r.append(i);
+        return r;
+    }
+
+    void resize(int length) { data.resize((size_t)std::max(0, length), 0); }
+
+    void push(int v) { append(v); }
+    int  pop() {
+        if (data.empty()) throw std::runtime_error("Can't call pop() on an empty list");
+        int v = data.back();
+        data.pop_back();
+        return v;
+    }
+
+    int index(int value) const {
+        for (int i = 0; i < (int)data.size(); i++) if (data[i] == value) return i;
+        return -1;
+    }
+    int removeValue(int value) {
+        int idx = index(value);
+        if (idx != -1) remove(idx);
+        return idx;
+    }
+    int removeValues(int value) {
+        int before = (int)data.size();
+        data.erase(std::remove(data.begin(), data.end(), value), data.end());
+        return before - (int)data.size();
+    }
+    void appendUnique(int value) { if (!hasValue(value)) append(value); }
+
+    void append(const std::vector<int>& values) { for (int v : values) append(v); }
+    void append(const IntList& list) {
+        // Snapshot first: if 'list' is THIS SAME object (e.g. self-aliasing
+        // call list.append(list)), iterating list.data directly while
+        // append(v) grows this->data via push_back can reallocate the
+        // underlying buffer mid-loop, invalidating the range-for's
+        // captured begin()/end() iterators -- a use-after-free. Copying
+        // values out first makes append(self) safe and correct.
+        // (Found by stress-testing; confirmed via AddressSanitizer.)
+        std::vector<int> snapshot = list.data;
+        for (int v : snapshot) append(v);
+    }
+
+    void increment(int idx) {
+        if ((int)data.size() <= idx) resize(idx + 1);
+        data[idx]++;
+    }
+    // addAt/subAt/multAt/divAt -- real Java IntList overloads add() etc.
+    // for in-place arithmetic on one element using the SAME name as
+    // insert (add(index,value)); we use distinct names here since our
+    // add(int,int) already means "insert v at i".
+    void addAt(int idx, int amount)  { data.at(idx) += amount; }
+    void subAt(int idx, int amount)  { data.at(idx) -= amount; }
+    void multAt(int idx, int amount) { data.at(idx) *= amount; }
+    void divAt(int idx, int amount)  { data.at(idx) /= amount; }
+
+    int min() const {
+        if (data.empty()) throw std::runtime_error("Cannot use min() on an empty IntList.");
+        return *std::min_element(data.begin(), data.end());
+    }
+    int max() const {
+        if (data.empty()) throw std::runtime_error("Cannot use max() on an empty IntList.");
+        return *std::max_element(data.begin(), data.end());
+    }
+    int minIndex() const {
+        if (data.empty()) throw std::runtime_error("Cannot use minIndex() on an empty IntList.");
+        return (int)std::distance(data.begin(), std::min_element(data.begin(), data.end()));
+    }
+    int maxIndex() const {
+        if (data.empty()) throw std::runtime_error("Cannot use maxIndex() on an empty IntList.");
+        return (int)std::distance(data.begin(), std::max_element(data.begin(), data.end()));
+    }
+    long sumLong() const { long s = 0; for (int v : data) s += v; return s; }
+    int  sum()     const { return (int)sumLong(); }
+
+    void sortReverse() { std::sort(data.begin(), data.end(), std::greater<int>()); }
+
+    IntList copy() const { IntList r; r.data = data; return r; }
+
+    IntList getSubset(int start) const { return getSubset(start, (int)data.size() - start); }
+    IntList getSubset(int start, int num) const {
+        // Real Java IntList.getSubset() relies on System.arraycopy, which
+        // throws for an out-of-range start/num. Our begin()+start+num
+        // iterator arithmetic is UB if out of range rather than a safe
+        // throw -- confirmed by AddressSanitizer -- so we validate first.
+        if (start < 0 || num < 0 || start + num > (int)data.size()) {
+            throw std::out_of_range("IntList::getSubset() index out of range");
+        }
+        IntList r;
+        r.data.assign(data.begin() + start, data.begin() + start + num);
+        return r;
+    }
+
+    std::string join(const std::string& separator) const {
+        if (data.empty()) return "";
+        std::string r = std::to_string(data[0]);
+        for (size_t i = 1; i < data.size(); i++) { r += separator; r += std::to_string(data[i]); }
+        return r;
+    }
+    void print() const {
+        for (int i = 0; i < (int)data.size(); i++) printf("[%d] %d\n", i, data[i]);
+    }
+    std::string toString() const {
+        return "IntList size=" + std::to_string(size()) + " [ " + join(", ") + " ]";
+    }
 };
 
 class FloatList {
@@ -1567,6 +1995,100 @@ public:
     float& operator[](int i)      { return data[i]; }
     auto begin() { return data.begin(); }
     auto end()   { return data.end(); }
+
+    // ===== Java/Processing API additions (apply_java_additions.py) =====
+    explicit FloatList(int length) : data((size_t)std::max(0, length), 0.0f) {}
+
+    void resize(int length) { data.resize((size_t)std::max(0, length), 0.0f); }
+
+    void add(int i, float v) { data.insert(data.begin()+i, v); }
+
+    bool hasValue(float v) const { return std::find(data.begin(),data.end(),v)!=data.end(); }
+    bool contains(float v)  const { return hasValue(v); }
+
+    void push(float v) { append(v); }
+    float pop() {
+        if (data.empty()) throw std::runtime_error("Can't call pop() on an empty list");
+        float v = data.back();
+        data.pop_back();
+        return v;
+    }
+
+    int index(float value) const {
+        for (int i = 0; i < (int)data.size(); i++) if (data[i] == value) return i;
+        return -1;
+    }
+    int removeValue(float value) {
+        int idx = index(value);
+        if (idx != -1) remove(idx);
+        return idx;
+    }
+    int removeValues(float value) {
+        int before = (int)data.size();
+        data.erase(std::remove(data.begin(), data.end(), value), data.end());
+        return before - (int)data.size();
+    }
+    void appendUnique(float value) { if (!hasValue(value)) append(value); }
+
+    void append(const std::vector<float>& values) { for (float v : values) append(v); }
+    void append(const FloatList& list) {
+        // Snapshot first -- see IntList::append(const IntList&) comment;
+        // protects against self-aliasing (list.append(list)) reallocating
+        // mid-iteration and invalidating the iterators we're reading from.
+        std::vector<float> snapshot = list.data;
+        for (float v : snapshot) append(v);
+    }
+
+    void addAt(int idx, float amount)  { data.at(idx) += amount; }
+    void subAt(int idx, float amount)  { data.at(idx) -= amount; }
+    void multAt(int idx, float amount) { data.at(idx) *= amount; }
+    void divAt(int idx, float amount)  { data.at(idx) /= amount; }
+
+    float min() const {
+        if (data.empty()) throw std::runtime_error("Cannot use min() on an empty FloatList.");
+        return *std::min_element(data.begin(), data.end());
+    }
+    float max() const {
+        if (data.empty()) throw std::runtime_error("Cannot use max() on an empty FloatList.");
+        return *std::max_element(data.begin(), data.end());
+    }
+    int minIndex() const {
+        if (data.empty()) throw std::runtime_error("Cannot use minIndex() on an empty FloatList.");
+        return (int)std::distance(data.begin(), std::min_element(data.begin(), data.end()));
+    }
+    int maxIndex() const {
+        if (data.empty()) throw std::runtime_error("Cannot use maxIndex() on an empty FloatList.");
+        return (int)std::distance(data.begin(), std::max_element(data.begin(), data.end()));
+    }
+    double sum() const { double s = 0; for (float v : data) s += v; return s; }
+
+    void sortReverse() { std::sort(data.begin(), data.end(), std::greater<float>()); }
+
+    FloatList copy() const { FloatList r; r.data = data; return r; }
+
+    FloatList getSubset(int start) const { return getSubset(start, (int)data.size() - start); }
+    FloatList getSubset(int start, int num) const {
+        // See IntList::getSubset() comment -- same UB risk, same fix.
+        if (start < 0 || num < 0 || start + num > (int)data.size()) {
+            throw std::out_of_range("FloatList::getSubset() index out of range");
+        }
+        FloatList r;
+        r.data.assign(data.begin() + start, data.begin() + start + num);
+        return r;
+    }
+
+    std::string join(const std::string& separator) const {
+        if (data.empty()) return "";
+        std::string r = std::to_string(data[0]);
+        for (size_t i = 1; i < data.size(); i++) { r += separator; r += std::to_string(data[i]); }
+        return r;
+    }
+    void print() const {
+        for (int i = 0; i < (int)data.size(); i++) printf("[%d] %f\n", i, data[i]);
+    }
+    std::string toString() const {
+        return "FloatList size=" + std::to_string(size()) + " [ " + join(", ") + " ]";
+    }
 };
 
 class StringList {
@@ -1584,6 +2106,82 @@ public:
     void        remove(int i)                   { data.erase(data.begin()+i); }
     void        clear()                         { data.clear(); }
     std::string& operator[](int i)              { return data[i]; }
+
+    // ===== Java/Processing API additions (apply_java_additions.py) =====
+    explicit StringList(int length) : data((size_t)std::max(0, length)) {}
+
+    bool isEmpty() const { return data.empty(); }
+    void resize(int length) { data.resize((size_t)std::max(0, length)); }
+
+    void add(const std::string& v)            { data.push_back(v); }
+    void add(int i, const std::string& v)     { data.insert(data.begin()+i, v); }
+    bool contains(const std::string& v) const { return hasValue(v); }
+
+    void push(const std::string& v) { append(v); }
+    std::string pop() {
+        if (data.empty()) throw std::runtime_error("Can't call pop() on an empty list");
+        std::string v = data.back();
+        data.pop_back();
+        return v;
+    }
+
+    int index(const std::string& value) const {
+        for (int i = 0; i < (int)data.size(); i++) if (data[i] == value) return i;
+        return -1;
+    }
+    int removeValue(const std::string& value) {
+        int idx = index(value);
+        if (idx != -1) remove(idx);
+        return idx;
+    }
+    int removeValues(const std::string& value) {
+        int before = (int)data.size();
+        data.erase(std::remove(data.begin(), data.end(), value), data.end());
+        return before - (int)data.size();
+    }
+    void appendUnique(const std::string& value) { if (!hasValue(value)) append(value); }
+
+    void append(const std::vector<std::string>& values) { for (auto& v : values) append(v); }
+    void append(const StringList& list) {
+        // Snapshot first -- see IntList::append(const IntList&) comment;
+        // protects against self-aliasing (list.append(list)) reallocating
+        // mid-iteration and invalidating the iterators we're reading from.
+        std::vector<std::string> snapshot = list.data;
+        for (auto& v : snapshot) append(v);
+    }
+
+    void shuffle() {
+        for (int i = (int)data.size()-1; i > 0; i--) {
+            int j = rand() % (i+1);
+            std::swap(data[i], data[j]);
+        }
+    }
+
+    StringList copy() const { StringList r; r.data = data; return r; }
+
+    StringList getSubset(int start) const { return getSubset(start, (int)data.size() - start); }
+    StringList getSubset(int start, int num) const {
+        // See IntList::getSubset() comment -- same UB risk, same fix.
+        if (start < 0 || num < 0 || start + num > (int)data.size()) {
+            throw std::out_of_range("StringList::getSubset() index out of range");
+        }
+        StringList r;
+        r.data.assign(data.begin() + start, data.begin() + start + num);
+        return r;
+    }
+
+    std::string join(const std::string& separator) const {
+        if (data.empty()) return "";
+        std::string r = data[0];
+        for (size_t i = 1; i < data.size(); i++) { r += separator; r += data[i]; }
+        return r;
+    }
+    void print() const {
+        for (int i = 0; i < (int)data.size(); i++) printf("[%d] %s\n", i, data[i].c_str());
+    }
+    std::string toString() const {
+        return "StringList size=" + std::to_string(size()) + " [ " + join(", ") + " ]";
+    }
 };
 
 // =============================================================================
@@ -1621,10 +2219,27 @@ public:
 // actually stored in the list. In Java, Particle is reference-like
 // just like everything else; "happens to be copyable in C++" was never
 // the right signal for "should behave like a Java primitive."
+class Integer; class Float; class Double; class Long; class Byte; class Character;
 template<typename T>
 struct IsJavaValueType : std::integral_constant<bool,
     std::is_arithmetic<T>::value ||      // int, float, double, bool, char, etc.
-    std::is_same<T, std::string>::value
+    std::is_same<T, std::string>::value ||
+    std::is_same<T, String>::value ||
+    // BUG FIX: the new Integer/Float/Double/Long/Byte/Character wrapper
+    // classes are NOT std::is_arithmetic (they're classes wrapping a
+    // primitive, not primitives themselves), so without this explicit
+    // list, ArrayList<Integer> etc. would silently become reference-
+    // storage (Integer*) -- breaking "nums.add(10);" (a plain int
+    // literal can't implicitly become an Integer*) even though these
+    // wrapper classes are specifically designed to be lightweight,
+    // copyable stand-ins for primitives (unlike PImage/PGraphics, which
+    // genuinely own unique GPU resources and must stay reference-like).
+    std::is_same<T, Integer>::value ||
+    std::is_same<T, Float>::value ||
+    std::is_same<T, Double>::value ||
+    std::is_same<T, Long>::value ||
+    std::is_same<T, Byte>::value ||
+    std::is_same<T, Character>::value
 > {};
 
 template<typename T, bool IsRefLike = !IsJavaValueType<T>::value>
@@ -1650,6 +2265,50 @@ public:
     T&    operator[](int i)          { return data[i]; }
     auto  begin() { return data.begin(); }
     auto  end()   { return data.end(); }
+
+    // ===== java.util.ArrayList<T> API additions (apply_java_additions.py) =====
+    bool removeElement(const T& v) {
+        auto it = std::find(data.begin(), data.end(), v);
+        if (it == data.end()) return false;
+        data.erase(it);
+        return true;
+    }
+    int indexOf(const T& v) const {
+        auto it = std::find(data.begin(), data.end(), v);
+        return it == data.end() ? -1 : (int)std::distance(data.begin(), it);
+    }
+    int lastIndexOf(const T& v) const {
+        auto it = std::find(data.rbegin(), data.rend(), v);
+        return it == data.rend() ? -1 : (int)(data.size() - 1 - std::distance(data.rbegin(), it));
+    }
+    void addAll(const ArrayList<T,false>& other) {
+        // Snapshot first: protects against self-aliasing (list.addAll(list)).
+        // vector::insert with a source range that overlaps the destination
+        // vector is not guaranteed safe by the standard if the insert
+        // triggers reallocation -- copying out first avoids relying on
+        // implementation-specific behavior. (Found by stress-testing.)
+        std::vector<T> snapshot = other.data;
+        data.insert(data.end(), snapshot.begin(), snapshot.end());
+    }
+    void addAll(int idx, const ArrayList<T,false>& other) {
+        std::vector<T> snapshot = other.data;
+        data.insert(data.begin()+idx, snapshot.begin(), snapshot.end());
+    }
+    ArrayList<T,false> subList(int from, int to) const {
+        // Real java.util.ArrayList.subList() throws IndexOutOfBoundsException
+        // for fromIndex<0, toIndex>size(), or fromIndex>toIndex. Without this
+        // check, data.begin()+from or data.begin()+to with an out-of-range
+        // offset is undefined behavior in the STL (not a safe throw) --
+        // confirmed by AddressSanitizer during stress-testing.
+        if (from < 0 || to > (int)data.size() || from > to) {
+            throw std::out_of_range("ArrayList::subList() index out of range");
+        }
+        ArrayList<T,false> r;
+        r.data.assign(data.begin()+from, data.begin()+to);
+        return r;
+    }
+    void ensureCapacity(int cap) { data.reserve((size_t)cap); }
+    void trimToSize() { data.shrink_to_fit(); }
 };
 
 // Reference-storage specialization: used automatically for non-copyable
@@ -1676,6 +2335,43 @@ public:
     T*&   operator[](int i)           { return data[i]; }
     auto  begin() { return data.begin(); }
     auto  end()   { return data.end(); }
+
+    // ===== java.util.ArrayList<T> API additions (apply_java_additions.py) =====
+    bool removeElement(T* v) {
+        auto it = std::find(data.begin(), data.end(), v);
+        if (it == data.end()) return false;
+        data.erase(it);
+        return true;
+    }
+    int indexOf(T* v) const {
+        auto it = std::find(data.begin(), data.end(), v);
+        return it == data.end() ? -1 : (int)std::distance(data.begin(), it);
+    }
+    int lastIndexOf(T* v) const {
+        auto it = std::find(data.rbegin(), data.rend(), v);
+        return it == data.rend() ? -1 : (int)(data.size() - 1 - std::distance(data.rbegin(), it));
+    }
+    void addAll(const ArrayList<T,true>& other) {
+        // Snapshot first -- see ArrayList<T,false>::addAll comment.
+        std::vector<T*> snapshot = other.data;
+        data.insert(data.end(), snapshot.begin(), snapshot.end());
+    }
+    void addAll(int idx, const ArrayList<T,true>& other) {
+        std::vector<T*> snapshot = other.data;
+        data.insert(data.begin()+idx, snapshot.begin(), snapshot.end());
+    }
+    ArrayList<T,true> subList(int from, int to) const {
+        // See ArrayList<T,false>::subList() comment -- same UB risk,
+        // same fix.
+        if (from < 0 || to > (int)data.size() || from > to) {
+            throw std::out_of_range("ArrayList::subList() index out of range");
+        }
+        ArrayList<T,true> r;
+        r.data.assign(data.begin()+from, data.begin()+to);
+        return r;
+    }
+    void ensureCapacity(int cap) { data.reserve((size_t)cap); }
+    void trimToSize() { data.shrink_to_fit(); }
 };
 
 // =============================================================================
@@ -1956,8 +2652,16 @@ public:
     void set(const std::string& n, float x, float y, float z, float w){ glUniform4f(glGetUniformLocation(program,n.c_str()),x,y,z,w); }
 
     ~PShader() { if(program)glDeleteProgram(program); if(vert)glDeleteShader(vert); if(frag)glDeleteShader(frag); }
-    PShader(const PShader&)            = delete;
-    PShader& operator=(const PShader&) = delete;
+    PShader(const PShader&) __attribute__((error(
+        "E0003: PShader value-style copying is not supported. "
+        "Declare PShader* instead of PShader. "
+        "See https://processing-cpp.github.io/error/E0003.html"
+    )));
+    PShader& operator=(const PShader&) __attribute__((error(
+        "E0003: PShader value-style assignment is not supported. "
+        "Declare PShader* instead of PShader. "
+        "See https://processing-cpp.github.io/error/E0003.html"
+    )));
     PShader(PShader&& o) noexcept
         : program(o.program),vert(o.vert),frag(o.frag),
           vertSrc(o.vertSrc),fragSrc(o.fragSrc),linked(o.linked)
@@ -2234,7 +2938,16 @@ struct PApplet {
 
     bool  _keyPressed = false;
     int   keyCode = 0;
-    char  key = 0;
+    // char16_t, not char -- Java's "char" is genuinely a 16-bit type
+    // (a UTF-16 code unit), wide enough to hold CODED's real value
+    // (0xFFFF) without truncation. A C++ "char" is only 8 bits, so
+    // "(char)CODED" always truncated down to 0xFF regardless of what
+    // CODED's declared value was. char16_t is the real, character-
+    // semantic C++ type for exactly this situation -- str()/String
+    // concatenation get dedicated overloads (see below) so key still
+    // displays/concatenates as a character, matching Java's actual
+    // behavior, rather than falling back to int's numeric formatting.
+    char16_t key = 0;
     bool  keys[349] = {};        // all currently held GLFW keycodes (AAA-style flat array)
     bool  mouseButtons[8] = {};  // all currently held mouse buttons (GLFW_MOUSE_BUTTON_*)
     bool  keysDown[256] = {};    // Processing-keycode-indexed, mirrors upper/lower letters
@@ -2631,6 +3344,7 @@ struct PApplet {
     PImage*    loadImage(const std::string& path);
     PImage*    createImage(int w, int h, int mode=1);
     PGraphics* createGraphics(int w, int h);
+    PGraphics* createGraphics(int w, int h, int renderer); // matches size(w,h,renderer)
     PImage*    requestImage(const std::string& path);
     void imageMode(int mode);
     void image(PImage* img, float x, float y);
@@ -2641,6 +3355,19 @@ struct PApplet {
     void image(const PImage* img, float x, float y, float w, float h) { if(img) image(*img,x,y,w,h); }
     void image(PGraphics& pg, float x, float y);
     void image(PGraphics& pg, float x, float y, float w, float h);
+    // BUG FIX: sketches declare "PGraphics* pg;" (today's convention --
+    // PGraphics is non-copyable, so it's always pointer-typed), and call
+    // "image(pg, x, y);" with that pointer directly. Without an explicit
+    // PGraphics* overload, C++ overload resolution silently converts
+    // PGraphics* to PImage* (since PGraphics publicly inherits PImage)
+    // and calls the PLAIN PImage* image() overload instead -- completely
+    // bypassing drawPGraphicsRect() and its FBO-texture-aware rendering.
+    // The buffer's content was always being rendered correctly
+    // internally; it just never reached the screen, because the wrong
+    // overload silently won via an implicit derived-to-base pointer
+    // conversion that nothing here ever warned about.
+    void image(PGraphics* pg, float x, float y) { if (pg) image(*pg, x, y); }
+    void image(PGraphics* pg, float x, float y, float w, float h) { if (pg) image(*pg, x, y, w, h); }
     void filter(int mode);
     void filter(int mode, float param);
     void loadPixels();
@@ -2735,6 +3462,7 @@ struct PApplet {
     static std::string str(float v) { return std::to_string(v); }
     static std::string str(bool v)  { return v?"true":"false"; }
     static std::string str(char v)  { return std::string(1,v); }
+    static std::string str(char16_t v)  { return std::string(1,(char)v); }
     static std::vector<std::string> split(const std::string& s, char d);
     static std::vector<std::string> splitTokens(const std::string& s, const std::string& d);
     static std::string join(const std::vector<std::string>& v, const std::string& sep);
@@ -3007,28 +3735,109 @@ inline void PGraphics::beginDraw() {
     // beginDraw() twice without an intervening endDraw() is unusual
     // sketch code to begin with, but it must not corrupt unrelated state.
     if (active) return;
-    glGetIntegerv(GL_VIEWPORT, savedViewport);
+    // ROOT-CAUSE FIX: previously captured "whatever the viewport happens
+    // to be right now" via glGetIntegerv -- but if an EARLIER beginDraw()
+    // (on this buffer or a different, abandoned one) was never matched
+    // with endDraw(), the viewport at THIS moment may already be
+    // corrupted (some other buffer's small viewport, not the real main
+    // canvas's), and faithfully "restoring" that corrupted value just
+    // propagates it forward into the next thing drawn -- this was the
+    // actual cause of "the same line() call lands in a different place
+    // depending on what PGraphics code ran earlier in the same frame."
+    // Instead, always compute the TRUE main-canvas viewport directly
+    // from PApplet's own known-good framebuffer dimensions, never trust
+    // glGetIntegerv's possibly-already-wrong live value here.
+    if (PApplet::g_papplet) {
+        // fbW/fbH (the real framebuffer pixel size, accounting for
+        // HiDPI) are a file-local static inside Processing.cpp, not
+        // reachable from this header -- logicalW/logicalH ARE real
+        // PApplet members though, and are exactly what _endDrawImpl()
+        // already uses for restoring the projection's glOrtho call (see
+        // the matching fix there), so using them here too keeps both
+        // halves of the restore logically consistent with each other,
+        // even though they're not pixel-perfect on a HiDPI display.
+        savedViewport[0] = 0;
+        savedViewport[1] = 0;
+        savedViewport[2] = PApplet::g_papplet->logicalW;
+        savedViewport[3] = PApplet::g_papplet->logicalH;
+    } else {
+        glGetIntegerv(GL_VIEWPORT, savedViewport);
+    }
     // Render into the multisampled FBO when available (antialiased
     // drawing); the resolve target (fbo) gets filled via a blit in
     // _endDrawImpl(), not rendered into directly, when samples > 0.
     glBindFramebuffer(GL_FRAMEBUFFER, samples > 0 ? msaaFbo : fbo);
     glViewport(0, 0, width, height);
     glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
-    glOrtho(0, width, height, 0, -1, 1);
-    glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
-    glScalef(1.0f, -1.0f, 1.0f);
-    glTranslatef(0.0f, -(float)height, 0.0f);
+    if (is3D) {
+        // BUG FIX: a P3D buffer previously got the SAME flat 2D ortho
+        // projection as a plain 2D buffer (depth range -1..1), clipping
+        // away any real 3D content entirely -- a box(80) translated even
+        // slightly in Z extends far outside that paper-thin depth range
+        // and never reaches the screen. This mirrors PApplet::
+        // applyDefaultCamera()'s real perspective setup, scoped to this
+        // buffer's own width/height instead of the main canvas's
+        // logicalW/logicalH.
+        float eyeZ  = ((float)height / 2.0f) / std::tan(PI * 60.0f / 360.0f);
+        float near_ = eyeZ / 10.0f;
+        float far_  = eyeZ * 10.0f;
+        // glScalef(1.0f, -1.0f, 1.0f); // TEMPORARILY REMOVED for flip testing
+        {
+            // Inlined equivalent of _gluPerspective(60, width/height, near_, far_)
+            // -- that helper is `static` (file-local) inside Processing.cpp,
+            // not reachable from here, so the same small amount of matrix
+            // construction is duplicated rather than changing its linkage
+            // just for this one additional call site.
+            double f = 1.0 / std::tan(60.0 * M_PI / 360.0);
+            double aspect = (double)width / (double)height;
+            double m[16] = {0};
+            m[0]  = f / aspect;
+            m[5]  = f;
+            m[10] = (far_ + near_) / (near_ - far_);
+            m[11] = -1.0;
+            m[14] = (2.0 * far_ * near_) / (near_ - far_);
+            glMultMatrixd(m);
+        }
+        glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+        {
+            // Inlined equivalent of _gluLookAt(width/2, height/2, eyeZ,
+            //                                  width/2, height/2, 0, 0, 1, 0)
+            double ex = width/2.0, ey = height/2.0, ez = eyeZ;
+            double cx = width/2.0, cy = height/2.0, cz = 0.0;
+            double ux = 0.0, uy = 1.0, uz = 0.0;
+            double fx = cx-ex, fy = cy-ey, fz = cz-ez;
+            double fl = std::sqrt(fx*fx+fy*fy+fz*fz); fx/=fl; fy/=fl; fz/=fl;
+            double sx = fy*uz - fz*uy, sy = fz*ux - fx*uz, sz = fx*uy - fy*ux;
+            double sl = std::sqrt(sx*sx+sy*sy+sz*sz); sx/=sl; sy/=sl; sz/=sl;
+            double ux2 = sy*fz - sz*fy, uy2 = sz*fx - sx*fz, uz2 = sx*fy - sy*fx;
+            double m[16] = {
+                sx, ux2, -fx, 0,
+                sy, uy2, -fy, 0,
+                sz, uz2, -fz, 0,
+                0,  0,   0,   1
+            };
+            glMultMatrixd(m);
+            glTranslated(-ex, -ey, -ez);
+        }
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+    } else {
+        glOrtho(0, width, height, 0, -1, 1);
+        glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+        glScalef(1.0f, -1.0f, 1.0f);
+        glTranslatef(0.0f, -(float)height, 0.0f);
+    }
     active = true;
     {
         GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
         double mv[16], proj[16];
         glGetDoublev(GL_MODELVIEW_MATRIX, mv);
         glGetDoublev(GL_PROJECTION_MATRIX, proj);
-        fprintf(stderr, "=== DEBUG PGraphics::beginDraw ===\n");
-        fprintf(stderr, "  width=%d height=%d\n", width, height);
-        fprintf(stderr, "  GL viewport: x=%d y=%d w=%d h=%d\n", vp[0], vp[1], vp[2], vp[3]);
-        fprintf(stderr, "  proj[0]=%.6f proj[5]=%.6f proj[12]=%.6f proj[13]=%.6f\n", proj[0], proj[5], proj[12], proj[13]);
-        fprintf(stderr, "  mv[0]=%.6f mv[5]=%.6f mv[12]=%.6f mv[13]=%.6f\n", mv[0], mv[5], mv[12], mv[13]);
+        PDEBUG("PGraphics::beginDraw: width=%d height=%d samples=%d msaaFbo=%u fbo=%u this=%p\n",
+               width, height, samples, msaaFbo, fbo, (void*)this);
+        PDEBUG("  GL viewport: x=%d y=%d w=%d h=%d\n", vp[0], vp[1], vp[2], vp[3]);
+        PDEBUG("  proj[0]=%.6f proj[5]=%.6f proj[12]=%.6f proj[13]=%.6f\n", proj[0], proj[5], proj[12], proj[13]);
+        PDEBUG("  mv[0]=%.6f mv[5]=%.6f mv[12]=%.6f mv[13]=%.6f\n", mv[0], mv[5], mv[12], mv[13]);
     }
     // Swap PApplet's CURRENT style out (stash it for restoration in
     // endDraw()) and swap THIS buffer's own remembered style in. On the
@@ -3068,7 +3877,6 @@ inline void PGraphics::beginDraw() {
     myStyle.initialized = true;
 }
 inline void PGraphics::_endDrawImpl() {
-    fprintf(stderr, "=== DEBUG _endDrawImpl ENTRY: samples=%d msaaFbo=%u fbo=%u width=%d height=%d this=%p ===\n", samples, msaaFbo, fbo, width, height, (void*)this);
     glMatrixMode(GL_PROJECTION); glPopMatrix();
     glMatrixMode(GL_MODELVIEW);  glPopMatrix();
     // Resolve the multisampled content down into the plain texture-backed
@@ -3083,7 +3891,22 @@ inline void PGraphics::_endDrawImpl() {
         glBlitFramebuffer(0, 0, width, height, 0, 0, width, height,
                            GL_COLOR_BUFFER_BIT, GL_LINEAR);
         GLenum err = glGetError();
-        fprintf(stderr, "=== DEBUG blit-resolve: readStatus=0x%x drawStatus=0x%x glError=0x%x ===\n", readStatus, drawStatus, err);
+        PDEBUG("_endDrawImpl blit-resolve: readStatus=0x%x drawStatus=0x%x glError=0x%x width=%d height=%d is3D=%d\n",
+               readStatus, drawStatus, err, width, height, is3D);
+    }
+    {
+        // Direct pixel readback from the buffer's own resolve-target FBO,
+        // completely bypassing the texture-sampling/display path -- this
+        // tells us definitively whether the rendered content actually
+        // exists in the framebuffer's color attachment at all, or
+        // whether the bug is specifically in how that texture gets
+        // SAMPLED later (drawPGraphicsRect), not in the rendering itself.
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        unsigned char px[4] = {0,0,0,0};
+        int cx = width/2, cy = height/2; // center of buffer, should be inside the cube
+        glReadPixels(cx, cy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+        PDEBUG("_endDrawImpl PIXEL READBACK at buffer center (%d,%d): r=%d g=%d b=%d a=%d (fbo=%u)\n",
+               cx, cy, px[0], px[1], px[2], px[3], fbo);
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     active = false;
@@ -3168,6 +3991,22 @@ inline void PGraphics::beginShape()                                 { if(PApplet
 inline void PGraphics::endShape(int mode)                           { if(PApplet::g_papplet) PApplet::g_papplet->endShape(mode); }
 inline void PGraphics::vertex(float x, float y)                     { if(PApplet::g_papplet) PApplet::g_papplet->vertex(x,y); }
 inline void PGraphics::clear()                                      { if(PApplet::g_papplet) PApplet::g_papplet->clear(); }
+inline void PGraphics::translate(float x, float y, float z)          { if(PApplet::g_papplet) PApplet::g_papplet->translate(x,y,z); }
+inline void PGraphics::rotateX(float angle)                          { if(PApplet::g_papplet) PApplet::g_papplet->rotateX(angle); }
+inline void PGraphics::rotateY(float angle)                          { if(PApplet::g_papplet) PApplet::g_papplet->rotateY(angle); }
+inline void PGraphics::rotateZ(float angle)                          { if(PApplet::g_papplet) PApplet::g_papplet->rotateZ(angle); }
+inline void PGraphics::box(float size)                               { if(PApplet::g_papplet) PApplet::g_papplet->box(size); }
+inline void PGraphics::box(float w, float h, float d)                { if(PApplet::g_papplet) PApplet::g_papplet->box(w,h,d); }
+inline void PGraphics::sphere(float r)                               { if(PApplet::g_papplet) PApplet::g_papplet->sphere(r); }
+inline void PGraphics::lights()                                      { if(PApplet::g_papplet) PApplet::g_papplet->lights(); }
+inline void PGraphics::noLights()                                    { if(PApplet::g_papplet) PApplet::g_papplet->noLights(); }
+inline void PGraphics::ambientLight(float r, float g, float b)       { if(PApplet::g_papplet) PApplet::g_papplet->ambientLight(r,g,b); }
+inline void PGraphics::ambientLight(float r, float g, float b, float x, float y, float z) { if(PApplet::g_papplet) PApplet::g_papplet->ambientLight(r,g,b,x,y,z); }
+inline void PGraphics::directionalLight(float r, float g, float b, float nx, float ny, float nz) { if(PApplet::g_papplet) PApplet::g_papplet->directionalLight(r,g,b,nx,ny,nz); }
+inline void PGraphics::pointLight(float r, float g, float b, float x, float y, float z) { if(PApplet::g_papplet) PApplet::g_papplet->pointLight(r,g,b,x,y,z); }
+inline void PGraphics::spotLight(float r, float g, float b, float x, float y, float z, float nx, float ny, float nz, float angle, float conc) { if(PApplet::g_papplet) PApplet::g_papplet->spotLight(r,g,b,x,y,z,nx,ny,nz,angle,conc); }
+inline void PGraphics::lightFalloff(float c, float l, float q)       { if(PApplet::g_papplet) PApplet::g_papplet->lightFalloff(c,l,q); }
+inline void PGraphics::lightSpecular(float r, float g, float b)      { if(PApplet::g_papplet) PApplet::g_papplet->lightSpecular(r,g,b); }
 
 
 inline void link(const std::string& url) {

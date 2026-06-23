@@ -379,6 +379,15 @@ public class CppBuild {
 
     List<String> cmd = buildCommand(gpp, sketchSrc, binary, isWindows, isMac);
     listener.statusNotice("$ " + String.join(" ", cmd));
+    // Only print the full compile command when debug mode is actually on
+    // (i.e. the DEBUG file already caused buildCommand() to add
+    // -DPROCESSING_DEBUG above) -- this is itself a debugging aid, so it
+    // follows the same toggle as everything else PDEBUG-related, instead
+    // of always printing regardless of the DEBUG file's contents.
+    if (cmd.contains("-DPROCESSING_DEBUG")) {
+      System.err.println("=== FULL COMPILE COMMAND ===");
+      System.err.println(String.join(" ", cmd));
+    }
 
     ProcessBuilder pb = new ProcessBuilder(cmd);
     pb.redirectErrorStream(true);
@@ -842,7 +851,21 @@ public class CppBuild {
     code = removeUserIncludes(code);
     warnReservedNames(code, listener);
     code = javaToC(code);
-    code = pointerizeNewAssignedVars(code);
+    // pointerizeNewAssignedVars() was removed: it auto-rewrote sketch
+    // declarations like "PImage img;" to "PImage* img;" based on
+    // pattern-matching later code, silently changing the user's own
+    // declared type without them asking for it. That's a structural
+    // decision about the user's code, not a well-designed library type
+    // behaving correctly (unlike ArrayList<T>/String, which are real,
+    // value/reference-correct C++ types the user opts into explicitly).
+    // Sketch authors now write real C++ pointer syntax themselves --
+    // "PImage* img; img = loadImage(...); img->width;" -- for PImage,
+    // PFont, PShape, and PGraphics, including explicit delete when
+    // reassigning a pointer they're done with. This is more honest
+    // about what's actually happening and removes an entire category of
+    // bugs that came from CppBuild guessing at the user's intent from
+    // pattern-matching their code (comment-blind false positives,
+    // function-body-local-scope gaps, etc.).
     code = stripNamespaceProcessing(code);
     code = preprocessMacros(code);
 
@@ -2216,125 +2239,6 @@ public class CppBuild {
    * to "name.size()", since std::array exposes that directly and sizeof
    * no longer makes sense once the type is no longer a raw C array.
    */
-  private String pointerizeNewAssignedVars(String code) {
-    // 1. Find every variable assigned via "name = new Type(...)" OR via a
-    //    known pointer-returning Processing factory function -- loadImage(),
-    //    createImage(), requestImage(), createFont(), loadShape() all return
-    //    a pointer (PImage*, PFont*, PShape*) for the exact same reason user
-    //    "new Type(...)" does: Java has no value/reference distinction, and
-    //    these factories are the built-in equivalent of "new" for engine
-    //    types the sketch author didn\'t write themselves.
-    java.util.Map<String,String> newAssigned = new java.util.LinkedHashMap<>(); // varName -> TypeName
-    // Scan a comment/string-blanked copy, not raw code -- a comment like
-    // "// like obj = new Foo()" would otherwise be indistinguishable from
-    // a real assignment statement to this regex.
-    String cleanCode = blankCommentsAndLiterals(code);
-    java.util.regex.Matcher nm = java.util.regex.Pattern.compile(
-      "\\b([A-Za-z_]\\w*)\\s*=\\s*new\\s+([A-Za-z_]\\w*)\\s*\\(").matcher(cleanCode);
-    while (nm.find()) {
-      newAssigned.put(nm.group(1), nm.group(2));
-    }
-    java.util.Map<String,String> factoryReturnType = new java.util.HashMap<>();
-    factoryReturnType.put("loadImage",     "PImage");
-    factoryReturnType.put("createImage",   "PImage");
-    factoryReturnType.put("requestImage",  "PImage");
-    factoryReturnType.put("createFont",    "PFont");
-    factoryReturnType.put("loadShape",     "PShape");
-    factoryReturnType.put("createGraphics","PGraphics");
-    java.util.regex.Matcher fm = java.util.regex.Pattern.compile(
-      "\\b([A-Za-z_]\\w*)\\s*=\\s*(loadImage|createImage|requestImage|createFont|loadShape|createGraphics)\\s*\\(").matcher(cleanCode);
-    while (fm.find()) {
-      newAssigned.put(fm.group(1), factoryReturnType.get(fm.group(2)));
-    }
-
-    // 1b. Find every variable assigned via "name = someArrayList.get(...)"
-    //     where someArrayList is itself an ArrayList<ElementType> of one
-    //     of the known non-copyable engine types (PImage/PFont/PShape/
-    //     PGraphics). ArrayList<T> automatically stores T* internally for
-    //     these types, so .get() returns a pointer too. Uses
-    //     classifyTopLevelDecls() (comment/string-aware) instead of a bare
-    //     regex scan -- a bare regex previously matched
-    //     "ArrayList<PGraphics> tries to" inside a // comment as if it
-    //     were a real declaration.
-    java.util.Set<String> refLikeTypes = new java.util.HashSet<>(
-      java.util.Arrays.asList("PImage", "PFont", "PShape", "PGraphics"));
-    java.util.Map<String,String> arrayListElementType = new java.util.HashMap<>();
-    for (TopLevelDecl d : classifyTopLevelDecls(code)) {
-      if (d.kind != TopLevelDecl.Kind.PLAIN_VAR || d.typeName == null || d.name == null) continue;
-      java.util.regex.Matcher tm = java.util.regex.Pattern.compile(
-        "^ArrayList<\\s*([A-Za-z_]\\w*)\\s*>$").matcher(d.typeName.strip());
-      if (tm.find() && refLikeTypes.contains(tm.group(1))) {
-        arrayListElementType.put(d.name, tm.group(1));
-      }
-    }
-    if (!arrayListElementType.isEmpty()) {
-      for (TopLevelDecl d : classifyTopLevelDecls(code)) {
-        if (d.fullText == null) continue;
-        java.util.regex.Matcher getM = java.util.regex.Pattern.compile(
-          "\\b([A-Za-z_]\\w*)\\s*=\\s*([A-Za-z_]\\w*)\\s*\\.\\s*get\\s*\\(").matcher(d.fullText);
-        if (getM.find()) {
-          String listVar = getM.group(2);
-          if (arrayListElementType.containsKey(listVar)) {
-            newAssigned.put(getM.group(1), arrayListElementType.get(listVar));
-          }
-        }
-      }
-    }
-
-    if (newAssigned.isEmpty()) return code;
-
-    // 2. For each such variable, find its declaration and rewrite to a pointer.
-    //    Declarations look like: "TypeName var;" or "TypeName varA, varB;"
-    //    (possibly multiple vars, only some of which need pointerizing).
-    for (java.util.Map.Entry<String,String> e : newAssigned.entrySet()) {
-      String varName = e.getKey();
-      String typeName = e.getValue();
-      // Match "TypeName v1, v2, thisVar, v4;" at the start of a line (top-level decl)
-      java.util.regex.Pattern declPat = java.util.regex.Pattern.compile(
-        "(?m)^(" + java.util.regex.Pattern.quote(typeName) + ")(\\s+)([\\w\\s,]*\\b" + java.util.regex.Pattern.quote(varName) + "\\b[\\w\\s,]*);");
-      java.util.regex.Matcher dm = declPat.matcher(code);
-      if (dm.find()) {
-        String varsList = dm.group(3);
-        String[] names = varsList.split(",");
-        StringBuilder rebuilt = new StringBuilder();
-        for (int i = 0; i < names.length; i++) {
-          String nTrim = names[i].strip();
-          if (nTrim.equals(varName)) {
-            rebuilt.append(typeName).append("* ").append(nTrim).append(" = nullptr;");
-          } else {
-            // Other co-declared vars: only pointerize if THEY are also new-assigned
-            // with the same type; otherwise leave as a plain value declaration.
-            if (newAssigned.containsKey(nTrim) && newAssigned.get(nTrim).equals(typeName)) {
-              rebuilt.append(typeName).append("* ").append(nTrim).append(" = nullptr;");
-            } else {
-              rebuilt.append(typeName).append(" ").append(nTrim).append(";");
-            }
-          }
-          if (i < names.length - 1) rebuilt.append(" ");
-        }
-        code = code.substring(0, dm.start()) + rebuilt + code.substring(dm.end());
-      }
-    }
-
-    // Previously this step also globally rewrote "varName." to
-    // "varName->" for every pointerized variable, everywhere that exact
-    // name appeared in the entire file. That's NOT architecturally sound:
-    // it has no concept of scope, so a DIFFERENT, unrelated variable that
-    // happens to share the same name elsewhere (a different function's
-    // local, a field on some other object, even matching text inside a
-    // comment) would get incorrectly rewritten too -- the same category
-    // of bug as the comment-false-positive already fixed in the
-    // declaration-detection step above (see classifyTopLevelDecls).
-    // Removed rather than left as a second, unaddressed instance.
-    //
-    // Tradeoff: sketch authors now write "->" explicitly for variables
-    // they know are pointer-typed (PImage*/PFont*/PShape*/PGraphics*, or
-    // anything assigned via new Type(...)), rather than writing Java's
-    // uniform "." and having it silently translated. More honest about
-    // the real C++/Java difference here than scope-unaware rewriting.
-
-    return code;
-  }
 
   private String javaToC(String code) {
     // Run color type propagation first
@@ -2343,13 +2247,28 @@ public class CppBuild {
     // ── 1. Whole-word keyword replacements (skip string/char literals) ───────
     String[][] words = {
       { "boolean",   "bool"        },
-      { "Integer",   "int"         },
-      { "Float",     "float"       },
-      { "Double",    "double"      },
-      { "Long",      "long"        },
-      { "Byte",      "char"        },
-      { "Character", "char"        },
-      { "String",    "std::string" },
+      // Integer/Float/Double/Long/Byte/Character are intentionally NOT
+      // rewritten to their primitive equivalents here -- they're real
+      // Java wrapper classes (Processing.h provides matching C++ wrapper
+      // classes for the same reason String does: real boxing semantics
+      // like nullability, valueOf()/parseXxx() static factories, and
+      // xxxValue() accessors, none of which a bare "int"/"float"/etc.
+      // can express). Rewriting these to plain primitives as text was
+      // the same category of bug as the old String->std::string rename
+      // -- it silently changes what the user's declared type actually
+      // is, breaking any wrapper-specific method call.
+      // "boolean"->"bool" stays as a rename since Java's boolean really
+      // is a primitive (Boolean is the separate wrapper class, not
+      // handled by this list either, for the same reason).
+      // "String" is intentionally NOT renamed to "std::string" here --
+      // String is a real wrapper class (Processing.h) with Java-named
+      // methods (trim(), contains(), toLowerCase(), etc.) that
+      // std::string doesn't have. Renaming "String" to "std::string" as
+      // plain text would silently strip the sketch author's declared
+      // type down to the wrong class, exactly causing methods like
+      // .trim()/.contains() to fail to compile -- the wrapper class
+      // already inherits from std::string and is fully compatible with
+      // it, so there is no reason to rewrite the type name away at all.
       { "null",      "nullptr"     },
     };
     code = replaceKeywordsOutsideLiterals(code, words);
@@ -3222,6 +3141,28 @@ public class CppBuild {
     }
     cmd.add("-I" + modeSrc);
     cmd.add("-DPROCESSING_HAS_STB_IMAGE");
+    // Debug mode is controlled by a "DEBUG" file at the root of the
+    // CppMode folder (a sibling of src/), containing either "0" or "1".
+    // Shipped builds always have it set to "0". To see PDEBUG(...)
+    // output, edit that file to contain "1" and re-run the sketch --
+    // no environment variables to remember, no rebuilding CppBuild
+    // itself, works the same regardless of which terminal (or none at
+    // all) launched the IDE.
+    java.io.File debugFile = new java.io.File(runtimeDir.getParentFile(), "DEBUG");
+    System.err.println("=== TRACE debugFile.getAbsolutePath()=" + debugFile.getAbsolutePath() + " exists=" + debugFile.exists() + " ===");
+    if (debugFile.exists()) {
+      try {
+        String contents = new String(java.nio.file.Files.readAllBytes(debugFile.toPath())).trim();
+        System.err.println("=== TRACE debugFile contents=[" + contents + "] equals1=" + "1".equals(contents) + " ===");
+        if ("1".equals(contents)) {
+          cmd.add("-DPROCESSING_DEBUG");
+        }
+      } catch (java.io.IOException e) {
+        // If the DEBUG file can't be read for some reason, just proceed
+        // with a normal, non-debug build rather than failing the
+        // compile entirely over a missing diagnostic toggle.
+      }
+    }
     cmd.add("-DPROCESSING_EXPORT");
 
 

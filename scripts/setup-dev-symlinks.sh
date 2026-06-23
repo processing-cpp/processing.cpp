@@ -1,19 +1,9 @@
 #!/usr/bin/env bash
-# The REAL CppBuild.java (and friends) live in THIS folder's src/java/.
-# This script creates symlinks INSIDE your processing4 checkout (at
+# The REAL CppBuild.java (and friends) live in CppMode/src/java/. This
+# script creates symlinks INSIDE your processing4 checkout (at
 # java/src/processing/mode/cpp/) pointing back at these real files, so
 # that running Gradle from processing4 compiles the same source you're
 # editing here -- no need to keep two copies in sync.
-#
-# Handles:
-#   - destination directory missing entirely (creates it)
-#   - individual source files missing (skips just that one, warns)
-#   - a target that's already a regular file (backs it up, then links)
-#   - a target that's already a CORRECT symlink (skips, no-op)
-#   - a target that's a symlink pointing somewhere ELSE / dangling
-#     (replaces it with the correct link)
-#   - files in the destination that aren't part of our known set
-#     (left completely alone)
 #
 # Usage:
 #   ./setup-dev-symlinks.sh /path/to/your/processing4
@@ -34,8 +24,10 @@ fi
 PROCESSING4_DIR="$(cd "$1" && pwd)"
 DEST_DIR="$PROCESSING4_DIR/java/src/processing/mode/cpp"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC_DIR="$SCRIPT_DIR/src/java"
+# This script lives in CppMode/scripts/, so CppMode's own root is one
+# directory up from wherever this script actually is.
+CPPMODE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SRC_DIR="$CPPMODE_DIR/src/java"
 
 if [ ! -d "$SRC_DIR" ]; then
   echo "ERROR: $SRC_DIR does not exist."
@@ -67,15 +59,12 @@ for f in "${SOURCE_FILES[@]}"; do
   target="$DEST_DIR/$name"
 
   if [ ! -e "$f" ]; then
-    # Shouldn't normally happen (glob already matched it), but guards
-    # against a file being deleted mid-run.
     echo "WARNING: $name disappeared from source -- skipping."
     warned=$((warned+1))
     continue
   fi
 
   if [ -L "$target" ]; then
-    # Already a symlink -- check if it already points at the right file.
     current_link="$(readlink "$target")"
     if [ "$current_link" == "$f" ]; then
       skipped=$((skipped+1))
@@ -84,9 +73,6 @@ for f in "${SOURCE_FILES[@]}"; do
     echo "Replacing stale/incorrect symlink: $name (was -> $current_link)"
     rm "$target"
   elif [ -e "$target" ]; then
-    # A REAL file/directory sits at the target -- back it up rather than
-    # silently destroying whatever's there (could be a contributor's own
-    # local edits made before running this script).
     backup="$target.bak"
     n=1
     while [ -e "$backup" ]; do

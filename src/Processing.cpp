@@ -832,6 +832,20 @@ void PApplet::point(float x, float y, float z) {
     restoreLighting();
 }
 void PApplet::line(float x1, float y1, float x2, float y2) {
+    {
+        GLint mvDepth=0, projDepth=0;
+        glGetIntegerv(GL_MODELVIEW_STACK_DEPTH, &mvDepth);
+        glGetIntegerv(GL_PROJECTION_STACK_DEPTH, &projDepth);
+        double mv[16], proj[16];
+        glGetDoublev(GL_MODELVIEW_MATRIX, mv);
+        glGetDoublev(GL_PROJECTION_MATRIX, proj);
+        GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
+        GLint curFbo=0; glGetIntegerv(GL_FRAMEBUFFER_BINDING, &curFbo);
+        PDEBUG("PApplet::line(%.1f,%.1f,%.1f,%.1f) ENTRY: mvDepth=%d projDepth=%d curFbo=%d viewport=(%d,%d,%d,%d)\n",
+               x1,y1,x2,y2, mvDepth, projDepth, curFbo, vp[0],vp[1],vp[2],vp[3]);
+        PDEBUG("  mv[0]=%.3f mv[5]=%.3f mv[12]=%.3f mv[13]=%.3f\n", mv[0],mv[5],mv[12],mv[13]);
+        PDEBUG("  proj[0]=%.6f proj[5]=%.6f proj[12]=%.6f proj[13]=%.6f\n", proj[0],proj[5],proj[12],proj[13]);
+    }
     if (!doStroke) return;
     applyStroke();
     float w = strokeW;
@@ -1131,6 +1145,17 @@ void main(){
 
 void PApplet::box(float s){box(s,s,s);}
 void PApplet::box(float bw,float bh,float bd){
+    {
+        GLint curFbo=0; glGetIntegerv(GL_FRAMEBUFFER_BINDING,&curFbo);
+        GLboolean depthOn = glIsEnabled(GL_DEPTH_TEST);
+        GLint depthFunc=0; glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
+        GLboolean depthMask; glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+        GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
+        PDEBUG("PApplet::box(%.1f,%.1f,%.1f) ENTRY: doFill=%d fillR=%.3f fillG=%.3f fillB=%.3f curFbo=%d\n",
+               bw,bh,bd, doFill, fillR, fillG, fillB, curFbo);
+        PDEBUG("  depthTest=%d depthFunc=0x%x depthWriteMask=%d viewport=(%d,%d,%d,%d)\n",
+               depthOn, depthFunc, depthMask, vp[0], vp[1], vp[2], vp[3]);
+    }
     float hw=bw/2,hh=bh/2,hd=bd/2;
     struct Face{ float nx,ny,nz; float v[4][3]; };
     Face faces[]={
@@ -1149,6 +1174,11 @@ void PApplet::box(float bw,float bh,float bd){
             for(auto& v:f.v) glVertex3f(v[0],v[1],v[2]);
         }
         glEnd();
+        {
+            GLenum err = glGetError();
+            PDEBUG("PApplet::box() AFTER glEnd(): glError=0x%x firstFaceVertex=(%.1f,%.1f,%.1f)\n",
+                   err, faces[0].v[0][0], faces[0].v[0][1], faces[0].v[0][2]);
+        }
     }
     if(doStroke){
         applyStroke();glLineWidth(strokeW);
@@ -1690,6 +1720,27 @@ void PApplet::lights() {
     glPopMatrix();
 
     lightIndex = 1;
+    {
+        GLint curFbo = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &curFbo);
+        double mv[16];
+        glGetDoublev(GL_MODELVIEW_MATRIX, mv);
+        GLboolean depthTestOn = glIsEnabled(GL_DEPTH_TEST);
+        GLboolean lightingOn = glIsEnabled(GL_LIGHTING);
+        GLboolean colorMatOn = glIsEnabled(GL_COLOR_MATERIAL);
+        GLfloat curFillColor[4];
+        glGetFloatv(GL_CURRENT_COLOR, curFillColor);
+        PDEBUG("PApplet::lights() TRACE: curFbo=%d depthTest=%d lighting=%d colorMaterial=%d\n",
+               curFbo, depthTestOn, lightingOn, colorMatOn);
+        PDEBUG("  mv[0]=%.3f mv[5]=%.3f mv[10]=%.3f mv[12]=%.3f mv[13]=%.3f mv[14]=%.3f\n",
+               mv[0], mv[5], mv[10], mv[12], mv[13], mv[14]);
+        double proj[16];
+        glGetDoublev(GL_PROJECTION_MATRIX, proj);
+        PDEBUG("  proj[0]=%.3f proj[5]=%.3f proj[10]=%.3f proj[11]=%.3f proj[14]=%.3f\n",
+               proj[0], proj[5], proj[10], proj[11], proj[14]);
+        PDEBUG("  currentColor (glColor state at this moment): r=%.3f g=%.3f b=%.3f a=%.3f\n",
+               curFillColor[0], curFillColor[1], curFillColor[2], curFillColor[3]);
+    }
 }
 
 void PApplet::noLights() {
@@ -2028,6 +2079,15 @@ float PApplet::ttfStrWidth(const std::string& s) {
 void PApplet::drawTTFStr(float x, float y, const std::string& s) {
     if (!g_ttf.loaded) return;
     bakeAtlas(g_textSize);
+    // BUG FIX: same class of issue found in drawPGraphicsRect() -- if
+    // lights() was called earlier this frame, GL_LIGHTING stays globally
+    // enabled, and text glyph quads (no normal ever set) get lit/
+    // darkened unexpectedly. Text should never be affected by whatever
+    // 3D lighting state happens to be active.
+    GLboolean wasLighting = glIsEnabled(GL_LIGHTING);
+    GLboolean wasDepthTest = glIsEnabled(GL_DEPTH_TEST);
+    if (wasLighting) glDisable(GL_LIGHTING);
+    if (wasDepthTest) glDisable(GL_DEPTH_TEST);
 
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, g_ttf.texID);
@@ -2051,6 +2111,8 @@ void PApplet::drawTTFStr(float x, float y, const std::string& s) {
     glEnd();
     glBindTexture(GL_TEXTURE_2D, 0);
     glDisable(GL_TEXTURE_2D);
+    if (wasLighting) glEnable(GL_LIGHTING);
+    if (wasDepthTest) glEnable(GL_DEPTH_TEST);
 }
 #endif
 
@@ -2352,6 +2414,17 @@ PImage* PApplet::loadImage(const std::string& path){
 }
 
 PGraphics* PApplet::createGraphics(int w,int h){return new PGraphics(w,h);}
+PGraphics* PApplet::createGraphics(int w,int h,int renderer){
+    // The renderer argument genuinely matters: a P3D buffer needs
+    // beginDraw() to set up a real perspective projection with depth
+    // testing enabled, instead of the flat 2D ortho projection (depth
+    // range -1..1) used for plain 2D buffers -- without this, any 3D
+    // content drawn into the buffer (box(), sphere(), translate(...,z))
+    // gets clipped away entirely by the paper-thin depth range, and
+    // lighting/depth-testing never activates at all. See PGraphics::
+    // beginDraw()'s is3D branch for the actual projection setup.
+    return new PGraphics(w, h, renderer == P3D);
+}
 
 // ── PImage::uploadTexture ────────────────────────────────────────────────────
 void PImage::uploadTexture() {
@@ -2414,23 +2487,24 @@ void PApplet::drawImage_impl(PImage* img, float x, float y, float w, float h) {
 
 // ── Public image() entry points ─────────────────────────────────────────────
 void PApplet::drawPGraphicsRect(PGraphics& pg, float x, float y, float w, float h){
-    if(pg.width==0||pg.height==0) return;
-    if(pg.texID==0) return;
-    {
-        GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
-        double mv[16], proj[16];
-        glGetDoublev(GL_MODELVIEW_MATRIX, mv);
-        glGetDoublev(GL_PROJECTION_MATRIX, proj);
-        fprintf(stderr, "=== DEBUG drawPGraphicsRect ===\n");
-        fprintf(stderr, "  requested draw rect: x=%.1f y=%.1f w=%.1f h=%.1f\n", x, y, w, h);
-        fprintf(stderr, "  pg.width=%d pg.height=%d\n", pg.width, pg.height);
-        fprintf(stderr, "  current GL viewport: x=%d y=%d w=%d h=%d\n", vp[0], vp[1], vp[2], vp[3]);
-        fprintf(stderr, "  logicalW=%d logicalH=%d fbW=%d fbH=%d width=%d height=%d\n", logicalW, logicalH, fbW, fbH, width, height);
-        // proj[0] and proj[5] are the X/Y scale factors of an orthographic
-        // projection matrix -- these directly tell us the effective
-        // "units per screen pixel" mapping in each axis at draw time.
-        fprintf(stderr, "  projection matrix scale: proj[0]=%.6f proj[5]=%.6f\n", proj[0], proj[5]);
-    }
+    PDEBUG("drawPGraphicsRect ENTRY: requested x=%.1f y=%.1f w=%.1f h=%.1f | pg.width=%d pg.height=%d | pg.texID=%u\n",
+           x, y, w, h, pg.width, pg.height, pg.texID);
+    if(pg.width==0||pg.height==0) { PDEBUG("  -> early return: width or height is 0\n"); return; }
+    if(pg.texID==0) { PDEBUG("  -> early return: texID is 0\n"); return; }
+    // BUG FIX: if lights() was called earlier this frame (e.g. drawing a
+    // lit 3D scene on the main canvas before displaying this buffer),
+    // GL_LIGHTING/GL_COLOR_MATERIAL/GL_DEPTH_TEST are all still globally
+    // enabled at this point -- nothing here ever disabled them. Drawing
+    // this textured quad with lighting still active means OpenGL tries
+    // to light it like a 3D surface (with no normal ever set for it,
+    // since this is meant to be a plain 2D blit), which can darken or
+    // otherwise corrupt the displayed colors even though the texture's
+    // actual stored content is correct. A 2D image blit should never be
+    // affected by whatever 3D lighting state happens to be active.
+    GLboolean wasLighting = glIsEnabled(GL_LIGHTING);
+    GLboolean wasDepthTest = glIsEnabled(GL_DEPTH_TEST);
+    if (wasLighting) glDisable(GL_LIGHTING);
+    if (wasDepthTest) glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_TEXTURE_2D); glBindTexture(GL_TEXTURE_2D,pg.texID);
     glColor4f(1,1,1,1);
@@ -2444,6 +2518,8 @@ void PApplet::drawPGraphicsRect(PGraphics& pg, float x, float y, float w, float 
     glEnd();
     glBindTexture(GL_TEXTURE_2D,0); glDisable(GL_TEXTURE_2D); glDisable(GL_BLEND);
     glColor4f(1,1,1,1);
+    if (wasLighting) glEnable(GL_LIGHTING);
+    if (wasDepthTest) glEnable(GL_DEPTH_TEST);
 }
 void PApplet::image(PGraphics& pg, float x, float y){ drawPGraphicsRect(pg,x,y,(float)pg.width,(float)pg.height); }
 void PApplet::image(PGraphics& pg, float x, float y, float w, float h){ drawPGraphicsRect(pg,x,y,w,h); }
@@ -2663,7 +2739,7 @@ static void char_cb(GLFWwindow*, unsigned int codepoint) {
     // char_cb fires after key_cb for printable keys, with the correct
     // Unicode character (shift/caps/layout all applied).
     if (codepoint < 128) {
-        p->key = (char)codepoint;
+        p->key = (char16_t)codepoint;
     }
     // Fire deferred keyPressed() now that p->key has the correct char value
     if (p->g_pendingKeyPressed) {
@@ -2789,13 +2865,13 @@ static void key_cb(GLFWwindow* w, int k, int /*scancode*/, int action, int mods)
         //   BACKSPACE(8), TAB(9), ENTER(10), ESC(27), DELETE(127)
         // Everything else that has no ASCII representation gets CODED.
         switch (k) {
-            case GLFW_KEY_BACKSPACE: p->key = (char)8;   break;
-            case GLFW_KEY_TAB:       p->key = (char)9;   break;
+            case GLFW_KEY_BACKSPACE: p->key = (char16_t)8;   break;
+            case GLFW_KEY_TAB:       p->key = (char16_t)9;   break;
             case GLFW_KEY_ENTER:
-            case GLFW_KEY_KP_ENTER:  p->key = (char)10;  break;
-            case GLFW_KEY_ESCAPE:    p->key = (char)27;  break;
-            case GLFW_KEY_SPACE:     p->key = (char)32;  break;
-            case GLFW_KEY_DELETE:    p->key = (char)127; break;
+            case GLFW_KEY_KP_ENTER:  p->key = (char16_t)10;  break;
+            case GLFW_KEY_ESCAPE:    p->key = (char16_t)27;  break;
+            case GLFW_KEY_SPACE:     p->key = (char16_t)32;  break;
+            case GLFW_KEY_DELETE:    p->key = (char16_t)127; break;
             // All other special keys set p->key=CODED
             case GLFW_KEY_UP: case GLFW_KEY_DOWN:
             case GLFW_KEY_LEFT: case GLFW_KEY_RIGHT:
@@ -2810,7 +2886,7 @@ static void key_cb(GLFWwindow* w, int k, int /*scancode*/, int action, int mods)
             case GLFW_KEY_F4: case GLFW_KEY_F5: case GLFW_KEY_F6:
             case GLFW_KEY_F7: case GLFW_KEY_F8: case GLFW_KEY_F9:
             case GLFW_KEY_F10: case GLFW_KEY_F11: case GLFW_KEY_F12:
-                p->key = (char)CODED;
+                p->key = CODED; // no (char) cast -- key is now int, casting to char would truncate 0xFFFF back down to the original bug
                 break;
             default:
                 // Printable p->key: if a modifier (Ctrl/Alt) is held, char_cb will
@@ -2820,7 +2896,7 @@ static void key_cb(GLFWwindow* w, int k, int /*scancode*/, int action, int mods)
                     // Ctrl/Alt/Meta combos: char_cb won't fire.
                     // Set p->key to the lowercase letter and fire immediately.
                     if (k >= GLFW_KEY_A && k <= GLFW_KEY_Z)
-                        p->key = (char)('a' + (k - GLFW_KEY_A));
+                        p->key = (char16_t)('a' + (k - GLFW_KEY_A));
                     p->g_pendingKeyPressed = false; // fire immediately
                 } else {
                     // Plain printable p->key (possibly with Shift): defer to char_cb
@@ -2835,7 +2911,7 @@ static void key_cb(GLFWwindow* w, int k, int /*scancode*/, int action, int mods)
             if(action==GLFW_PRESS) p->_eventDrewSomething=true;
             p->keyPressed();
             // Java Processing: ESC closes the sketch unless keyPressed() set p->key=0
-            if (p->key == (char)27 && p->gWindow)
+            if (p->key == (char16_t)27 && p->gWindow)
                 glfwSetWindowShouldClose(p->gWindow, GLFW_TRUE);
         }
 
@@ -2864,13 +2940,36 @@ static void winsize_cb(GLFWwindow*,int lw,int lh){
     auto* p = PApplet::g_papplet; if(!p) return;
     if(!lw||!lh||p->_inWinsizeCb)return;
     p->_inWinsizeCb = true;
+    {
+        int fbw=0, fbh=0;
+        if (p->gWindow) glfwGetFramebufferSize(p->gWindow, &fbw, &fbh);
+        PDEBUG("winsize_cb FIRED: callback-reported lw=%d lh=%d | isResizable=%d setupDone=%d\n",
+               lw, lh, p->isResizable, p->_setupDone);
+        PDEBUG("  BEFORE update: logicalW=%d logicalH=%d winWidth=%d winHeight=%d realFbSize=(%d,%d)\n",
+               p->logicalW, p->logicalH, p->winWidth, p->winHeight, fbw, fbh);
+    }
     if(p->_setupDone){
         if(p->isResizable){
             // Update logical size for resizable sketches so width/height reflect new size
             p->winWidth=lw; p->winHeight=lh;
             p->logicalW=lw; p->logicalH=lh;
+        } else {
+            PDEBUG("  isResizable=false -- logicalW/logicalH NOT updated despite a real "
+                   "window-size-change event (lw=%d lh=%d). If the OS/WM forced an actual "
+                   "geometry change anyway (common with tiling WMs like i3, which can "
+                   "override an app's requested size), logicalW/H now silently disagree "
+                   "with the window's REAL size -- everything drawn using logical "
+                   "coordinates will appear scaled/contained relative to the actual "
+                   "window, since the viewport tracks real size but the projection still "
+                   "uses the stale logical one.\n");
         }
         if(p->_onWindowResized)p->_onWindowResized();
+    }
+    {
+        int fbw=0, fbh=0;
+        if (p->gWindow) glfwGetFramebufferSize(p->gWindow, &fbw, &fbh);
+        PDEBUG("  AFTER update: logicalW=%d logicalH=%d winWidth=%d winHeight=%d realFbSize=(%d,%d)\n",
+               p->logicalW, p->logicalH, p->winWidth, p->winHeight, fbw, fbh);
     }
     // p->setProjection uses p->logicalW/H for ortho, actual size for viewport.
     p->setProjection(p->winWidth, p->winHeight);
@@ -2900,6 +2999,8 @@ static void fbsize_cb(GLFWwindow*,int fw,int fh){
 void PApplet::enableDebugConsole(){_doEnableDebugConsole();}
 
 void PApplet::run(){
+    PDEBUG("CppMode build stamp: %s\n", PROCESSING_BUILD_STAMP);
+    PDEBUG("Debug mode ON -- PApplet::run() starting\n");
     g_papplet = this;
     signal(SIGTERM, [](int){ if(PApplet::g_papplet && PApplet::g_papplet->gWindow) glfwSetWindowShouldClose(PApplet::g_papplet->gWindow, GLFW_TRUE); });
 #ifndef _WIN32
@@ -3198,6 +3299,43 @@ void PApplet::run(){
                 // where framebuffer may be 2x logical size) but logical
                 // winWidth/winHeight for the ortho matrix so sketch pixel
                 // coordinates map 1:1 regardless of DPI scaling.
+                //
+                // BUG FIX: glLoadIdentity() alone only resets the CONTENT of
+                // whatever's currently on top of the matrix stack -- it does
+                // nothing about the stack's DEPTH. If a previous frame left
+                // an unbalanced glPushMatrix() somewhere (e.g. a PGraphics
+                // buffer's beginDraw() that was abandoned without a matching
+                // endDraw(), which can happen if a sketch reassigns a
+                // PGraphics* pointer to a new buffer without ever calling
+                // endDraw()/delete on the old one), every subsequent
+                // glLoadIdentity() still operates one level too deep on the
+                // stack, and main-canvas drawing for the REST OF THE PROGRAM
+                // silently inherits that leftover transform -- exactly
+                // matching "the same line(...) call lands in a different
+                // place depending on what ran before it." Fully unwinding
+                // the stack to its base depth every frame, before doing
+                // anything else, makes the main render loop resilient to
+                // ANY code (ours or the sketch's) that fails to balance its
+                // own push/pop calls, rather than silently accumulating
+                // corruption frame after frame.
+                {
+                    // Pop down to stack depth 1 (the base level) rather
+                    // than a blind fixed-count loop -- popping past the
+                    // bottom of the stack is ALSO undefined behavior,
+                    // exactly the same category of bug as overflowing it,
+                    // so we query the actual current depth first.
+                    GLint depth = 0;
+                    glMatrixMode(GL_PROJECTION);
+                    glGetIntegerv(GL_PROJECTION_STACK_DEPTH, &depth);
+                    while (depth > 1) { glPopMatrix(); depth--; }
+                    glLoadIdentity();
+
+                    glMatrixMode(GL_MODELVIEW);
+                    glGetIntegerv(GL_MODELVIEW_STACK_DEPTH, &depth);
+                    while (depth > 1) { glPopMatrix(); depth--; }
+                    glLoadIdentity();
+                }
+
                 glViewport(0, 0, fbW, fbH);
                 glMatrixMode(GL_PROJECTION); glLoadIdentity();
                 glOrtho(0, logicalW, logicalH, 0, -1, 1);

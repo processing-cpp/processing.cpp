@@ -24,21 +24,5 @@
             "y": 235
           }
         },
-        {
-          "diameter": 72.5889,
-          "label": "New label",
-          "position": {
-            "x": 459,
-            "y": 198
-          }
-        },
-        {
-          "diameter": 45.4191,
-          "label": "New label",
-          "position": {
-            "x": 362,
-            "y": 243
-          }
-        }
-      ]
+     ]
     }
