@@ -182,19 +182,13 @@ public class CppEditor extends Editor {
   @Override
   protected JEditTextArea createTextArea() {
     PdeTextArea ta = new PdeTextArea(new PdeTextAreaDefaults(),
-                                     new PdeInputHandler(this), this);
+                                     new CppInputHandler(this), this);
     InputHandler ih = ta.getInputHandler();
 
-    // ── Enter / newline with auto-indent ─────────────────────────────────
-    ih.addKeyBinding("ENTER",    e -> handleEnterWithIndent(ta));
-    ih.addKeyBinding("S+ENTER",  e -> handleEnterWithIndent(ta));
-    ih.addKeyBinding("CS+ENTER", e -> handleEnterWithIndent(ta));
-
-    // ── Tab: indent selected lines (or insert spaces) ──────────────────────
-    ih.addKeyBinding("TAB",   InputHandler.INSERT_TAB);
-
-    // ── Ctrl+/ : toggle line comment ───────────────────────────────────────
-    ih.addKeyBinding("C+SLASH", e -> toggleComment(ta));
+    // NOTE: ENTER (auto-indent), TAB/S+TAB (indent/outdent/expand), and
+    // C+SLASH (comment toggle) are now handled by CppInputHandler's
+    // handlePressed(), mirroring JavaInputHandler, so they're no longer
+    // bound here individually.
 
     // ── Home / End ─────────────────────────────────────────────────────────
     ih.addKeyBinding("HOME",    InputHandler.HOME);
@@ -301,7 +295,7 @@ public class CppEditor extends Editor {
   }
 
   // ── Comment toggle ────────────────────────────────────────────────────────
-  private void toggleComment(JEditTextArea ta) {
+  void toggleComment(JEditTextArea ta) {
     int selStart  = ta.getSelectionStart();
     int selEnd    = ta.getSelectionStop();
     int startLine = ta.getLineOfOffset(selStart);
@@ -410,21 +404,6 @@ public class CppEditor extends Editor {
     deactivateRun();
     statusNotice("Stopped.");
   }
-  private void handleEnterWithIndent(processing.app.syntax.JEditTextArea ta) {
-    int line = ta.getCaretLine();
-    String text = ta.getLineText(line);
-    StringBuilder indent = new StringBuilder();
-    for (int i = 0; i < text.length(); i++) {
-      char c = text.charAt(i);
-      if (c == ' ' || c == '\t') indent.append(c);
-      else break;
-    }
-    // Extra indent level if line ends with '{'
-    if (text.stripTrailing().endsWith("{")) indent.append("    ");
-    ta.setSelectedText("\n" + indent.toString());
-  }
-
-
   public void handleExportApplication() {
     // Block export only for truly unsaved sketches (untitled, never saved)
     // Check if the sketch folder is inside a temp directory
