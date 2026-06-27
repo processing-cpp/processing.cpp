@@ -24,5 +24,13 @@
             "y": 235
           }
         },
-     ]
+        {
+          "diameter": 72.5889,
+          "label": "New label",
+          "position": {
+            "x": 313,
+            "y": 65
+          }
+        }
+      ]
     }

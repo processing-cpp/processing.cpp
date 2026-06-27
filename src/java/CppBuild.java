@@ -838,7 +838,136 @@ public class CppBuild {
     return null;
   }
 
+  // Lifecycle/event method names, shared between the AST pipeline's
+  // override-marking and dependency-exclusion rules. Same list as the
+  // original's local "lifecycleMethods" array, just hoisted to a
+  // constant since both LifecycleRewriter and DependencyHoister need it.
+  private static final java.util.Set<String> LIFECYCLE_METHOD_NAMES = java.util.Set.of(
+      "setup", "draw", "settings",
+      "mousePressed", "mouseReleased", "mouseClicked",
+      "mouseMoved", "mouseDragged", "mouseWheel",
+      "keyPressed", "keyReleased", "keyTyped",
+      "windowMoved", "windowResized"
+  );
+
+  /**
+   * Replaces the original writeSketch()'s regex/character-walking
+   * hoisting and rewriting passes (hoistClassesOnly, removeHoistedClasses,
+   * classifyTopLevelDecls-based array/variable/function hoisting,
+   * rewriteAsSketchMethods, the inline enumScope/constexprScope
+   * extraction, and the inline _PSketch-injection regex chain) with the
+   * real AST pipeline built and tested in tools/cpp-parser/ (see
+   * DECISION_two_parser_implementations.md for the full history,
+   * including two real bugs found and fixed via PipelineCompositionTest
+   * before this was wired in here).
+   *
+   * Every literal scaffolding string this method emits (the #include
+   * lines, the using-declarations, the _PSketch struct body, the
+   * free-function forwarding, and main()) is UNCHANGED from the
+   * original -- none of that depends on parsing user code at all, so
+   * none of it needed to change. Only the user-code transformation
+   * steps (hoisting, lifecycle override-marking, pointer-defaulting)
+   * were replaced.
+   *
+   * NOT YET PORTED to this pipeline, carried over as known gaps from
+   * DECISION_two_parser_implementations.md: constexpr/static_assert/
+   * type-alias "using" extraction (zero corpus evidence for any of
+   * these -- see EnumScopeExtractor's javadoc), and the most-vexing-
+   * parse direct-init rewrite for any case OTHER than the one this
+   * pipeline's CodeGen already emits as brace-init unconditionally
+   * (CodeGen renders ALL direct-init as braces now, which is a
+   * strictly safer superset of the original's behavior, not a gap).
+   */
+  /**
+   * Wraps Parser.parse(code) with the same error-reporting convention
+   * already used by checkForUnsupportedJavaArraySyntax (detailed message
+   * to System.err, short message to listener.statusError(), then a
+   * RuntimeException) instead of letting a ParseException propagate as
+   * a raw, unhandled exception all the way up through writeSketch() ->
+   * compile() -> CppMode.handleLaunch() -> whatever the outer Processing
+   * IDE framework happens to do with an arbitrary uncaught exception
+   * from a Mode plugin.
+   *
+   * Found this gap while investigating a deliberately-left-unfixed
+   * parser limitation (non-type template arguments, e.g.
+   * "std::array<int, 5>") and confirming it fails GRACEFULLY (a clean
+   * ParseException with an accurate line/column, not a crash or a
+   * silent misparse) rather than just assuming so -- tracing where that
+   * exception actually goes surfaced that NOTHING in this Mode's own
+   * code catches it at all, at any layer, before this fix. Whether
+   * processing4's own core Editor/Sketch-running machinery already
+   * catches an arbitrary uncaught exception from a Mode's
+   * handleLaunch() with a reasonable user-facing error isn't something
+   * this project's available source could confirm either way -- this
+   * fix makes the Mode's OWN behavior strictly better regardless of
+   * what that outer layer does, by ensuring the sketch author sees a
+   * clean, accurate "your code has a syntax error at line N, column M"
+   * message via the IDE's own status bar specifically, the same way
+   * they already do for E0004 (Java array syntax) and would for any
+   * other Mode-level validation error.
+   *
+   * Throws AlreadyReportedException (not a plain RuntimeException) so
+   * the writeSketch() safety-net wrapper added alongside this (see its
+   * own javadoc) can tell "this was already cleanly reported to the
+   * user via listener.statusError()" apart from "this is a genuinely
+   * unexpected crash the user hasn't seen a message for yet" -- without
+   * relying on fragile message-string matching to make that distinction.
+   */
+  private static final class AlreadyReportedException extends RuntimeException {
+    AlreadyReportedException(String message) { super(message); }
+  }
+
+  private CompilationUnit parseOrReportError(String code, RunnerListener listener) {
+    try {
+      return Parser.parse(code);
+    } catch (ParseException e) {
+      System.err.println(e.getMessage());
+      listener.statusError("Syntax error: " + e.getMessage());
+      throw new AlreadyReportedException("Syntax error: " + e.getMessage());
+    }
+  }
+
+  /**
+   * Safety-net wrapper around writeSketchImpl(). The parse step itself
+   * is already guarded (see parseOrReportError() and
+   * checkForUnsupportedJavaArraySyntax(), both throwing
+   * AlreadyReportedException after cleanly reporting via
+   * listener.statusError()) -- but writeSketchImpl() also makes roughly
+   * twenty further calls into the AST pipeline (ClassHoister,
+   * PSketchInjector, ArrayHoister, DependencyHoister, ForwardDeclGenerator,
+   * LifecycleRewriter, EnumScopeExtractor, CodeGen), none of which were
+   * individually guarded. RealHeaderStressTest/RealCorpusStressTest
+   * confirmed zero crashes across the full 131-file real example
+   * corpus, both against a hand-built stub and the real engine headers
+   * -- but "zero crashes on every sketch tested so far" isn't the same
+   * guarantee as "zero crashes on any sketch anyone ever writes," and an
+   * unexpected exception from deep in the pipeline (a NullPointerException,
+   * ClassCastException, or anything else not yet seen) would otherwise
+   * propagate exactly as raw and unhandled as the ParseException gap
+   * this same investigation found and fixed.
+   *
+   * Catches any RuntimeException that ISN'T already an
+   * AlreadyReportedException (avoiding a double report for an error the
+   * person has already seen via statusError()) and reports it the same
+   * way, with a generic but still useful message plus the real
+   * exception detail in the console -- strictly better than an
+   * unhandled crash, even though "an internal error occurred" is
+   * necessarily less specific than a real syntax-error message can be.
+   */
   private File writeSketch(RunnerListener listener) throws IOException {
+    try {
+      return writeSketchImpl(listener);
+    } catch (AlreadyReportedException e) {
+      throw e; // already reported via listener.statusError() at the point it was thrown -- just propagate
+    } catch (RuntimeException e) {
+      System.err.println("Internal CppMode error while preparing the sketch for compilation:");
+      e.printStackTrace();
+      listener.statusError("Internal error preparing sketch -- see console for details: " + e.getMessage());
+      throw new AlreadyReportedException("Internal error preparing sketch: " + e.getMessage());
+    }
+  }
+
+  private File writeSketchImpl(RunnerListener listener) throws IOException {
     StringBuilder raw = new StringBuilder();
     for (int i = 0; i < sketch.getCodeCount(); i++) {
       String prog = sketch.getCode(i).getProgram();
@@ -852,39 +981,14 @@ public class CppBuild {
     warnReservedNames(code, listener);
     checkForUnsupportedJavaArraySyntax(code, listener);
     code = javaToC(code);
-    // pointerizeNewAssignedVars() was removed: it auto-rewrote sketch
-    // declarations like "PImage img;" to "PImage* img;" based on
-    // pattern-matching later code, silently changing the user's own
-    // declared type without them asking for it. That's a structural
-    // decision about the user's code, not a well-designed library type
-    // behaving correctly (unlike ArrayList<T>/String, which are real,
-    // value/reference-correct C++ types the user opts into explicitly).
-    // Sketch authors now write real C++ pointer syntax themselves --
-    // "PImage* img; img = loadImage(...); img->width;" -- for PImage,
-    // PFont, PShape, and PGraphics, including explicit delete when
-    // reassigning a pointer they're done with. This is more honest
-    // about what's actually happening and removes an entire category of
-    // bugs that came from CppBuild guessing at the user's intent from
-    // pattern-matching their code (comment-blind false positives,
-    // function-body-local-scope gaps, etc.).
     code = stripNamespaceProcessing(code);
     code = preprocessMacros(code);
 
     boolean hasSetup = code.contains("void setup(");
     boolean hasDraw  = code.contains("void draw(");
 
-    // Detect which lifecycle/event methods the sketch defines
-    String[] lifecycleMethods = {
-      "setup", "draw", "settings",
-      "mousePressed", "mouseReleased", "mouseClicked",
-      "mouseMoved", "mouseDragged", "mouseWheel",
-      "keyPressed", "keyReleased", "keyTyped",
-      "windowMoved", "windowResized"
-    };
-
     StringBuilder out = new StringBuilder();
     out.append("#include \"Processing.h\"\n");
-    // STL convenience using-declarations (sketch code can use vector, string, etc. without std::)
     out.append("using std::vector; using std::string; using std::wstring;\n");
     out.append("using std::pair; using std::make_pair; using std::tuple;\n");
     out.append("using std::deque; using std::list; using std::stack; using std::queue;\n");
@@ -896,16 +1000,8 @@ public class CppBuild {
     out.append("using std::cout; using std::cerr; using std::endl;\n");
     out.append("using std::ifstream; using std::ofstream; using std::stringstream;\n");
 
-    // ── PApplet-based Sketch struct ──────────────────────────────────────────
-    // All user globals become fields of Sketch, solving the hoisting / firstMousePress problem.
-    // User lifecycle methods become virtual overrides.
-    // Processing::run() is called via PApplet::run() which wires everything up.
     out.append("namespace Processing {\n");
     out.append("#include \"Processing_api.h\"\n");
-    // _PSketch: empty virtual base injected into user-defined classes.
-    // Inheriting from it gives access to Processing API via namespace lookup —
-    // the free-function templates in Processing.h are already in namespace
-    // Processing and are found via ADL/unqualified lookup from within user classes.
     out.append("struct _PSketch {\n");
     out.append("  struct _W   { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->logicalW    : 0;     } } width;\n");
     out.append("  struct _H   { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->logicalH    : 0;     } } height;\n");
@@ -914,14 +1010,6 @@ public class CppBuild {
     out.append("  struct _PMX { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->pmouseX     : 0.f;   } } pmouseX;\n");
     out.append("  struct _PMY { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->pmouseY     : 0.f;   } } pmouseY;\n");
     out.append("  struct _FC  { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->frameCount  : 0;     } } frameCount;\n");
-    // rewriteBoolEventName() rewrites EVERY value-usage of bare "mousePressed"/
-    // "keyPressed" (not followed by '(') to "_mousePressed"/"_keyPressed",
-    // across the entire sketch source -- this runs BEFORE hoisting, so a
-    // hoisted class's body can never contain a literal value-usage of the
-    // un-underscored name; only "_mousePressed"/"_keyPressed" can appear.
-    // _PSketch therefore intentionally exposes ONLY the underscored names --
-    // exposing the un-underscored ones too would be dead surface area a
-    // hoisted class could never legitimately reach.
     out.append("  struct _MP  { operator bool()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_mousePressed : false; } } _mousePressed;\n");
     out.append("  struct _KP  { operator bool()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_keyPressed  : false; } } _keyPressed;\n");
     out.append("  struct _K   { operator char()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->key          : 0;     } } key;\n");
@@ -936,56 +1024,54 @@ public class CppBuild {
     out.append("};\n");
     out.append("\n");
 
-    // Forward-declare any user helper functions so they can call each other
-    // in any order (same as before, but scoped inside struct via friend trick --
-    // actually: since they're methods, forward decls aren't needed; the struct
-    // body is parsed in one pass. We skip forward decls for methods.)
-
-    // Hoist class/struct definitions (user-defined types must come before fields that use them)
-    String hoistedClasses = hoistClassesOnly(code);
-    // Inject _PSketch base into user classes so they can call Processing API
-    // Inject _PSketch into classes that don't already inherit from it
-    hoistedClasses = hoistedClasses
-      // Inject _PSketch into classes with base: skip forward decls (;) and constructor inits (()
-      // Also inject "public:" right after the brace when the keyword is
-      // "class" (not "struct") -- Java/Processing has no concept of
-      // C++'s class-defaults-to-private rule. Source like
-      // "class HScrollbar { int x; void update(){...} }" with no explicit
-      // access specifier is meant to behave like Java, where members are
-      // implicitly callable from outside the class. Without this, every
-      // member silently becomes private and any external call
-      // (hs1.update(), hs1.display(), etc.) fails to compile.
-      .replaceAll("(?m)^(class\\s+\\w+\\s*:\\s*(?:public|private|protected)(?:\\s+\\w+)+)(?![^{]*[;(])\\s*\\{", "$1, public virtual _PSketch { public:")
-      .replaceAll("(?m)^(struct\\s+\\w+\\s*:\\s*(?:public|private|protected)(?:\\s+\\w+)+)(?![^{]*[;(])\\s*\\{", "$1, public virtual _PSketch {")
-      // Inject _PSketch into plain classes: skip forward decls and constructor inits
-      .replaceAll("(?m)^(class\\s+\\w+)(?!\\s*:)(?![^{\\n]*[;(])\\s*\\{", "$1 : public virtual _PSketch { public:")
-      .replaceAll("(?m)^(struct\\s+\\w+)(?!\\s*:)(?![^{\\n]*[;(])\\s*\\{", "$1 : public virtual _PSketch {");
-    // Remove _PSketch from pure data structs (no methods — no return types before parens)
-    // A data struct only has field declarations, no "type name(" method signatures
-    hoistedClasses = removePSketchFromDataStructs(hoistedClasses);
-    String restCode       = removeHoistedClasses(code);
-
-    // #line directive so error line numbers point at sketch.pde
     out.append("#line 1 \"sketch.pde\"\n");
     headerLineCount = 0;
 
-    // Count lines consumed by hoisted classes so #line stays accurate
-    // (hoisted classes appear first in output, before restCode)
-    int hoistedLines = hoistedClasses.split("\n", -1).length;
-
     if (!hasSetup && !hasDraw) {
       // ── Static sketch (no setup/draw) ───────────────────────────────────
-      // Wrap in a Sketch : PApplet with a generated setup() that runs the code.
+      // Parse the whole thing as a CompilationUnit; the parser itself
+      // already produces a TopLevelStatement wrapper for bare statements
+      // at file scope (see Parser/TopLevelStatement's design notes --
+      // this is exactly the construct this static-mode branch needs).
+      CompilationUnit cu = parseOrReportError(code, listener);
+      ClassHoister.Result classResult = ClassHoister.hoist(cu.items());
+      List<PSketchInjector.Result> injected = PSketchInjector.injectAll(classResult.hoistedClasses);
+      List<TypeDef> finalClasses = injected.stream().map(PSketchInjector.Result::typeDef).toList();
+
+      // Preprocessor directives, namespace blocks, and using-namespace
+      // declarations can never be valid INSIDE a function body or struct --
+      // #include/namespace/using-namespace are only legal at true file
+      // scope. The original per-line text scan never had this problem
+      // (it only ever recognized "size("/"fullScreen(" as special, and
+      // simply emitted every other line as-is inside setup(), silently
+      // producing invalid C++ for any sketch with one of these at top
+      // level -- a real, previously-undetected bug, confirmed by a
+      // PipelineCompositionTest run against a real fixture with top-level
+      // "#include <functional>"/"#include <string>" lines, which produced
+      // structurally broken output: the includes landed inside a function
+      // body). Fixed by emitting these BEFORE the Sketch struct, exactly
+      // where they'd need to be for valid C++, instead of wherever they
+      // happened to appear relative to other top-level code.
+      StringBuilder fileScopeOnly = new StringBuilder();
       StringBuilder settings = new StringBuilder();
-      StringBuilder body     = new StringBuilder();
-      for (String line : restCode.split("\n", -1)) {
-        String trimmed = line.stripLeading();
-        if (trimmed.startsWith("size(") || trimmed.startsWith("fullScreen("))
-          settings.append("        ").append(trimmed).append("\n");
-        else
-          body.append("        ").append(line).append("\n");
+      StringBuilder body = new StringBuilder();
+      for (TopLevelItem item : classResult.rest) {
+        if (item instanceof PreprocessorLine || item instanceof NamespaceDecl || item instanceof UsingNamespaceDecl) {
+          fileScopeOnly.append(CodeGen.generateNode(item, 0));
+          continue;
+        }
+        String rendered = CodeGen.generateNode(item, 2);
+        String trimmed = rendered.strip();
+        if (trimmed.startsWith("size(") || trimmed.startsWith("fullScreen(")) {
+          settings.append(rendered);
+        } else {
+          body.append(rendered);
+        }
       }
-      out.append(hoistedClasses);
+      out.append(fileScopeOnly);
+      for (TypeDef td : finalClasses) {
+        out.append(CodeGen.generateNode(td, 0));
+      }
       out.append("struct Sketch : public PApplet {\n");
       out.append("    void setup() override {\n");
       out.append(settings);
@@ -997,357 +1083,86 @@ public class CppBuild {
       out.append("};\n");
     } else {
       // ── Normal sketch (has setup/draw) ───────────────────────────────────
-      // Rewrite lifecycle function definitions as override methods.
-      // Everything else (globals, helper functions) becomes Sketch fields/methods.
-      // Extract namespace-scope items from restCode BEFORE rewriting:
-      // constexpr vars/funcs, static_assert, enum/enum class, using declarations
-      // enumScope: enum/enum class — must come FIRST (before classes that use them)
-      // constexprScope: constexpr/static_assert — can come after hoisted classes
-      // (since e.g. "constexpr RGBA RED{...}" needs RGBA to be defined first)
-      StringBuilder enumScope = new StringBuilder();
-      StringBuilder constexprScope = new StringBuilder();
-      StringBuilder restCodeClean = new StringBuilder();
-      {
-        // Walk restCode once, char-by-char, so a multi-line "enum Name { ... };"
-        // block is captured as a single unit (header + every body line + the
-        // closing brace/semicolon), instead of a naive per-line startsWith()
-        // scan that only ever matched the OPENING line and silently left the
-        // enum's body (its enumerator list) behind in restCodeClean -- which
-        // then ended up misplaced inside struct Sketch instead of staying
-        // attached to its own header in enumScope.
-        String rc = restCode;
-        int n2 = rc.length(), i2 = 0;
-        while (i2 < n2) {
-          // Find start of current line
-          int lineStart = i2;
-          int lineEnd = rc.indexOf('\n', i2);
-          if (lineEnd < 0) lineEnd = n2;
-          String line = rc.substring(lineStart, lineEnd);
-          String t = line.strip();
+      CompilationUnit cu = parseOrReportError(code, listener);
 
-          boolean isEnumHeader = t.startsWith("enum class") || t.startsWith("enum struct") || t.startsWith("enum ");
-          if (isEnumHeader && t.contains("{") ) {
-            // Single-line-header case: walk forward from here tracking brace
-            // depth until the block closes, regardless of how many lines it
-            // spans, and append the WHOLE thing (header through closing ";")
-            // to enumScope as one unit.
-            int depth = 0, k = lineStart;
-            boolean sawOpenBrace = false;
-            while (k < n2) {
-              char c = rc.charAt(k);
-              if (c=='"') { k++; while (k<n2 && rc.charAt(k)!='"') { if(rc.charAt(k)=='\\') k++; k++; } }
-              else if (c=='\'') { k++; while (k<n2 && rc.charAt(k)!='\'') { if(rc.charAt(k)=='\\') k++; k++; } }
-              else if (c=='{') { depth++; sawOpenBrace = true; }
-              else if (c=='}') { if (--depth==0 && sawOpenBrace) { k++; break; } }
-              k++;
-            }
-            int end = k;
-            while (end < n2 && (rc.charAt(end)==' ' || rc.charAt(end)=='\n')) end++;
-            if (end < n2 && rc.charAt(end)==';') end++;
-            enumScope.append(rc, lineStart, end).append("\n");
-            i2 = end;
-            continue;
-          }
+      // Step 1: enum extraction (before anything else touches the list) --
+      // see EnumScopeExtractor's javadoc for the known constexpr/
+      // static_assert/using-alias gap, carried over unchanged.
+      EnumScopeExtractor.Result enumResult = EnumScopeExtractor.extract(cu.items());
 
-          boolean isConstexprScope =
-            t.startsWith("static_assert") ||
-            t.startsWith("using ") ||
-            (t.startsWith("constexpr") && !t.contains("(") ) ||
-            t.matches("constexpr\\s+\\w.*=.*") ||
-            t.matches("constexpr\\s+\\w+\\s+\\w+\\s*\\(.*");
-          // If this constexpr declares a value used elsewhere as an array
-          // SIZE (e.g. "constexpr int N4 = 40;" followed by "float arr[N4];"),
-          // do NOT extract it here -- leave it in restCodeClean so the
-          // dedicated array-hoisting pass (classifyTopLevelDecls-based,
-          // further down) hoists it in the correct order relative to the
-          // array it sizes. Splitting a sizing constant and its array
-          // across two emission buckets (constexprScope vs hoistedArrays)
-          // makes their relative emission order impossible to control.
-          if (isConstexprScope && t.startsWith("constexpr")) {
-            java.util.regex.Matcher cnm = java.util.regex.Pattern.compile("constexpr\\s+[A-Za-z_]\\w*\\s+([A-Za-z_]\\w*)\\s*=").matcher(t);
-            if (cnm.find()) {
-              String declaredName = cnm.group(1);
-              boolean usedAsArraySize = java.util.regex.Pattern.compile(
-                "\\[\\s*" + java.util.regex.Pattern.quote(declaredName) + "\\s*\\]").matcher(rc).find();
-              if (usedAsArraySize) isConstexprScope = false;
-            }
-          }
-          if (isConstexprScope) {
-            constexprScope.append(line).append("\n");
-          } else {
-            restCodeClean.append(line).append("\n");
-          }
-          i2 = (lineEnd < n2) ? lineEnd + 1 : n2;
-        }
-      }
-      restCode = restCodeClean.toString();
+      // Step 2: lifecycle rewriting (override + nullptr defaulting).
+      List<TopLevelItem> afterLifecycle = LifecycleRewriter.rewrite(enumResult.rest, LIFECYCLE_METHOD_NAMES);
 
-      String transformed = rewriteAsSketchMethods(restCode, lifecycleMethods);
+      // Step 3: class hoisting.
+      ClassHoister.Result classResult = ClassHoister.hoist(afterLifecycle);
 
-      // Extract forward declarations from hoistedClasses
-      StringBuilder fwdDecls = new StringBuilder();
-      StringBuilder hoistedNoFwd = new StringBuilder();
-      for (String line : hoistedClasses.split("\n", -1)) {
-        String t = line.strip();
-        String tNC = t.contains("//") ? t.substring(0, t.indexOf("//")).strip() : t;
-        if ((tNC.startsWith("class ") || tNC.startsWith("struct ")) && tNC.endsWith(";")
-            && !tNC.contains("{")) {
-          fwdDecls.append(line).append("\n");
+      // Step 4: _PSketch injection.
+      List<PSketchInjector.Result> injectedClasses = PSketchInjector.injectAll(classResult.hoistedClasses);
+      List<TypeDef> finalClasses = injectedClasses.stream().map(PSketchInjector.Result::typeDef).toList();
+
+      // Step 5: array hoisting.
+      ArrayHoister.Result arrayResult = ArrayHoister.hoist(classResult.rest);
+
+      // Step 6: dependency hoisting (functions + plain variables that
+      // hoisted classes reference).
+      DependencyHoister.Result depResult = DependencyHoister.hoist(arrayResult.rest, finalClasses, LIFECYCLE_METHOD_NAMES);
+
+      // Step 7: forward-declare hoisted functions.
+      List<FunctionDecl> forwardDecls = ForwardDeclGenerator.generate(depResult.hoistedFunctions);
+
+      // Preprocessor directives, namespace blocks, and using-namespace
+      // declarations can never be valid INSIDE a struct body --
+      // #include/namespace/using-namespace are only legal at true file
+      // scope. Found as a real bug via PipelineCompositionTest against a
+      // fixture with top-level "#include <functional>"/"#include
+      // <string>" lines, which an earlier version of this method placed
+      // inside struct Sketch, producing invalid C++. Extracted here and
+      // emitted at the very FRONT of the remaining output (before even
+      // forward decls), since a forward-declared function's signature
+      // could in principle reference something from one of these
+      // includes too -- "before the Sketch struct" alone isn't a strong
+      // enough guarantee; "before everything else generated" is.
+      List<TopLevelItem> sketchMembers = new ArrayList<>();
+      for (TopLevelItem item : depResult.rest) {
+        if (item instanceof PreprocessorLine || item instanceof NamespaceDecl || item instanceof UsingNamespaceDecl) {
+          out.append(CodeGen.generateNode(item, 0));
         } else {
-          hoistedNoFwd.append(line).append("\n");
+          sketchMembers.add(item);
         }
       }
 
-      // From transformed: extract
-      //   (a) forward declarations — "class Foo;" lines  
-      //   (b) static member definitions — "Type Foo::bar = val;"
-      // Both must live at namespace scope, not inside Sketch
-      StringBuilder staticDefs = new StringBuilder();
-      StringBuilder transformedClean = new StringBuilder();
-      for (String line : transformed.split("\n", -1)) {
-        String t = line.strip();
-        // Forward declaration: class/struct Foo; (strip inline comments first)
-        String tNoComment = t.contains("//") ? t.substring(0, t.indexOf("//")).strip() : t;
-        boolean isFwdDecl = (tNoComment.startsWith("class ") || tNoComment.startsWith("struct "))
-                            && tNoComment.endsWith(";") && !tNoComment.contains("{");
-        // Static member def: contains "::" and "=" but no "(", not a comment
-        boolean isStaticDef = !t.startsWith("//") && !t.contains("(")
-                              && t.contains("::") && t.contains("=")
-                              && t.matches("[A-Za-z_][\\w:<>*& ]*::[A-Za-z_]\\w*\\s*=.*");
-        if (isFwdDecl) {
-          fwdDecls.append(line).append("\n");
-        } else if (isStaticDef) {
-          staticDefs.append(line).append("\n");
-        } else {
-          transformedClean.append(line).append("\n");
-        }
-      }
+      // Step 8: emit in the same order the original's StringBuilder
+      // concatenation used: forward decls, enums, hoisted vars, hoisted
+      // arrays, hoisted classes, hoisted functions, then struct Sketch
+      // wrapping everything left in sketchMembers (depResult.rest minus
+      // the file-scope-only items already emitted above).
+      for (FunctionDecl fd : forwardDecls) out.append(CodeGen.generateNode(fd, 0));
+      for (var e : enumResult.enums) out.append(CodeGen.generateNode(e, 0));
+      for (var v : depResult.hoistedVariables) out.append(CodeGen.generateNode(v, 0));
+      for (var v : arrayResult.hoistedSizingConstants) out.append(CodeGen.generateNode(v, 0));
+      for (var v : arrayResult.hoistedArrays) out.append(CodeGen.generateNode(v, 0));
+      for (TypeDef td : finalClasses) out.append(CodeGen.generateNode(td, 0));
+      for (FunctionDecl fd : depResult.hoistedFunctions) out.append(CodeGen.generateNode(fd, 0));
+      // constexprScope (the NOT-PORTED half -- see EnumScopeExtractor's
+      // javadoc) intentionally has no corresponding emission here, since
+      // nothing in the pipeline currently extracts it; any constexpr/
+      // static_assert/using-alias declaration a sketch might contain
+      // simply stays in sketchMembers and is emitted as an ordinary
+      // Sketch member below, which is a behavior difference from the
+      // original ONLY for a construct with zero confirmed real-sketch
+      // usage (see EnumScopeExtractor's javadoc for the corpus check).
 
-      // ── Hoist free functions that hoisted classes depend on ──────────
-      // A class hoisted to namespace scope (above Sketch) cannot call a free
-      // function that still lives inside Sketch. Detect such functions by
-      // scanning transformedClean for top-level "RetType name(...) { ... }"
-      // blocks (4-space indented, not a lifecycle method) whose name is
-      // referenced as a call ("name(") inside the hoisted class text, and
-      // move them to namespace scope alongside the classes. Iterate to a
-      // fixed point since a hoisted function may itself call another
-      // currently-unhoisted helper.
-      StringBuilder hoistedFunctions = new StringBuilder();
-      java.util.Set<String> lifecycleSet = new java.util.HashSet<>(java.util.Arrays.asList(lifecycleMethods));
-      boolean hoistedSomething = true;
-      while (hoistedSomething) {
-        hoistedSomething = false;
-        // Find candidate top-level function definitions in transformedClean:
-        // lines starting (after 4-space indent) with a return type, a name,
-        // "(", ending the signature line with "{" (single or multi-line body).
-        java.util.regex.Pattern fnPat = java.util.regex.Pattern.compile(
-          "(?m)^    ((?:[A-Za-z_][\\w:<>,\\s\\*&]*?)\\s+([A-Za-z_]\\w*)\\s*\\([^;{]*\\)\\s*)\\{");
-        java.util.regex.Matcher fm = fnPat.matcher(transformedClean.toString());
-        while (fm.find()) {
-          String fnName = fm.group(2);
-          if (lifecycleSet.contains(fnName)) continue;
-          // Only hoist if this function is actually called from inside the
-          // already-hoisted class text (or previously hoisted functions).
-          String haystack = hoistedNoFwd.toString() + hoistedFunctions.toString();
-          if (!java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(fnName) + "\\s*\\(").matcher(haystack).find())
-            continue;
-          // Skip if this exact signature was already hoisted (avoid loops)
-          if (hoistedFunctions.indexOf(fm.group(1)) >= 0) continue;
-          // Extract the full function body starting at fm.start() (depth-matched braces)
-          int bodyOpen = fm.end() - 1; // index of the matched '{'
-          String src2 = transformedClean.toString();
-          int depth = 0, k = bodyOpen;
-          int n2 = src2.length();
-          while (k < n2) {
-            char c = src2.charAt(k);
-            if (c=='"') { k++; while (k<n2 && src2.charAt(k)!='"') { if(src2.charAt(k)=='\\') k++; k++; } }
-            else if (c=='\'') { k++; while (k<n2 && src2.charAt(k)!='\'') { if(src2.charAt(k)=='\\') k++; k++; } }
-            else if (c=='{') depth++;
-            else if (c=='}') { if (--depth==0) { k++; break; } }
-            k++;
-          }
-          int fnStart = fm.start();
-          // Walk fnStart back to the start of its line to capture full indent
-          int lineStart = src2.lastIndexOf('\n', fnStart) + 1;
-          String fullFn = src2.substring(lineStart, k);
-          // Dedent by 4 spaces (it was inside Sketch at 4-space indent)
-          String dedented = fullFn.replaceAll("(?m)^    ", "");
-          hoistedFunctions.append(dedented).append("\n");
-          // Remove from transformedClean
-          transformedClean = new StringBuilder(src2.substring(0, lineStart) + src2.substring(k));
-          hoistedSomething = true;
-          break; // restart scan since transformedClean changed
-        }
-      }
-
-      // ── Hoist global C-array declarations to namespace scope, unconditionally ──
-      // C-style arrays ("Type name[N];" or "Type name[] = {...};") work
-      // exactly like Java arrays IF they stay at true global/namespace
-      // scope: zero-initialized automatically (static storage duration),
-      // and any const/constexpr identifier used as the size is a genuine
-      // compile-time constant. Both guarantees disappear the moment such a
-      // declaration becomes a non-static Sketch member field instead.
-      // Uses classifyTopLevelDecls() (a single character-walking scan,
-      // shared with other hoisting passes) instead of bespoke regex --
-      // every array-declaration shape (with/without initializer, literal
-      // vs. named-constant size, const/constexpr/static const sizing) is
-      // handled uniformly since the classifier already extracted
-      // typeName/name/sizeExpr/isConst correctly for each declaration.
-      StringBuilder hoistedArrays = new StringBuilder();
-      {
-        java.util.List<TopLevelDecl> decls = classifyTopLevelDecls(transformedClean.toString());
-        java.util.Set<String> arraySizeIdentifiers = new java.util.HashSet<>();
-        for (TopLevelDecl d : decls) {
-          if (d.kind == TopLevelDecl.Kind.ARRAY_VAR && d.sizeExpr != null && !d.sizeExpr.isEmpty()
-              && !d.sizeExpr.matches("\\d+")) {
-            arraySizeIdentifiers.add(d.sizeExpr);
-          }
-        }
-
-        // PHASE 1: hoist every sizing constant FIRST, in its own complete
-        // pass, so they always precede the arrays that need them in
-        // hoistedArrays regardless of original source order or how many
-        // arrays reference the same constant.
-        boolean changed = true;
-        while (changed) {
-          changed = false;
-          java.util.List<TopLevelDecl> current = classifyTopLevelDecls(transformedClean.toString());
-          for (TopLevelDecl d : current) {
-            if (d.kind == TopLevelDecl.Kind.PLAIN_VAR && d.isConst
-                && d.name != null && arraySizeIdentifiers.contains(d.name)) {
-              hoistedArrays.append(d.fullText.replaceAll("(?m)^    ", ""));
-              String src = transformedClean.toString();
-              transformedClean = new StringBuilder(src.substring(0, d.startPos) + src.substring(d.endPos));
-              changed = true;
-              break;
-            }
-          }
-        }
-
-        // PHASE 2: hoist every array declaration, now that all sizing
-        // constants are already in hoistedArrays ahead of them.
-        changed = true;
-        while (changed) {
-          changed = false;
-          java.util.List<TopLevelDecl> current = classifyTopLevelDecls(transformedClean.toString());
-          for (TopLevelDecl d : current) {
-            if (d.kind == TopLevelDecl.Kind.ARRAY_VAR) {
-              hoistedArrays.append(d.fullText.replaceAll("(?m)^    ", ""));
-              String src = transformedClean.toString();
-              transformedClean = new StringBuilder(src.substring(0, d.startPos) + src.substring(d.endPos));
-              changed = true;
-              break;
-            }
-          }
-        }
-      }
-
-      // ── Fix C++'s "most vexing parse" for object direct-initialization ──
-      // "Eye e1(250, 16, 120);" is grammatically ambiguous in C++ at this
-      // scope -- the compiler resolves it as a MEMBER FUNCTION DECLARATION
-      // named e1 taking (int,int,int) and returning Eye, not as "construct
-      // an Eye object named e1 with these initial values," which is what
-      // the sketch author actually meant. Rewriting the parens to braces
-      // -- "Eye e1{250, 16, 120};" -- uses direct-list-initialization
-      // instead, which has no most-vexing-parse ambiguity in C++.
-      {
-        boolean changedDI = true;
-        while (changedDI) {
-          changedDI = false;
-          java.util.List<TopLevelDecl> current = classifyTopLevelDecls(transformedClean.toString());
-          for (TopLevelDecl d : current) {
-            if (d.kind == TopLevelDecl.Kind.OBJECT_DIRECT_INIT) {
-              String rewritten = d.fullText.replaceFirst("\\(", "{").replaceFirst("\\)\\s*;", "};");
-              String src = transformedClean.toString();
-              transformedClean = new StringBuilder(src.substring(0, d.startPos) + rewritten + src.substring(d.endPos));
-              changedDI = true;
-              break;
-            }
-          }
-        }
-      }
-
-      // ── Hoist plain global variables that hoisted classes depend on ──
-      // Same problem as free functions above, but for plain data: a class
-      // hoisted to namespace scope cannot see a global variable (e.g.
-      // "bool firstMousePress = false;") that still lives inside Sketch as
-      // a member field. Detect single-line "Type name [= value];"
-      // declarations in transformedClean whose name is referenced from
-      // inside the hoisted class text, and move them to namespace scope.
-      // Both Sketch's own methods and the hoisted class still see the SAME
-      // variable either way (there's exactly one Sketch instance per
-      // program), so this is purely about visibility, not aliasing.
-      StringBuilder hoistedVariables = new StringBuilder();
-      {
-        boolean hoistedVarSomething = true;
-        while (hoistedVarSomething) {
-          hoistedVarSomething = false;
-          // Match: 4-space-indented "Type name = expr;" or "Type name;"
-          // Deliberately conservative: single identifier name, simple
-          // initializer with no semicolons inside it (covers the common
-          // "bool flag = false;" / "int counter = 0;" / "float t = 0;"
-          // case without trying to parse arbitrary C++ initializers).
-          java.util.regex.Pattern varPat = java.util.regex.Pattern.compile(
-            "(?m)^    ([A-Za-z_][\\w:<>,\\s\\*&]*?\\s+([A-Za-z_]\\w*)\\s*(?:=[^;]*)?;)\\s*$");
-          java.util.regex.Matcher vm = varPat.matcher(transformedClean.toString());
-          while (vm.find()) {
-            String varName = vm.group(2);
-            if (lifecycleSet.contains(varName)) continue;
-            String haystack = hoistedNoFwd.toString() + hoistedFunctions.toString();
-            if (!java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(varName) + "\\b").matcher(haystack).find())
-              continue;
-            // Avoid re-hoisting the same declaration if seen again
-            if (hoistedVariables.indexOf(vm.group(1)) >= 0) continue;
-            String src3 = transformedClean.toString();
-            int lineStart = src3.lastIndexOf('\n', vm.start()) + 1;
-            int lineEnd = src3.indexOf('\n', vm.end());
-            if (lineEnd < 0) lineEnd = src3.length(); else lineEnd += 1;
-            String fullLine = src3.substring(lineStart, lineEnd);
-            String dedented = fullLine.replaceAll("(?m)^    ", "");
-            hoistedVariables.append(dedented);
-            transformedClean = new StringBuilder(src3.substring(0, lineStart) + src3.substring(lineEnd));
-            hoistedVarSomething = true;
-            break;
-          }
-        }
-      }
-
-      // Forward-declare every hoisted function before the hoisted classes,
-      // so a class method (e.g. Agent::update calling dirToVec) compiles
-      // even though the class itself appears earlier in the file than the
-      // function's full definition.
-      StringBuilder hoistedFnForwardDecls = new StringBuilder();
-      {
-        java.util.regex.Pattern sigPat = java.util.regex.Pattern.compile(
-          "(?m)^((?:[A-Za-z_][\\w:<>,\\s\\*&]*?)\\s+([A-Za-z_]\\w*)\\s*\\([^;{]*\\))\\s*\\{");
-        java.util.regex.Matcher sm = sigPat.matcher(hoistedFunctions.toString());
-        while (sm.find()) {
-          hoistedFnForwardDecls.append(sm.group(1)).append(";\n");
-        }
-      }
-
-      out.append(fwdDecls);              // forward decls before everything
-      out.append(enumScope);             // enums first - classes may use them
-      out.append(hoistedVariables);      // plain global vars hoisted classes reference
-      out.append(hoistedArrays);         // C-array decls + their sizing consts, unconditionally hoisted
-      out.append(hoistedFnForwardDecls); // forward-declare hoisted functions
-      out.append(hoistedNoFwd);          // hoisted classes (may call the functions/vars above)
-      out.append(hoistedFunctions);      // full function definitions
-      out.append(constexprScope);        // constexpr vars/funcs, static_assert (may use classes above)
       out.append("struct Sketch : public PApplet {\n");
-      out.append(transformedClean).append("\n");
+      for (TopLevelItem item : sketchMembers) {
+        out.append(CodeGen.generateNode(item, 1));
+      }
       out.append("};\n");
-      out.append(staticDefs);            // static member defs after Sketch closes
     }
 
-    // ── Free function forwarding ─────────────────────────────────────────────
-    // Processing::run() calls setup() and draw() as free functions in the namespace.
-    // We forward those to the active PApplet instance (set by PApplet::run()).
     out.append("void setup() { if(PApplet::g_papplet) PApplet::g_papplet->setup(); }\n");
     out.append("void draw()  { if(PApplet::g_papplet) PApplet::g_papplet->draw();  }\n");
     out.append("void settings() { if(PApplet::g_papplet) PApplet::g_papplet->settings(); }\n");
 
-    // ── main() ──────────────────────────────────────────────────────────────
     out.append("} // namespace Processing\n");
     out.append("\n");
     out.append("#ifdef _WIN32\n");
@@ -2260,45 +2075,19 @@ public class CppBuild {
   // reason every other text-pattern scan in this file does: a comment
   // mentioning this exact syntax as an example shouldn't trigger a
   // build-stopping error.
+  // Replaces the original regex-over-blanked-text scan with the real
+  // token-stream-based check (see CppJavaArrayCheck.java). Same external
+  // contract as before: detailed message to System.err (the persistent
+  // console text area), a short message to listener.statusError() (the
+  // volatile status bar), and a thrown RuntimeException to stop the build
+  // -- callers of this method don't need to change.
   private void checkForUnsupportedJavaArraySyntax(String code, RunnerListener listener) {
-    String cleanCode = blankCommentsAndLiterals(code);
-    // Group 1: element type name (identifier, possibly with one or more
-    // trailing [] already, to tolerate "int[] []" oddities, though that
-    // itself isn't valid Java -- the main goal is the "[]...new T[...]"
-    // shape, not exhaustively validating Java grammar variants nobody
-    // actually writes).
-    // Group 2: one or more "[]" pairs (possibly whitespace-separated),
-    // i.e. the dimension markers on the DECLARED type.
-    // The "new" side separately allows one or more "[<expr>]" dimension
-    // sizes, each possibly containing whitespace or a simple expression.
-    java.util.regex.Pattern p = java.util.regex.Pattern.compile(
-      "\\b([A-Za-z_]\\w*)\\s*((?:\\[\\s*\\]\\s*)+)\\s*[A-Za-z_]\\w*\\s*=\\s*new\\s+[A-Za-z_]\\w*\\s*((?:\\[[^\\]]*\\]\\s*)+)"
-    );
-    java.util.regex.Matcher m = p.matcher(cleanCode);
-    if (m.find()) {
-      String elementType = m.group(1);
-      int dims = 0;
-      java.util.regex.Matcher dimCount = java.util.regex.Pattern.compile("\\[\\s*\\]").matcher(m.group(2));
-      while (dimCount.find()) dims++;
-      StringBuilder suggestion = new StringBuilder();
-      for (int i = 0; i < dims; i++) suggestion.append("Array<");
-      suggestion.append(elementType);
-      for (int i = 0; i < dims; i++) suggestion.append(">");
-      String detailedMessage =
-        "E0004: Java-style array declaration (\"" + elementType + "[" +
-        (dims > 1 ? "]..." : "]") + " = new " + elementType + "[...]\") is not supported.\n" +
-        "Use " + suggestion + " instead, e.g.: " + suggestion + " a(10" +
-        (dims > 1 ? ", ...)" : ")") + "\n" +
-        "See https://processing-cpp.github.io/error/E0004";
-      // statusError() alone only writes to the status bar, which this
-      // codebase's OWN comments describe as "volatile" -- it disappears
-      // quickly and was never meant to hold a multi-line, detailed
-      // message. System.err.println() is what actually lands in the
-      // persistent console text area, matching the pattern Editor.java
-      // itself uses for exactly this same reason elsewhere.
-      System.err.println(detailedMessage);
+    try {
+      CppJavaArrayCheck.check(code);
+    } catch (CppJavaArrayCheck.E0004Exception e) {
+      System.err.println(e.getMessage());
       listener.statusError("E0004: Unsupported Java array syntax -- see console for details.");
-      throw new RuntimeException("E0004: Unsupported Java array syntax -- see console for details.");
+      throw new AlreadyReportedException("E0004: Unsupported Java array syntax -- see console for details.");
     }
   }
 

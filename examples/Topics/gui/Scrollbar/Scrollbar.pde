@@ -5,7 +5,7 @@
  */
 //True if a mouse button was pressed while no other button was.
 boolean firstMousePress = false;
-HScrollbar hs1, hs2;  // Two scrollbars
+HScrollbar* hs1, * hs2;  // Two scrollbars
 PImage* img1 = nullptr;
 PImage* img2 = nullptr;  // Two images to load
 void setup() {
@@ -21,18 +21,18 @@ void draw() {
   background(255);
   // Get the position of the img1 scrollbar
   // and convert to a value to display the img1 image
-  float img1Pos = hs1.getPos()-width/2;
+  float img1Pos = hs1->getPos()-width/2;
   fill(255);
   image(img1, width/2-img1->width/2 + img1Pos*1.5, 0);
   // Get the position of the img2 scrollbar
   // and convert to a value to display the img2 image
-  float img2Pos = hs2.getPos()-width/2;
+  float img2Pos = hs2->getPos()-width/2;
   fill(255);
   image(img2, width/2-img2->width/2 + img2Pos*1.5, height/2);
-  hs1.update();
-  hs2.update();
-  hs1.display();
-  hs2.display();
+  hs1->update();
+  hs2->update();
+  hs1->display();
+  hs2->display();
   stroke(0);
   line(0, height/2, width, height/2);
   //After it has been used in the sketch, set it back to false
