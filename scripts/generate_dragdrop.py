@@ -55,6 +55,16 @@ def generate(out_dir: Path) -> None:
     run_sh.chmod(0o755)
     (out_dir / "run.bat").write_text(RUN_BAT)
 
+    # Covers this folder's own generated caches: lib/libprocessing_cpp.a
+    # and include/Processing.h.gch. The .gch in particular is large
+    # (100MB+) -- without this, anyone who runs `git add .` after their
+    # first ./run.sh commits a 100MB+ binary straight into their repo
+    # history. Doesn't cover .processing-cpp-build (the compiled sketch
+    # binary), since that lands at the PROJECT root, one level above this
+    # folder -- a .gitignore here can't reach it. The README tells the
+    # user to add that line to their own project's .gitignore instead.
+    (out_dir / ".gitignore").write_text(DRAGDROP_GITIGNORE)
+
     # VS Code task. This can't be shipped directly as .vscode/tasks.json
     # inside this folder -- VS Code only reads .vscode/ at the workspace
     # ROOT, which is one level up (wherever the user's own main.cpp lives),
@@ -69,7 +79,7 @@ def generate(out_dir: Path) -> None:
     print(f"Generated drag-and-drop package: {out_dir}")
     print(f"  include/ ({len(ENGINE_HEADERS)} headers), "
           f"src/ ({len(ENGINE_SOURCES)} engine source files), "
-          f"README.md, run.sh, run.bat, vscode-task/, examples/, LICENSE")
+          f"README.md, run.sh, run.bat, .gitignore, vscode-task/, examples/, LICENSE")
 
 
 # =============================================================================
@@ -107,12 +117,31 @@ folder doesn't need CMake at all, and isn't meant to be used with it.
 
 That's the entire workflow. `run.sh` finds your `.cpp` file, compiles it
 against the engine, links it, and runs the result, in one step. The first
-time you run it, it also compiles the engine itself, which takes about
-10-15 seconds; every run after that reuses the compiled engine and only
-has to rebuild your own file, so it's fast.
+time you run it, it also compiles the engine itself and precompiles
+`Processing.h`, which together take about 15-20 seconds; every run after
+that reuses both of those and only has to compile your own file, so it's
+fast -- well under a second on most machines.
 
 On Windows, run `run.bat` the same way (from an MSYS2 shell, or by
 double-clicking it).
+
+## If your project is a git repo
+
+`run.sh` caches its build outputs in two places: `processing-cpp/lib/`
+and `processing-cpp/include/Processing.h.gch`. This folder already
+includes a `.gitignore` covering both of those, so they won't get
+committed if you run `git add processing-cpp`.
+
+It can't cover `run.sh`'s other output, though: the compiled sketch
+itself, `.processing-cpp-build`, lands one level up, at the root of
+*your* project, not inside `processing-cpp/`. Add this line to your own
+project's `.gitignore`:
+
+```
+.processing-cpp-build*
+```
+
+(The trailing `*` catches `.processing-cpp-build.exe` on Windows too.)
 
 ## Writing a sketch
 
@@ -185,6 +214,11 @@ instead. On Windows with MSYS2, it's
 This is mostly useful if you want to wire processing-cpp into your own
 Makefile, editor build task, or something other than `run.sh` -- you don't
 need to read this section to just use the library.
+
+(`run.sh` itself does a little more than this -- it caches the compiled
+engine and a precompiled header for `Processing.h` so repeated runs are
+fast, as described above. Neither is required for a *working* build, only
+for a *fast* one; the command above is enough to get a sketch running.)
 
 ## Installing GLFW, GLEW, and a compiler
 
@@ -272,14 +306,53 @@ RUN_SH = '''\
 #   ./processing-cpp/run.sh                  # auto-detects .cpp files next to this folder
 #   ./processing-cpp/run.sh main.cpp app.cpp # explicit, e.g. a multi-file sketch
 #
-# The engine itself is compiled once and cached in processing-cpp/lib/ --
-# only your own file(s) get recompiled on later runs, unless the engine
-# source in this folder changes (e.g. you updated the package).
+# Two things get cached here so repeated runs stay fast, both rebuilt
+# automatically only when their inputs change:
+#   - the engine itself, compiled once into processing-cpp/lib/
+#   - a precompiled header for Processing.h, written next to it as
+#     processing-cpp/include/Processing.h.gch (g++ only looks for a .gch
+#     file in the SAME directory as the header it precompiles -- it
+#     can't live in lib/ alongside the engine, even though that would
+#     read more naturally)
+# Neither cache is required for correctness -- delete processing-cpp/lib/
+# and Processing.h.gch and the next run just rebuilds both from scratch.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
+
+if ! command -v g++ >/dev/null 2>&1; then
+    echo "error: g++ not found on PATH." >&2
+    echo "Install a C++ compiler, then try again -- see the \\"Dependencies\\" section of processing-cpp/README.md." >&2
+    exit 1
+fi
+
+# Wraps a build command so a failure gets a one-line, specific cause
+# instead of just whatever raw error g++/ld printed. Every g++/ar call in
+# this script goes through here -- the engine build is the first thing
+# that touches GLFW/GLEW (Processing.h includes both directly), so a
+# missing-dependency failure can show up there, in the PCH build, or in
+# the final compile, depending on what is/isn't already cached.
+run_build_step() {
+    local description="$1"
+    shift
+    local output
+    if ! output="$("$@" 2>&1)"; then
+        echo "$output" >&2
+        echo "" >&2
+        if echo "$output" | grep -qE "GLFW/glfw3\\.h|GL/glew\\.h"; then
+            echo "error: $description failed -- GLFW or GLEW headers not found." >&2
+            echo "See the \\"Dependencies\\" section of processing-cpp/README.md to install them." >&2
+        elif echo "$output" | grep -qE "cannot find -lglfw|cannot find -lGLEW"; then
+            echo "error: $description failed -- GLFW or GLEW library not found at link time." >&2
+            echo "See the \\"Dependencies\\" section of processing-cpp/README.md to install them." >&2
+        else
+            echo "error: $description failed. See the output above." >&2
+        fi
+        exit 1
+    fi
+}
 
 if [ "$#" -gt 0 ]; then
     SOURCES=("$@")
@@ -303,9 +376,18 @@ OS="$(uname -s)"
 case "$OS" in
     Darwin)
         GL_LIBS=(-lglfw -lGLEW -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo)
+        COMPILE_FLAGS=()
         ;;
     Linux)
         GL_LIBS=(-lglfw -lGLEW -lGL -lGLU -lm -pthread)
+        # -pthread isn't just a link flag -- it also defines _REENTRANT
+        # during compilation. The PCH build below has to see the same
+        # define, or g++ rejects the cached .gch as stale and silently
+        # re-parses Processing.h from source every time (caught by
+        # actually building the package and checking with -Winvalid-pch
+        # -- it doesn't show up as a build failure, just quietly stops
+        # being fast).
+        COMPILE_FLAGS=(-pthread)
         ;;
     *)
         echo "error: unrecognized OS '$OS' -- on Windows, use run.bat instead" >&2
@@ -313,9 +395,20 @@ case "$OS" in
         ;;
 esac
 
+# DEFINES must be IDENTICAL between the PCH build below and the final
+# sketch compile further down, and so must COMPILE_FLAGS above -- g++
+# only uses a .gch if every relevant flag matches the compile it's being
+# considered for. A mismatch doesn't break the build, it just silently
+# falls back to parsing Processing.h from source (with a -Winvalid-pch
+# warning if you pass that flag to check), so the caching would quietly
+# stop helping. Defined once here so the two invocations can't drift
+# apart from each other.
+DEFINES=(-DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE)
+
 ENGINE_DIR="$SCRIPT_DIR"
 LIB_DIR="$ENGINE_DIR/lib"
 LIB_A="$LIB_DIR/libprocessing_cpp.a"
+PCH_FILE="$ENGINE_DIR/include/Processing.h.gch"
 mkdir -p "$LIB_DIR"
 
 NEED_ENGINE_BUILD=0
@@ -331,20 +424,36 @@ fi
 
 if [ "$NEED_ENGINE_BUILD" -eq 1 ]; then
     echo "Compiling engine (first run, or engine source changed; ~10-15s)..."
-    g++ -std=c++17 -O2 -c -I"$ENGINE_DIR/include" \\
-        -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE \\
-        "$ENGINE_DIR/src/Processing.cpp" -o "$LIB_DIR/Processing.o"
-    g++ -std=c++17 -O2 -c -I"$ENGINE_DIR/include" \\
-        -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE \\
-        "$ENGINE_DIR/src/Processing_defaults.cpp" -o "$LIB_DIR/Processing_defaults.o"
-    ar rcs "$LIB_A" "$LIB_DIR/Processing.o" "$LIB_DIR/Processing_defaults.o"
+    run_build_step "engine compile" \\
+        g++ -std=c++17 -O2 -c -I"$ENGINE_DIR/include" "${DEFINES[@]}" \\
+            "$ENGINE_DIR/src/Processing.cpp" -o "$LIB_DIR/Processing.o"
+    run_build_step "engine compile" \\
+        g++ -std=c++17 -O2 -c -I"$ENGINE_DIR/include" "${DEFINES[@]}" \\
+            "$ENGINE_DIR/src/Processing_defaults.cpp" -o "$LIB_DIR/Processing_defaults.o"
+    run_build_step "engine archive" \\
+        ar rcs "$LIB_A" "$LIB_DIR/Processing.o" "$LIB_DIR/Processing_defaults.o"
     rm -f "$LIB_DIR/Processing.o" "$LIB_DIR/Processing_defaults.o"
 fi
 
+NEED_PCH_BUILD=0
+if [ ! -f "$PCH_FILE" ]; then
+    NEED_PCH_BUILD=1
+elif [ "$ENGINE_DIR/include/Processing.h" -nt "$PCH_FILE" ]; then
+    NEED_PCH_BUILD=1
+fi
+
+if [ "$NEED_PCH_BUILD" -eq 1 ]; then
+    echo "Precompiling Processing.h (first run, or it changed; speeds up every build after this one)..."
+    run_build_step "header precompile" \\
+        g++ -std=c++17 -I"$ENGINE_DIR/include" "${DEFINES[@]}" "${COMPILE_FLAGS[@]}" \\
+            -x c++-header "$ENGINE_DIR/include/Processing.h" -o "$PCH_FILE"
+fi
+
 OUT="$PROJECT_DIR/.processing-cpp-build"
-g++ -std=c++17 -I"$ENGINE_DIR/include" "${SOURCES[@]}" \\
-    -L"$LIB_DIR" -lprocessing_cpp "${GL_LIBS[@]}" \\
-    -o "$OUT"
+run_build_step "sketch compile" \\
+    g++ -std=c++17 -I"$ENGINE_DIR/include" "${DEFINES[@]}" "${SOURCES[@]}" \\
+        -L"$LIB_DIR" -lprocessing_cpp "${GL_LIBS[@]}" \\
+        -o "$OUT"
 
 echo "Running..."
 exec "$OUT"
@@ -360,6 +469,14 @@ REM
 REM Usage:
 REM   processing-cpp\\run.bat
 REM   processing-cpp\\run.bat main.cpp app.cpp
+REM
+REM Caches two things so repeated runs stay fast: the engine itself
+REM (processing-cpp\\lib\\libprocessing_cpp.a) and a precompiled header
+REM for Processing.h (processing-cpp\\include\\Processing.h.gch -- g++
+REM only looks for a .gch file next to the header it precompiles, so it
+REM has to live in include\\, not next to the engine in lib\\). Neither
+REM is required for correctness; delete both and the next run rebuilds
+REM them from scratch.
 setlocal enabledelayedexpansion
 
 set "SCRIPT_DIR=%~dp0"
@@ -380,9 +497,15 @@ if "%SOURCES%"=="" (
 
 echo Building: %SOURCES%
 
+REM Must match the DEFINES used for the PCH build exactly, or g++ will
+REM reject the cached .gch as stale and silently fall back to parsing
+REM Processing.h from source every time (with a -Winvalid-pch warning).
+set "DEFINES=-DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -D_USE_MATH_DEFINES"
+
 set "ENGINE_DIR=%SCRIPT_DIR%"
 set "LIB_DIR=%ENGINE_DIR%lib"
 set "LIB_A=%LIB_DIR%\\libprocessing_cpp.a"
+set "PCH_FILE=%ENGINE_DIR%include\\Processing.h.gch"
 if not exist "%LIB_DIR%" mkdir "%LIB_DIR%"
 
 set NEED_ENGINE_BUILD=0
@@ -390,19 +513,44 @@ if not exist "%LIB_A%" set NEED_ENGINE_BUILD=1
 
 if %NEED_ENGINE_BUILD%==1 (
     echo Compiling engine ^(first run; ~10-15s^)...
-    g++ -std=c++17 -O2 -c -I"%ENGINE_DIR%include" -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -D_USE_MATH_DEFINES "%ENGINE_DIR%src\\Processing.cpp" -o "%LIB_DIR%\\Processing.o"
+    g++ -std=c++17 -O2 -c -I"%ENGINE_DIR%include" %DEFINES% "%ENGINE_DIR%src\\Processing.cpp" -o "%LIB_DIR%\\Processing.o"
     if errorlevel 1 exit /b 1
-    g++ -std=c++17 -O2 -c -I"%ENGINE_DIR%include" -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -D_USE_MATH_DEFINES "%ENGINE_DIR%src\\Processing_defaults.cpp" -o "%LIB_DIR%\\Processing_defaults.o"
+    g++ -std=c++17 -O2 -c -I"%ENGINE_DIR%include" %DEFINES% "%ENGINE_DIR%src\\Processing_defaults.cpp" -o "%LIB_DIR%\\Processing_defaults.o"
     if errorlevel 1 exit /b 1
     ar rcs "%LIB_A%" "%LIB_DIR%\\Processing.o" "%LIB_DIR%\\Processing_defaults.o"
     del "%LIB_DIR%\\Processing.o" "%LIB_DIR%\\Processing_defaults.o"
 )
 
-g++ -std=c++17 -I"%ENGINE_DIR%include" %SOURCES% -L"%LIB_DIR%" -lprocessing_cpp -lglfw3 -lglew32 -lopengl32 -lglu32 -lcomdlg32 -lshell32 -lole32 -luuid -mwindows -pthread -D_USE_MATH_DEFINES -o "%PROJECT_DIR%\\.processing-cpp-build.exe"
+set NEED_PCH_BUILD=0
+if not exist "%PCH_FILE%" set NEED_PCH_BUILD=1
+
+if %NEED_PCH_BUILD%==1 (
+    echo Precompiling Processing.h ^(first run; speeds up every build after this one^)...
+    REM -pthread has to be here too, matching the final compile below --
+    REM it defines _REENTRANT during compilation, not just at link time,
+    REM so without it here g++ rejects this .gch as stale on every build
+    REM and silently re-parses Processing.h from source instead (caught
+    REM by actually building this package and checking with the
+    REM -Winvalid-pch warning flag -- it's not a build failure, the
+    REM caching just quietly stops working).
+    g++ -std=c++17 -I"%ENGINE_DIR%include" %DEFINES% -pthread -x c++-header "%ENGINE_DIR%include\\Processing.h" -o "%PCH_FILE%"
+    if errorlevel 1 exit /b 1
+)
+
+g++ -std=c++17 -I"%ENGINE_DIR%include" %DEFINES% %SOURCES% -L"%LIB_DIR%" -lprocessing_cpp -lglfw3 -lglew32 -lopengl32 -lglu32 -lcomdlg32 -lshell32 -lole32 -luuid -mwindows -pthread -o "%PROJECT_DIR%\\.processing-cpp-build.exe"
 if errorlevel 1 exit /b 1
 
 echo Running...
 "%PROJECT_DIR%\\.processing-cpp-build.exe"
+'''
+
+DRAGDROP_GITIGNORE = '''\
+# Generated by run.sh / run.bat -- safe to delete, will be rebuilt
+# automatically on the next run. Not meant to be committed: the engine
+# archive is rebuilt in seconds, and the precompiled header in
+# particular is 100MB+, which is a bad thing to put in git history.
+lib/
+include/Processing.h.gch
 '''
 
 VSCODE_TASKS_JSON = '''\

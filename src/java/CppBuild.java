@@ -1140,8 +1140,8 @@ public class CppBuild {
       for (var e : enumResult.enums) out.append(CodeGen.generateNode(e, 0));
       for (var v : depResult.hoistedVariables) out.append(CodeGen.generateNode(v, 0));
       for (var v : arrayResult.hoistedSizingConstants) out.append(CodeGen.generateNode(v, 0));
-      for (var v : arrayResult.hoistedArrays) out.append(CodeGen.generateNode(v, 0));
       for (TypeDef td : finalClasses) out.append(CodeGen.generateNode(td, 0));
+      for (var v : arrayResult.hoistedArrays) out.append(CodeGen.generateNode(v, 0));
       for (FunctionDecl fd : depResult.hoistedFunctions) out.append(CodeGen.generateNode(fd, 0));
       // constexprScope (the NOT-PORTED half -- see EnumScopeExtractor's
       // javadoc) intentionally has no corresponding emission here, since
@@ -2160,7 +2160,38 @@ public class CppBuild {
     }
 
     // ── 7. float % int → (int)(float) % int (modulo on floats invalid in C++) ─
-    code = code.replaceAll("\\(([^)]*\\.[^)]*)\\)\\s*%\\s*(\\w+)", "(int)($1) % $2");
+    // BUG FIX, found by tracing a real compile failure (Sequential.pde,
+    // a real example sketch) all the way through every stage of the
+    // pipeline: the original regex, "\(([^)]*\.[^)]*)\)\s*%\s*(\w+)",
+    // matched ANY parenthesized text containing a literal dot character
+    // anywhere inside it, with no requirement that the dot be part of
+    // an actual FLOAT LITERAL -- a member-access dot (as in
+    // "images.get(") satisfies "[^)]*\.[^)]*" just as well as a real
+    // float literal like "0.05f" does. Confirmed precisely: this matched
+    // across "images.get((currentFrame + offset) % numFrames)" --
+    // treating the dot inside "images.get(" and the unrelated "%
+    // numFrames" much later in the SAME statement as if they were one
+    // float-modulo expression -- and rewrote "image(" itself into
+    // "image(int)(", which g++ then correctly rejected ("expected
+    // primary-expression before 'int'"). This was a genuine,
+    // PRE-EXISTING bug, confirmed byte-identical to the very first
+    // CppMode.zip uploaded at the start of this whole project -- never
+    // introduced by anything built during this project, only found now
+    // by tracing a real user-reported failure through every single
+    // stage of the real pipeline (parser, every AST pass, codegen, all
+    // confirmed correct via direct reflection against the real deployed
+    // jar) until this regex -- untouched since day one -- was the only
+    // remaining place left to check.
+    //
+    // Narrowed to require an actual float-LITERAL-shaped token
+    // (\d+\.\d+ or \.\d+, optionally with an f/F suffix) inside the
+    // parens, which is what this rule is actually meant to detect --
+    // confirmed against Objects.pde's real, legitimate, ALREADY-
+    // correctly-cast example ("(width*0.05f) % width") that this
+    // pattern is designed to help authors avoid forgetting -- not "any
+    // dot anywhere," which is true of any member access, scoped name,
+    // or qualified call and was never specific to floats at all.
+    code = code.replaceAll("\\(([^)]*\\d+\\.\\d+f?[^)]*|[^)]*\\.\\d+f?[^)]*)\\)\\s*%\\s*(\\w+)", "(int)($1) % $2");
 
     // ── 8. Windows reserved: far/near → farVal/nearVal (Windows only) ────────
     if (System.getProperty("os.name").toLowerCase().contains("win")) {

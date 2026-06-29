@@ -192,7 +192,7 @@ final class CodeGen {
         }
         sb.append(renderTypeAndName(vd.type(), vd.name()));
         emitArrayDims(sb, vd.arrayDims());
-        emitDeclaratorTail(sb, vd.name(), vd.initializer());
+        emitDeclaratorTail(sb, vd.type(), vd.name(), vd.initializer());
         sb.append(";\n");
     }
 
@@ -244,16 +244,55 @@ final class CodeGen {
      * different properties -- this was caught by reading the output, not
      * by an automated check, and a real test for it was added after.
      */
-    private static void emitDeclaratorTail(StringBuilder sb, String declaratorName, Expr initializer) {
+    /**
+     * Standard-library container/wrapper types with a real
+     * initializer_list constructor, meaning brace-init and paren-init
+     * are NOT interchangeable -- they have genuinely different
+     * SEMANTICS. Found as a real bug via a real user-reported sketch
+     * (Wolfram.pde): "std::vector<int> nextgen(cells.size(), 0);" was
+     * being unconditionally brace-wrapped into
+     * "std::vector<int> nextgen{cells.size(), 0};" -- confirmed via g++
+     * that these produce different .size() results (5 vs 2 for
+     * "(5, 0)" vs "{5, 0}"). The most-vexing-parse protection this
+     * brace-wrapping exists for only matters for actual user-defined
+     * class types; a template instantiation like "std::vector<int>" was
+     * never at risk of that ambiguity (confirmed via g++: no competing
+     * function-declaration interpretation exists for it).
+     */
+    private static final java.util.Set<String> INITIALIZER_LIST_AMBIGUOUS_TYPES = java.util.Set.of(
+        "vector", "std::vector",
+        "string", "std::string",
+        "wstring", "std::wstring",
+        "array", "std::array",
+        "deque", "std::deque",
+        "list", "std::list",
+        "set", "std::set",
+        "map", "std::map",
+        "unordered_set", "std::unordered_set",
+        "unordered_map", "std::unordered_map",
+        "initializer_list", "std::initializer_list"
+    );
+
+    private static void emitDeclaratorTail(StringBuilder sb, TypeRef declaratorType, String declaratorName, Expr initializer) {
         if (initializer == null) return;
         if (initializer instanceof CallExpr ce && ce.callee() instanceof Identifier id
-            && id.name().equals(declaratorName)) {
+            && id.name().equals(declaratorName)
+            && !(declaratorType instanceof NamedType nt && INITIALIZER_LIST_AMBIGUOUS_TYPES.contains(nt.baseName()))) {
             sb.append('{');
             for (int i = 0; i < ce.args().size(); i++) {
                 if (i > 0) sb.append(", ");
                 sb.append(renderExpr(ce.args().get(i)));
             }
             sb.append('}');
+            return;
+        }
+        if (initializer instanceof CallExpr ce2 && ce2.callee() instanceof Identifier id2 && id2.name().equals(declaratorName)) {
+            sb.append('(');
+            for (int i = 0; i < ce2.args().size(); i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(renderExpr(ce2.args().get(i)));
+            }
+            sb.append(')');
             return;
         }
         sb.append(" = ").append(renderExpr(initializer));
@@ -356,7 +395,7 @@ final class CodeGen {
             }
             sb.append(renderTypeAndName(ds.type(), ds.name()));
             emitArrayDims(sb, ds.arrayDims());
-            emitDeclaratorTail(sb, ds.name(), ds.initializer());
+            emitDeclaratorTail(sb, ds.type(), ds.name(), ds.initializer());
             sb.append(";\n");
         } else if (s instanceof ExprStatement es) {
             indent(sb, depth);
@@ -444,7 +483,7 @@ final class CodeGen {
             }
             sb.append(renderTypeAndName(ds.type(), ds.name()));
             emitArrayDims(sb, ds.arrayDims());
-            emitDeclaratorTail(sb, ds.name(), ds.initializer());
+            emitDeclaratorTail(sb, ds.type(), ds.name(), ds.initializer());
         } else if (s.init() instanceof ExprStatement es) {
             sb.append(renderExpr(es.expr()));
         }
