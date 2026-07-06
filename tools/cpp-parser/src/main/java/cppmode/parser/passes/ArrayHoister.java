@@ -68,11 +68,42 @@ public final class ArrayHoister {
             }
         }
 
-        // --- PHASE 1: hoist const-qualified scalar decls matching those names ---
+        // BUG FIX, found via a real, official Processing example sketch
+        // (Blur.pde): "float kernel[3][3] = {{v,v,v},{v,v,v},{v,v,v}};"
+        // depends on a plain (non-const) "float v" referenced inside its
+        // INITIALIZER, not its dimensions -- a completely different
+        // relationship than the sizing-constant case above, which this
+        // pass was never built to detect. Confirmed via direct g++
+        // testing that the actual fix needed is purely about ORDER: "v"
+        // just needs to be declared before "kernel" at the same (file)
+        // scope, with no const-qualification requirement at all.
+        //
+        // Scan every array declaration's INITIALIZER for identifier
+        // references too, and add them to the same hoist-candidate set
+        // used for sizing identifiers -- the two cases (a dimension
+        // identifier, an initializer identifier) need the exact same
+        // treatment (hoist whatever scalar that name refers to, so it
+        // precedes the array using it), so they share one collection
+        // pass and one set, rather than duplicating the logic for a
+        // second, parallel "initializer identifiers" set.
+        for (TopLevelItem item : items) {
+            if (!(item instanceof VariableDecl vd)) continue;
+            if (vd.arrayDims().isEmpty()) continue;
+            if (vd.initializer() == null) continue;
+            collectIdentifierNames(vd.initializer(), arraySizeIdentifiers);
+        }
+
+        // --- PHASE 1: hoist scalar decls matching those names ---
+        // NOTE: no longer requires vd.isConst() -- a non-const scalar
+        // referenced inside an array's initializer has the exact same
+        // "must precede the array, at the same scope" requirement as a
+        // const sizing constant does; the original const-only
+        // restriction only ever made sense for the sizing-identifier
+        // case this pass was originally built for, not for the
+        // initializer-identifier case found via Blur.pde.
         List<TopLevelItem> afterPhase1 = new ArrayList<>();
         for (TopLevelItem item : items) {
             if (item instanceof VariableDecl vd
-                && vd.isConst()
                 && vd.arrayDims().isEmpty()
                 && arraySizeIdentifiers.contains(vd.name())) {
                 result.hoistedSizingConstants.add(vd);
@@ -91,6 +122,37 @@ public final class ArrayHoister {
         }
 
         return result;
+    }
+
+    /**
+     * Recursively walks an expression tree collecting every bare
+     * Identifier's name into `out`. Deliberately broad (any identifier
+     * anywhere in the initializer, not just direct children) since an
+     * array initializer can nest arbitrarily (e.g.
+     * "{{v, v+1, foo(v)}, {v, v, v}}") -- correctness here means never
+     * MISSING a real dependency, even at the cost of occasionally
+     * collecting an identifier that doesn't correspond to any real
+     * top-level scalar (handled safely: such a name simply never
+     * matches anything in the PHASE 1 hoisting loop above, so it's
+     * silently ignored, not a problem).
+     */
+    private static void collectIdentifierNames(Expr e, Set<String> out) {
+        if (e instanceof Identifier id) {
+            out.add(id.name());
+        } else if (e instanceof cppmode.parser.ast.expr.InitializerListExpr il) {
+            for (Expr el : il.elements()) collectIdentifierNames(el, out);
+        } else if (e instanceof cppmode.parser.ast.expr.BinaryExpr be) {
+            collectIdentifierNames(be.left(), out);
+            collectIdentifierNames(be.right(), out);
+        } else if (e instanceof cppmode.parser.ast.expr.UnaryExpr ue) {
+            collectIdentifierNames(ue.operand(), out);
+        } else if (e instanceof cppmode.parser.ast.expr.CallExpr ce) {
+            collectIdentifierNames(ce.callee(), out);
+            for (Expr arg : ce.args()) collectIdentifierNames(arg, out);
+        } else if (e instanceof cppmode.parser.ast.expr.CastExpr cae) {
+            collectIdentifierNames(cae.expr(), out);
+        }
+        // Other Expr kinds (Literal, etc.) contain no identifiers to collect.
     }
 
     /**

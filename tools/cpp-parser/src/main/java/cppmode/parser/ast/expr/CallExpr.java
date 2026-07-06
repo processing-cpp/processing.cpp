@@ -5,7 +5,15 @@ import cppmode.parser.Token;
 import java.util.List;
 
 /**
- * A function call: "callee(args...)".
+ * A function call: "callee(args...)", or a brace-init construction when
+ * isBraceInit is true: "callee{args...}" (e.g. "Rect<float>{x, y, w, h}",
+ * a templated type's aggregate/brace initialization -- found via a real,
+ * sophisticated sketch using "new QuadNode(Rect<float>{...})"). Reusing
+ * this record with a boolean flag, rather than adding a new node type,
+ * follows this project's own established precedent of preferring a flag
+ * over a new node for closely-related call shapes (see the note below on
+ * ConstructExpr having already been considered and rejected for a
+ * similar reason).
  *
  * Deliberately also covers the "bare construction call" pattern confirmed in
  * the corpus -- "ps = PenroseSnowflakeLSystem();" and
@@ -20,8 +28,13 @@ import java.util.List;
 public record CallExpr(
     Expr callee,
     List<Expr> args,
+    boolean isBraceInit,
     int line,
     int col,
     List<Token> leadingComments
 ) implements Expr {
+    /** Convenience constructor for the common paren-call case (isBraceInit=false). */
+    public CallExpr(Expr callee, List<Expr> args, int line, int col, List<Token> leadingComments) {
+        this(callee, args, false, line, col, leadingComments);
+    }
 }

@@ -968,13 +968,22 @@ public class CppBuild {
   }
 
   private File writeSketchImpl(RunnerListener listener) throws IOException {
-    StringBuilder raw = new StringBuilder();
+    StringBuilder prefix = new StringBuilder();
+    StringBuilder suffix = new StringBuilder();
     for (int i = 0; i < sketch.getCodeCount(); i++) {
       String prog = sketch.getCode(i).getProgram();
       boolean hasLifecycle = prog.contains("void setup(") || prog.contains("void draw(");
-      if (!hasLifecycle) raw.insert(0, prog + "\n");
-      else raw.append(prog).append("\n");
+      // Non-lifecycle tabs (class definitions etc.) go before lifecycle tabs,
+      // preserving their original tab order. Previously used raw.insert(0, prog)
+      // which reversed non-lifecycle tab order -- so Flock.pde ended up before
+      // Boid.pde even when Flock depends on Boid (Processing sorts tabs
+      // alphabetically, so B < F means Boid is processed first, then inserted
+      // at position 0 AFTER Flock, putting Flock first -- backwards).
+      if (!hasLifecycle) prefix.append(prog).append("\n");
+      else suffix.append(prog).append("\n");
     }
+    StringBuilder raw = new StringBuilder();
+    raw.append(prefix).append(suffix);
 
     String code = sanitize(raw.toString());
     code = removeUserIncludes(code);
@@ -1138,9 +1147,9 @@ public class CppBuild {
       // the file-scope-only items already emitted above).
       for (FunctionDecl fd : forwardDecls) out.append(CodeGen.generateNode(fd, 0));
       for (var e : enumResult.enums) out.append(CodeGen.generateNode(e, 0));
-      for (var v : depResult.hoistedVariables) out.append(CodeGen.generateNode(v, 0));
       for (var v : arrayResult.hoistedSizingConstants) out.append(CodeGen.generateNode(v, 0));
       for (TypeDef td : finalClasses) out.append(CodeGen.generateNode(td, 0));
+      for (var v : depResult.hoistedVariables) out.append(CodeGen.generateNode(v, 0));
       for (var v : arrayResult.hoistedArrays) out.append(CodeGen.generateNode(v, 0));
       for (FunctionDecl fd : depResult.hoistedFunctions) out.append(CodeGen.generateNode(fd, 0));
       // constexprScope (the NOT-PORTED half -- see EnumScopeExtractor's
@@ -1151,6 +1160,27 @@ public class CppBuild {
       // Sketch member below, which is a behavior difference from the
       // original ONLY for a construct with zero confirmed real-sketch
       // usage (see EnumScopeExtractor's javadoc for the corpus check).
+
+      // Strip user-written forward declarations from sketchMembers when
+      // a bodied definition of the same function also exists. Inside a
+      // C++ struct, members have full mutual visibility -- a forward decl
+      // is not only redundant but a redeclaration error if the definition
+      // is also a member. Found via Follow1.pde: "cannot be overloaded with
+      // 'void Sketch::segment(float,float,float)'" -- the user wrote
+      // "void segment(float x, float y, float a);" to enable forward-calling
+      // in plain C style, which is fine at file scope but illegal inside a class.
+      Set<String> definedFunctions = new java.util.HashSet<>();
+      for (TopLevelItem item : sketchMembers) {
+        if (item instanceof FunctionDecl fd && fd.body() != null) {
+          definedFunctions.add(fd.name() + "/" + fd.params().size());
+        }
+      }
+      sketchMembers.removeIf(item ->
+        item instanceof FunctionDecl fd
+        && fd.body() == null
+        && !fd.isPureVirtual()
+        && definedFunctions.contains(fd.name() + "/" + fd.params().size())
+      );
 
       out.append("struct Sketch : public PApplet {\n");
       for (TopLevelItem item : sketchMembers) {
@@ -2231,6 +2261,13 @@ public class CppBuild {
     // replace \bmousePressed\b not followed by \s*( -- done via manual scan below.
     code = rewriteBoolEventName(code, "mousePressed", "_mousePressed");
     code = rewriteBoolEventName(code, "keyPressed",   "_keyPressed");
+
+    // ── 13. frameRate as a variable read → _frameRate ─────────────────────────────
+    // In Processing Java, 'frameRate' is both a setter function (frameRate(60))
+    // and a readable float variable (if (frameRate < 30)). In C++ PApplet, the
+    // method keeps the natural name. Variable reads (not followed by '(') must be
+    // rewritten to _frameRate, which _PSketch already exposes as a float proxy.
+    code = rewriteBoolEventName(code, "frameRate", "_frameRate");
 
     return code;
   }

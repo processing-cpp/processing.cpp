@@ -165,6 +165,15 @@ public final class Parser {
         return peek().isOp(op);
     }
 
+    /** True if the current token is the integer literal "0" specifically
+     * (not any other literal or expression) -- used to recognize the
+     * pure-virtual specifier "= 0" precisely, without accidentally
+     * matching some other "= <expr>" shape. */
+    private boolean checkLiteralZero() {
+        Token t = peek();
+        return t.type() == TokenType.INT_LITERAL && t.text().equals("0");
+    }
+
     private boolean matchKeyword(String kw) {
         if (checkKeyword(kw)) { advance(); return true; }
         return false;
@@ -195,8 +204,36 @@ public final class Parser {
         throw error("expected '" + kw + "' but found '" + peek().text() + "'");
     }
 
+    /**
+     * Set of KEYWORD-classified tokens that are NOT actually reserved
+     * words in real Processing/Java/C++ -- they're lexed as keywords
+     * purely so they can be recognized as TYPE names in a type-name
+     * position (see Lexer's KEYWORDS set and its own comment on this),
+     * but that classification incorrectly also blocked them from ever
+     * being used as a declarator/variable NAME, which real Processing
+     * code is free to do.
+     *
+     * Found via a real sketch (RayTracer.pde's "Vec3 color;" struct
+     * field -- "color" the Processing pseudo-type, used as an ordinary
+     * field name, which is completely legal Processing/C++ and not
+     * something the language itself reserves) hitting
+     * "expected identifier but found 'color'" outright.
+     *
+     * Deliberately a narrow, explicit allow-list -- NOT a general
+     * relaxation letting any KEYWORD stand in for an identifier, which
+     * would incorrectly let real reserved words ("int", "if", "class",
+     * etc.) be used as names too. Only pseudo-type keywords that this
+     * project itself introduced for type-name recognition belong here.
+     */
+    private static final java.util.Set<String> PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES = java.util.Set.of(
+        "color"
+    );
+
     private Token expectIdentifier() {
         if (check(TokenType.IDENTIFIER)) return advance();
+        if (check(TokenType.KEYWORD) && PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES.contains(peek().text())) {
+            return advance();
+        }
         throw error("expected identifier but found '" + peek().text() + "'");
     }
 
@@ -443,11 +480,30 @@ public final class Parser {
             }
         }
 
+        // Pure-virtual specifier ("= 0"), e.g. "virtual ~A() = 0;" -- a
+        // real, valid C++ idiom for ensuring polymorphic deletion through
+        // an abstract base. Found via a realistic builder-pattern sketch
+        // using "virtual void draw() = 0;" on an abstract base class --
+        // confirmed real, ordinary OOP, not exotic. Must be checked
+        // BEFORE the body/";" check below, since "= 0;" replaces both.
+        boolean isPureVirtual = false;
+        if (checkOp("=")) {
+            int save = pos;
+            advance();
+            if (checkLiteralZero()) {
+                advance();
+                isPureVirtual = true;
+            } else {
+                pos = save;
+            }
+        }
+
         Block body = checkPunct("{") ? parseBlock() : null;
-        if (body == null) expectPunct(";");
+        if (body == null && !isPureVirtual) expectPunct(";");
+        else if (isPureVirtual) expectPunct(";");
 
         return new FunctionDecl(null, name, templateParams, params, initList, body,
-            !isDestructor, isDestructor, isVirtual, isOverride, isConst, false,
+            !isDestructor, isDestructor, isVirtual, isOverride, isConst, false, isPureVirtual,
             start.line(), start.col(), leadingComments);
     }
 
@@ -538,10 +594,35 @@ public final class Parser {
                 if (matchKeyword("const")) { isMethodConst = true; continue; }
                 if (matchKeyword("override")) { isOverride = true; continue; }
             }
+            // Trailing return type: "auto f() -> int" or "auto f() -> MyType"
+            // -- the "->" after the parameter list specifies the actual return
+            // type when the declared return type is "auto". "->" is classified
+            // as PUNCTUATION in this lexer (see Lexer.PUNCT_SYMBOLS), so must
+            // be checked with checkPunct, not checkOp.
+            if (checkPunct("->")) {
+                advance();
+                parseTypeRef(); // consume and discard the specified return type
+            }
+            // Pure-virtual specifier ("= 0"), e.g. "virtual void draw() = 0;"
+            // -- a real, ordinary OOP idiom for declaring an abstract
+            // method on a base class, found via a realistic builder-
+            // pattern sketch. Must be checked BEFORE the body/";" check
+            // below, since "= 0;" replaces both.
+            boolean isPureVirtual = false;
+            if (checkOp("=")) {
+                int save = pos;
+                advance();
+                if (checkLiteralZero()) {
+                    advance();
+                    isPureVirtual = true;
+                } else {
+                    pos = save;
+                }
+            }
             Block body = checkPunct("{") ? parseBlock() : null;
             if (body == null) expectPunct(";");
             FunctionDecl fn = new FunctionDecl(type, name, templateParams, params, List.of(), body,
-                false, false, isVirtual, isOverride, isMethodConst, isStatic,
+                false, false, isVirtual, isOverride, isMethodConst, isStatic, isPureVirtual,
                 start.line(), start.col(), leadingComments);
             return List.of(fn);
         }
@@ -650,8 +731,60 @@ public final class Parser {
     private String parseFunctionOrVariableName() {
         if (checkKeyword("operator")) {
             Token opKw = advance();
-            Token opTok = advance(); // the operator symbol itself, e.g. "==", "+", "<<"
+            // Special multi-token operator names:
+            // operator[]  -- subscript
+            // operator()  -- function call
+            // operator new / operator delete
+            // operator== / operator+ / etc. -- single-token symbols
+            if (checkPunct("[")) {
+                advance(); // '['
+                expectPunct("]");
+                return opKw.text() + "[]";
+            }
+            if (checkPunct("(")) {
+                advance(); // '('
+                expectPunct(")");
+                return opKw.text() + "()";
+            }
+            if (checkKeyword("new") || checkKeyword("delete")) {
+                Token kw = advance();
+                return opKw.text() + " " + kw.text();
+            }
+            // Cast operator: "operator int", "operator float", "operator bool", etc.
+            // ONLY fire for actual C++ primitive type keywords, not arbitrary
+            // keywords that happen to follow "operator" in other contexts.
+            // Using a small explicit set prevents keywords like "color", "auto",
+            // "return", etc. from being misidentified as cast targets.
+            if (check(TokenType.KEYWORD) && CAST_OPERATOR_TYPE_KEYWORDS.contains(peek().text())) {
+                Token castTok = advance();
+                return opKw.text() + " " + castTok.text();
+            }
+            // Also handle identifier type names used as cast targets (e.g.
+            // "operator MyType()" where MyType is a user-defined class).
+            // Only safe when the next token is an identifier (not a keyword),
+            // so we don't misidentify keyword-named things like "color".
+            if (check(TokenType.IDENTIFIER)) {
+                Token castTok = advance();
+                return opKw.text() + " " + castTok.text();
+            }
+            Token opTok = advance(); // ordinary single-token operator, e.g. "==", "+", "<<"
             return opKw.text() + opTok.text();
+        }
+        // Cast-operator case: "operator" was already consumed by parseTypeRef()
+        // as NamedType("operator"), leaving a keyword type like "bool"/"int" as
+        // the current token. "operator bool()" and "operator int()" reach here.
+        // Guard against mistakenly eating real qualifiers, storage specifiers, OR
+        // Processing-specific keywords like "color" that are legitimately used as
+        // method names (e.g. "Builder& color(int r, int g, int b)" in the
+        // builder pattern) -- these must fall through to expectIdentifier() below.
+        if (check(TokenType.KEYWORD) && !checkKeyword("const") && !checkKeyword("override")
+                && !checkKeyword("virtual") && !checkKeyword("static")
+                && !checkKeyword("inline") && !checkKeyword("explicit")
+                && !PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES.contains(peek().text())) {
+            Token castTok = advance();
+            String suffix = "";
+            while (checkOp("*") || checkOp("&")) suffix += advance().text();
+            return "operator " + castTok.text() + suffix;
         }
         String name = expectIdentifier().text();
         while (checkPunct("::")) {
@@ -1301,6 +1434,16 @@ public final class Parser {
                 Token t = peek();
                 List<Expr> args = parseArgList();
                 expr = new CallExpr(expr, args, t.line(), t.col(), List.of());
+            } else if (checkPunct("{") && expr instanceof Identifier id && id.name().contains("<")) {
+                // Brace-init of a templated type, e.g. "Rect<float>{x, y, w, h}"
+                // -- only reachable when the callee Identifier already has
+                // template args folded into its name (confirmed by
+                // looksLikeTemplatedConstructionCallee's matching '{'
+                // check), so this can't misfire on an ordinary identifier
+                // immediately followed by an unrelated block.
+                Token t = peek();
+                InitializerListExpr init = (InitializerListExpr) parseInitializerList();
+                expr = new CallExpr(expr, init.elements(), true, t.line(), t.col(), List.of());
             } else if (checkPunct("[")) {
                 Token t = advance();
                 Expr index = parseExpr();
@@ -1451,7 +1594,14 @@ public final class Parser {
             } catch (ParseException e) {
                 return false;
             }
-            return checkPunct("(");
+            // Brace-init of a templated type ("Rect<float>{x, y, w, h}")
+            // is real, ordinary modern C++ -- found via a realistic
+            // quadtree sketch using "new QuadNode(Rect<float>{...})".
+            // This check previously only recognized the paren-init form
+            // ("Name<Args>(...)"), the exact same gap (fixed elsewhere
+            // for std::vector<int>(...) and obj.method<int>(...)) just
+            // for brace syntax instead of parens.
+            return checkPunct("(") || checkPunct("{");
         } finally {
             pos = save;
         }
@@ -1548,15 +1698,36 @@ public final class Parser {
     private Param parseParam() {
         TypeRef type = parseTypeRef();
         String name = expectIdentifier().text();
-        if (matchPunct("[")) {
-            expectPunct("]");
+        // C-style array parameter suffixes: "float m[]", "float m[3]",
+        // "float m[3][3]", "float m[][3]", etc.
+        // The first pair decays to a pointer (bump pointerDepth).
+        // Inner pairs (2nd onwards) record their sizes for correct codegen:
+        // "float m[3][3]" must render as "float (*m)[3]", not "float* m",
+        // because m[i][j] on float* gives "float[int]" -- invalid.
+        List<Integer> innerDims = new ArrayList<>();
+        if (checkPunct("[")) {
+            boolean first = true;
+            while (checkPunct("[")) {
+                advance(); // '['
+                Integer dimSize = null;
+                if (!checkPunct("]")) {
+                    // grab the size if it's a simple integer literal
+                    if (peek().type() == TokenType.INT_LITERAL) {
+                        try { dimSize = Integer.parseInt(peek().text()); } catch (NumberFormatException ignored) {}
+                    }
+                    parseExpr(); // consume the dimension expr regardless
+                }
+                expectPunct("]");
+                if (!first) innerDims.add(dimSize != null ? dimSize : 0);
+                first = false;
+            }
             type = bumpPointerDepth(type);
         }
         Expr defaultValue = null;
         if (matchOp("=")) {
             defaultValue = parseExpr();
         }
-        return new Param(type, name, defaultValue);
+        return new Param(type, name, defaultValue, innerDims);
     }
 
     private TypeRef bumpPointerDepth(TypeRef type) {
@@ -1723,7 +1894,10 @@ public final class Parser {
             } catch (ParseException e) {
                 return false;
             }
-            if (!check(TokenType.IDENTIFIER)) return false;
+            if (!check(TokenType.IDENTIFIER)
+                && !(check(TokenType.KEYWORD) && PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES.contains(peek().text()))) {
+                return false;
+            }
             advance();
             return checkPunct(":");
         } finally {
@@ -1883,6 +2057,15 @@ public final class Parser {
         "try", "delete", "case", "default", "else", "throw"
     );
 
+    /** Keyword type names that are valid cast-operator targets ("operator int()",
+     * "operator bool()", etc.). Kept explicit and narrow to prevent arbitrary
+     * keywords (like Processing's "color", or "auto", "return", etc.) from
+     * being misidentified as cast-operator type names in parseFunctionOrVariableName. */
+    private static final java.util.Set<String> CAST_OPERATOR_TYPE_KEYWORDS = java.util.Set.of(
+        "int", "float", "double", "bool", "char", "long", "short",
+        "unsigned", "signed", "void", "size_t"
+    );
+
     private boolean looksLikeDeclaration() {
         int save = pos;
         try {
@@ -1899,6 +2082,8 @@ public final class Parser {
             // that same qualifier.
             if (checkKeyword("static")) advance();
             if (checkKeyword("const")) advance();
+            if (checkKeyword("constexpr")) advance();
+            if (checkKeyword("inline")) advance();
             if (checkKeyword("static")) advance(); // tolerate either order
             if (!(check(TokenType.IDENTIFIER) || check(TokenType.KEYWORD))) return false;
             // Function-pointer-variable form: "Type (*name)(Params) = init;"
@@ -1912,7 +2097,10 @@ public final class Parser {
             } catch (ParseException e) {
                 return false;
             }
-            if (!check(TokenType.IDENTIFIER)) return false;
+            if (!check(TokenType.IDENTIFIER)
+                && !(check(TokenType.KEYWORD) && PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES.contains(peek().text()))) {
+                return false;
+            }
             advance(); // tentatively consume the name
             return checkOp("=") || checkPunct(";") || checkPunct("[") || checkPunct(",") || checkPunct("(") || checkPunct("{");
         } finally {
@@ -1943,6 +2131,7 @@ public final class Parser {
         // mirroring the top-level path's own tolerance.
         boolean isStatic = matchKeyword("static");
         boolean isConst = matchKeyword("const");
+        if (matchKeyword("constexpr")) isConst = true; // constexpr implies const
         if (!isStatic) isStatic = matchKeyword("static");
 
         if (looksLikeFunctionPointerVariable()) {

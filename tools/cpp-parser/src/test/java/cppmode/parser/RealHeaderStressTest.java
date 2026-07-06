@@ -3,6 +3,8 @@ package cppmode.parser;
 import cppmode.parser.ast.decl.CompilationUnit;
 import cppmode.parser.ast.decl.FunctionDecl;
 import cppmode.parser.ast.decl.NamespaceDecl;
+import java.util.HashSet;
+import java.util.Set;
 import cppmode.parser.ast.decl.PreprocessorLine;
 import cppmode.parser.ast.decl.TopLevelItem;
 import cppmode.parser.ast.decl.TypeDef;
@@ -144,9 +146,30 @@ public final class RealHeaderStressTest {
      * word appears inside a string literal anywhere in the real 131-file
      * corpus. This is a test-harness simplification, not a claim that
      * this approach would be safe to ship in the real pipeline.
+     *
+     * Also replicates javaToC() steps 12-13: rewrites bare (non-call)
+     * occurrences of mousePressed/keyPressed/frameRate to their underscore
+     * equivalents exposed by _PSketch, matching exactly what the real
+     * pipeline does so that test results reflect actual sketch behavior.
      */
     private static String applyJavaToCBooleanNullFix(String src) {
-        return src.replaceAll("\\bboolean\\b", "bool").replaceAll("\\bnull\\b", "nullptr");
+        src = src.replaceAll("\\bboolean\\b", "bool").replaceAll("\\bnull\\b", "nullptr");
+        // Rewrite bare (non-call) occurrences of dual-purpose names:
+        //   keyPressed  (not followed by '(') -> _keyPressed
+        //   mousePressed (not followed by '(') -> _mousePressed
+        //   frameRate   (not followed by '(') -> _frameRate
+        // These mirror javaToC() steps 12-13 in CppBuild.java exactly.
+        src = rewriteBareOccurrences(src, "keyPressed",   "_keyPressed");
+        src = rewriteBareOccurrences(src, "mousePressed", "_mousePressed");
+        src = rewriteBareOccurrences(src, "frameRate",    "_frameRate");
+        return src;
+    }
+
+    /** Replace word-boundary occurrences of {@code name} NOT followed by '(' with {@code replacement}. */
+    private static String rewriteBareOccurrences(String src, String name, String replacement) {
+        // Simple regex: word boundary on both sides, not followed by optional
+        // whitespace then '(' -- uses negative lookahead.
+        return src.replaceAll("\\b" + java.util.regex.Pattern.quote(name) + "\\b(?!\\s*\\()", replacement);
     }
 
     private static String runFullPipeline(String src) throws IOException {
@@ -222,12 +245,32 @@ public final class RealHeaderStressTest {
 
         finalOrder.addAll(forwardDecls);
         finalOrder.addAll(enumResult.enums);
-        finalOrder.addAll(depResult.hoistedVariables);
         finalOrder.addAll(arrayResult.hoistedSizingConstants);
+        finalOrder.addAll(finalClasses);          // classes BEFORE variables and arrays that use them as types
+        finalOrder.addAll(depResult.hoistedVariables); // e.g. "Flock* flock" needs Flock defined first
         finalOrder.addAll(arrayResult.hoistedArrays);
-        finalOrder.addAll(finalClasses);
         finalOrder.addAll(staticMemberDefs);
         finalOrder.addAll(depResult.hoistedFunctions);
+
+        // Strip redundant forward declarations from sketchMembers.
+        // A user-written "void segment(float x, float y, float a);" is valid
+        // at file scope to enable forward-calling, but inside a C++ class/struct
+        // members have full mutual visibility -- the forward decl is not only
+        // redundant but actively illegal as a member redeclaration if the bodied
+        // definition is also present as a member. Strip any bodyless FunctionDecl
+        // whose name + param count matches a bodied FunctionDecl in the same set.
+        Set<String> definedFunctions = new HashSet<>();
+        for (TopLevelItem item : sketchMembers) {
+            if (item instanceof FunctionDecl fd && fd.body() != null) {
+                definedFunctions.add(fd.name() + "/" + fd.params().size());
+            }
+        }
+        sketchMembers.removeIf(item ->
+            item instanceof FunctionDecl fd
+            && fd.body() == null
+            && !fd.isPureVirtual()
+            && definedFunctions.contains(fd.name() + "/" + fd.params().size())
+        );
 
         TypeDef sketchWrapper = new TypeDef("struct", "Sketch", List.of(), List.of("PApplet"),
             sketchMembers, 0, 0, List.of());

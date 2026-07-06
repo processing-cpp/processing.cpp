@@ -431,6 +431,43 @@ def run_stress_cases_layer():
         cwd=CPP_PARSER_DIR, check=False)
 
 
+def run_complex_sketches_layer(quick):
+    """
+    Layer 6: fixtures/complex-sketches/ -- realistic, sophisticated FULL
+    sketches (particle systems, recursive trees, operator overloading,
+    quadtrees, state machines), not adversarial one-liners. Distinct
+    from stress-cases/ (isolated, minimal probes of a single construct)
+    and the real example corpus (only contains constructs real
+    Processing examples happen to use) -- this layer exists specifically
+    to catch bugs that only show up when several real, advanced C++
+    features are combined in one realistic program, the same way
+    Wolfram.pde's and Sequential.pde's real bugs were only found by
+    tracing genuine, complete sketches rather than synthetic snippets.
+
+    Needs real headers (same requirement as Layer 3/4) since it runs
+    the full pipeline + g++ against the real Processing.h.
+
+    To add a new complex sketch: drop a new .pde file in
+    tools/cpp-parser/fixtures/complex-sketches/. No code changes needed.
+    """
+    print()
+    print("=" * 70)
+    print("LAYER 6: complex sketches (realistic, sophisticated full programs)")
+    print("=" * 70)
+    complex_dir = os.path.join(CPP_PARSER_DIR, "fixtures", "complex-sketches")
+    if not os.path.isdir(complex_dir):
+        print(f"Skipped: {complex_dir} not found.")
+        return
+    if quick:
+        print("Skipped (--quick) -- this layer also needs real headers.")
+        return
+    if not has_real_headers():
+        print("Skipped: libglfw3-dev and/or libglew-dev not found (same requirement as Layer 3).")
+        return
+    run(["java", "-cp", OUT_DIR, "cppmode.parser.RealHeaderStressTest", complex_dir, SRC_DIR],
+        cwd=CPP_PARSER_DIR, check=False)
+
+
 def main():
     quick = "--quick" in sys.argv
     no_write = "--no-write" in sys.argv
@@ -451,6 +488,7 @@ def main():
     run_real_header_layer(quick)
     run_new_user_edge_cases_layer(quick)
     run_stress_cases_layer()
+    run_complex_sketches_layer(quick)
 
     print()
     print("=" * 70)

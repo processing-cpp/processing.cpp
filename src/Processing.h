@@ -105,6 +105,103 @@ inline std::string operator+(char c,   const std::string& s) { return std::strin
 #include <GLFW/glfw3.h>
 
 // =============================================================================
+// WINDOWS MACRO CLEANUP
+// =============================================================================
+// Root cause: on Windows/MSYS2/MinGW, <GL/glew.h> includes <windows.h> which
+// pulls in <wingdi.h>. That header defines macros like OPAQUE, TRANSPARENT,
+// DELETE, CLOSE, DIFFERENCE, BLEND, ADD, MULTIPLY, SCREEN, GRAY, INVERT, etc.
+// as plain integer preprocessor macros. Later in this file we define Processing
+// constants with those same names as "static constexpr int OPAQUE = 3;" -- but
+// the macro fires first and turns that into "static constexpr int 2 = 3;" which
+// is a syntax error ("expected unqualified-id before numeric constant").
+//
+// WIN32_LEAN_AND_MEAN doesn't help because GLEW needs wingdi.h for its own GL
+// type definitions. The only correct fix is to #undef the offending macros
+// after the includes that caused them, before our own definitions use the names.
+// Each undef is inside #ifdef so it is a complete no-op on Linux and macOS.
+#ifdef OPAQUE
+#  undef OPAQUE
+#endif
+#ifdef TRANSPARENT
+#  undef TRANSPARENT
+#endif
+#ifdef ALTERNATE
+#  undef ALTERNATE
+#endif
+#ifdef WINDING
+#  undef WINDING
+#endif
+#ifdef RELATIVE
+#  undef RELATIVE
+#endif
+#ifdef ABSOLUTE
+#  undef ABSOLUTE
+#endif
+#ifdef CLOSE
+#  undef CLOSE
+#endif
+#ifdef DELETE
+#  undef DELETE
+#endif
+#ifdef DIFFERENCE
+#  undef DIFFERENCE
+#endif
+#ifdef BLEND
+#  undef BLEND
+#endif
+#ifdef ADD
+#  undef ADD
+#endif
+#ifdef SUBTRACT
+#  undef SUBTRACT
+#endif
+#ifdef MULTIPLY
+#  undef MULTIPLY
+#endif
+#ifdef SCREEN
+#  undef SCREEN
+#endif
+#ifdef OVERLAY
+#  undef OVERLAY
+#endif
+#ifdef DARKEST
+#  undef DARKEST
+#endif
+#ifdef LIGHTEST
+#  undef LIGHTEST
+#endif
+#ifdef INVERT
+#  undef INVERT
+#endif
+#ifdef GRAY
+#  undef GRAY
+#endif
+#ifdef CROSS
+#  undef CROSS
+#endif
+#ifdef ARROW
+#  undef ARROW
+#endif
+#ifdef HAND
+#  undef HAND
+#endif
+#ifdef MOVE
+#  undef MOVE
+#endif
+#ifdef WAIT
+#  undef WAIT
+#endif
+#ifdef ERROR
+#  undef ERROR
+#endif
+#ifdef NEAR
+#  undef NEAR
+#endif
+#ifdef FAR
+#  undef FAR
+#endif
+
+// =============================================================================
 // DEBUG OUTPUT -- toggle with -DPROCESSING_DEBUG at compile time
 // =============================================================================
 // Use PDEBUG(...) anywhere you'd normally reach for a raw fprintf(stderr,...)
@@ -157,8 +254,15 @@ public:
 
     // Constructors
     PVector()                        : x(0),  y(0),  z(0)  {}
-    PVector(float x, float y)        : x(x),  y(y),  z(0)  {}
-    PVector(float x, float y, float z): x(x), y(y),  z(z)  {}
+    // Accept any arithmetic type (int, float, double) to match Java's implicit
+    // widening -- eliminates narrowing-conversion warnings from expressions like
+    // PVector(width/2, height/2) where width/height are int.
+    template<typename A, typename B,
+        typename = std::enable_if_t<std::is_arithmetic_v<A> && std::is_arithmetic_v<B>>>
+    PVector(A x, B y)          : x((float)x), y((float)y), z(0)   {}
+    template<typename A, typename B, typename C,
+        typename = std::enable_if_t<std::is_arithmetic_v<A> && std::is_arithmetic_v<B> && std::is_arithmetic_v<C>>>
+    PVector(A x, B y, C z)     : x((float)x), y((float)y), z((float)z) {}
 
     // Setters
     PVector& set(float _x, float _y, float _z=0) { x=_x; y=_y; z=_z; return *this; }
@@ -212,6 +316,9 @@ public:
     float dist(const PVector& v)                     const { float dx=x-v.x,dy=y-v.y,dz=z-v.z; return std::sqrt(dx*dx+dy*dy+dz*dz); }
     static float dist(const PVector& a, const PVector& b) { return a.dist(b); }
     float heading() const { return std::atan2(y, x); }
+    // heading2D() is @Deprecated in Processing 4 Java but still present as an
+    // alias -- keep it here so sketches copied from old examples just work.
+    float heading2D() const { return heading(); }
     float angleBetween(const PVector& v) const {
         float m = mag() * v.mag();
         if (m == 0) return 0;
@@ -376,7 +483,6 @@ void stroke(const PColor& c);
 void background(const PColor& c);
 void tint(const PColor& c);
 
-// =============================================================================
 // IMAGE FILTER CONSTANTS
 // =============================================================================
 
@@ -951,6 +1057,16 @@ struct color {
     // of "grayscale", matching real Processing semantics.
     color(int gray);
     color(int gray, int a);
+    // int 3/4-arg overloads: these were previously removed to avoid overload
+    // resolution ambiguity, but are restored because:
+    // (a) int->float promotion makes int args exact-match int overloads rather
+    //     than ambiguously matching float ones, so no ambiguity occurs in practice
+    // (b) without them, "color c(r, g, b)" with int r,g,b stays as paren-init
+    //     (color is in INITIALIZER_LIST_AMBIGUOUS_TYPES) but then fails to compile
+    //     since color(float,float,float) requires narrowing conversion of int->float
+    //     in direct-init context.
+    color(int r, int g, int b);
+    color(int r, int g, int b, int a);
     // Use explicit cast: color(0,153,204,(int)a) or color(0.f,153.f,204.f,a)
     color(float gray);
     color(float gray, float a);
@@ -3063,12 +3179,20 @@ inline void curve(A x0,B y0,C x1,D y1,E x2,F y2,G x3,H y3){
 }
 
 // dist()
+// NOTE: bodies compute directly with std::sqrt rather than delegating to
+// dist((float)x,...) -- the cast-to-float form re-matched this same template
+// (no non-template dist(float,float,float,float) exists at global scope),
+// causing infinite recursion / stack-overflow segfault when called from a
+// non-PApplet class (confirmed via compile-and-run: segfault in Ground's
+// constructor in NonOrthogonalCollisionGroundSegments.pde).
+// PApplet::dist is incomplete at this point in the header so can't be used
+// here; inlining the computation directly is the cleanest fix.
 template<typename A,typename B,typename C,typename D,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
-inline float dist(A x1,B y1,C x2,D y2){ return dist((float)x1,(float)y1,(float)x2,(float)y2); }
+inline float dist(A x1,B y1,C x2,D y2){ float dx=(float)x2-(float)x1,dy=(float)y2-(float)y1; return std::sqrt(dx*dx+dy*dy); }
 template<typename A,typename B,typename C,typename D,typename E,typename F,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>>>
-inline float dist(A x1,B y1,C z1,D x2,E y2,F z2){ return dist((float)x1,(float)y1,(float)z1,(float)x2,(float)y2,(float)z2); }
+inline float dist(A x1,B y1,C z1,D x2,E y2,F z2){ float dx=(float)x2-(float)x1,dy=(float)y2-(float)y1,dz=(float)z2-(float)z1; return std::sqrt(dx*dx+dy*dy+dz*dz); }
 
 // image() -- mixed types, value and pointer variants
 // image() -- draw a PImage to screen

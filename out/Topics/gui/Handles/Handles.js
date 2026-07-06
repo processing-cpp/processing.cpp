@@ -1,0 +1,124 @@
+/**
+ * Handles.
+ *
+ * Click and drag the white boxes to change their position.
+ */
+let firstMousePress = false;
+
+class Handle {
+  constructor(ix, iy, il, is, o) {
+    this.x = ix;
+    this.y = iy;
+    this.stretch = il;
+    this.size = is;
+    this.boxx = this.x + this.stretch - this.size / 2;
+    this.boxy = this.y - this.size / 2;
+    this.others = o;
+    this.over = false;
+    this.press = false;
+    this.locked = false;
+    this.otherslocked = false;
+  }
+
+  update() {
+    this.boxx = this.x + this.stretch;
+    this.boxy = this.y - this.size / 2;
+    for (let i = 0; i < this.others.length; i++) {
+      if (this.others[i].locked == true) {
+        this.otherslocked = true;
+        break;
+      } else {
+        this.otherslocked = false;
+      }
+    }
+    if (this.otherslocked == false) {
+      this.overEvent();
+      this.pressEvent();
+    }
+    if (this.press) {
+      this.stretch = this.lock(mouseX - width / 2 - this.size / 2, 0, width / 2 - this.size - 1);
+    }
+  }
+
+  overEvent() {
+    if (this.overRect(this.boxx, this.boxy, this.size, this.size)) {
+      this.over = true;
+    } else {
+      this.over = false;
+    }
+  }
+
+  pressEvent() {
+    if ((this.over && firstMousePress) || this.locked) {
+      this.press = true;
+      this.locked = true;
+    } else {
+      this.press = false;
+    }
+  }
+
+  releaseEvent() {
+    this.locked = false;
+  }
+
+  display() {
+    line(this.x, this.y, this.x + this.stretch, this.y);
+    fill(255);
+    stroke(0);
+    rect(this.boxx, this.boxy, this.size, this.size);
+    if (this.over || this.press) {
+      line(this.boxx, this.boxy, this.boxx + this.size, this.boxy + this.size);
+      line(this.boxx, this.boxy + this.size, this.boxx + this.size, this.boxy);
+    }
+  }
+
+  overRect(rx, ry, rw, rh) {
+    if (mouseX >= rx && mouseX <= rx + rw &&
+        mouseY >= ry && mouseY <= ry + rh) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  lock(val, minv, maxv) {
+    return min(max(val, minv), maxv);
+  }
+}
+
+let handles = [];
+
+function setup() {
+  createCanvas(640, 360);
+  let num = height / 15;
+  let hsize = 10;
+  for (let i = 0; i < num; i++) {
+    handles.push(new Handle(width / 2, 10 + i * 15, 50 - hsize / 2, 10, handles));
+  }
+}
+
+function draw() {
+  background(153);
+  for (let i = 0; i < handles.length; i++) {
+    let h = handles[i];
+    h.update();
+    h.display();
+  }
+  fill(0);
+  rect(0, 0, width / 2, height);
+  if (firstMousePress) {
+    firstMousePress = false;
+  }
+}
+
+function mousePressed() {
+  if (!firstMousePress) {
+    firstMousePress = true;
+  }
+}
+
+function mouseReleased() {
+  for (let i = 0; i < handles.length; i++) {
+    handles[i].releaseEvent();
+  }
+}

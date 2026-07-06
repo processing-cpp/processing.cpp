@@ -213,15 +213,22 @@ record AssignExpr(
  * disambiguating "is this a real call or a construction" is left to a later
  * semantic pass, not encoded as a separate node here. See project notes on why
  * a dedicated ConstructExpr node was considered and rejected.
+ *
+ * isBraceInit added for brace-init of a templated type
+ * ("Rect<float>{x, y, w, h}"), distinct from paren-init/ordinary calls.
  */
 
 record CallExpr(
     Expr callee,
     List<Expr> args,
+    boolean isBraceInit,
     int line,
     int col,
     List<CppLexerToken> leadingComments
 ) implements Expr {
+    CallExpr(Expr callee, List<Expr> args, int line, int col, List<CppLexerToken> leadingComments) {
+        this(callee, args, false, line, col, leadingComments);
+    }
 }
 
 
@@ -407,3 +414,4 @@ record InitializerListExpr(
 
 record Capture(String name, boolean byRef) {
 }
+

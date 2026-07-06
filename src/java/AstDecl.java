@@ -110,6 +110,8 @@ record FunctionDecl(
     boolean isOverride,
     boolean isConst,
     boolean isStatic,
+    boolean isPureVirtual,      // "= 0" specifier -- distinct from body==null (an ordinary forward
+                                 // declaration also has a null body but should NOT render "= 0")
     int line,
     int col,
     List<CppLexerToken> leadingComments
@@ -263,3 +265,4 @@ record TopLevelStatement(
     List<CppLexerToken> leadingComments
 ) implements TopLevelItem {
 }
+

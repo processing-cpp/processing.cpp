@@ -33,6 +33,7 @@ from _processing_cpp_packaging import (  # noqa: E402
     ENGINE_SOURCES,
     check_source_layout,
     copy_engine_files,
+    get_library_version,
     write_examples,
     zip_directory,
 )
@@ -76,7 +77,9 @@ def generate(out_dir: Path) -> None:
 
     shutil.copy2(REPO_ROOT / "LICENSE", out_dir / "LICENSE")
 
+    version = get_library_version()
     print(f"Generated drag-and-drop package: {out_dir}")
+    print(f"  version {version}")
     print(f"  include/ ({len(ENGINE_HEADERS)} headers), "
           f"src/ ({len(ENGINE_SOURCES)} engine source files), "
           f"README.md, run.sh, run.bat, .gitignore, vscode-task/, examples/, LICENSE")
@@ -99,8 +102,7 @@ it, and run one script.
 
 If you're already building your project with CMake, you probably want the
 separate CMake release instead -- look for `processing-cpp-cmake.zip` on
-the same page you got this from, or in the
-[CppMode repo](https://github.com/processing-cpp/processing.cpp). This
+the same page you got this from, or check the project's repository. This
 folder doesn't need CMake at all, and isn't meant to be used with it.
 
 ## Quick start
@@ -275,15 +277,39 @@ already do -- it just calls `run.sh` (or `run.bat` on Windows) for you,
 so there's nothing here that can drift out of sync with the plain
 command-line instructions above.
 
+## License
+
+The engine is licensed under the **GNU Lesser General Public License
+v2.1** (see `LICENSE`). LGPL is meant to allow linking from proprietary
+software, unlike plain GPL, but it does come with real obligations --
+notably around static linking, which is what `run.sh`/`run.bat` do here
+by default (the engine gets compiled into `lib/libprocessing_cpp.a` and
+linked directly into your sketch's binary). LGPL 2.1 requires that anyone
+you distribute that binary to be able to relink it against a modified
+version of the engine -- in practice, that means making the engine's
+object files (or this source) available alongside your binary, not just
+the binary itself.
+
+This isn't legal advice, and the specifics depend on how you're
+distributing your project -- read `LICENSE` itself, and talk to an actual
+lawyer if it matters for what you're shipping. It's flagged here mainly
+so it doesn't come as a surprise after the fact.
+
+`include/stb_image.h`, `stb_image_write.h`, and `stb_truetype.h` are
+bundled third-party libraries (by Sean Barrett and contributors), not
+part of the engine -- they're each dual-licensed under MIT or public
+domain (your choice), which is unrestricted enough that it doesn't add
+anything beyond what's already true of the LGPL 2.1 engine itself. Their
+full license text is included at the bottom of each of those files.
+
 ## Where this comes from
 
 This release is built by `scripts/generate_dragdrop.py` in the main
-[CppMode repo](https://github.com/processing-cpp/processing.cpp), and it's
-generated directly from that repo's real engine source
-(`src/Processing.h`, `src/Processing.cpp`) -- the very same code CppMode's
-Processing IDE plugin compiles your sketches against. If you got this
-folder somewhere other than that repo, it's a snapshot of the engine at
-some point in time; check the repo for anything newer.
+CppMode repo, and it's generated directly from that repo's real engine
+source (`src/Processing.h`, `src/Processing.cpp`) -- the very same code
+CppMode's Processing IDE plugin compiles your sketches against. If you
+got this folder somewhere other than that repo, it's a snapshot of the
+engine at some point in time; check the repo for anything newer.
 
 If you're curious how this relates to writing a sketch inside the actual
 Processing IDE with CppMode installed: the IDE's transpiler takes a
@@ -483,6 +509,13 @@ set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%\\.."
 set "PROJECT_DIR=%CD%"
 
+where g++ >nul 2>nul
+if errorlevel 1 (
+    echo error: g++ not found on PATH.
+    echo Install a C++ compiler ^(MSYS2^), then try again -- see the "Dependencies" section of processing-cpp\\README.md.
+    exit /b 1
+)
+
 set "SOURCES=%*"
 if "%SOURCES%"=="" (
     set "SOURCES="
@@ -506,16 +539,66 @@ set "ENGINE_DIR=%SCRIPT_DIR%"
 set "LIB_DIR=%ENGINE_DIR%lib"
 set "LIB_A=%LIB_DIR%\\libprocessing_cpp.a"
 set "PCH_FILE=%ENGINE_DIR%include\\Processing.h.gch"
+set "BUILD_LOG=%TEMP%\\processing-cpp-build-%RANDOM%.log"
 if not exist "%LIB_DIR%" mkdir "%LIB_DIR%"
 
+goto :main
+
+REM Runs one build command, capturing its output to BUILD_LOG so it can
+REM be scanned for known failure patterns if it fails. Mirrors run.sh's
+REM run_build_step: same two patterns (missing GLFW/GLEW headers at
+REM compile time, missing GLFW/GLEW at link time), same fallback to "see
+REM the output above" for anything else. Batch has no clean equivalent
+REM of bash's output="$(...)" capture, so this goes through a temp file
+REM instead -- printed either way, kept only long enough to grep. This
+REM routine sits ABOVE :main and is only ever reached via `call`, never
+REM by execution falling into it top-down -- the `goto :main` right
+REM above is what makes that safe to place here.
+REM
+REM Takes the step description as %1, then the rest of the line as the
+REM command to run. NOTE: `shift` does not update %* in cmd.exe -- %*
+REM always reflects the full original argument list, regardless of how
+REM many times shift has been called. So instead of shifting past %1,
+REM this captures %* up front and strips the %1 text from its front
+REM (the standard, documented way to get "everything after the first
+REM argument" in batch, since there is no %2-and-onward slice syntax).
+:run_build_step
+set "STEP_DESC=%~1"
+set "REST=%*"
+call set "REST=%%REST:*%1=%%"
+%REST% >"%BUILD_LOG%" 2>&1
+set "STEP_RESULT=%ERRORLEVEL%"
+type "%BUILD_LOG%"
+if not "%STEP_RESULT%"=="0" (
+    echo.
+    findstr /C:"GLFW/glfw3.h" /C:"GL/glew.h" "%BUILD_LOG%" >nul
+    if not errorlevel 1 (
+        echo error: %STEP_DESC% failed -- GLFW or GLEW headers not found.
+        echo See the "Dependencies" section of processing-cpp\\README.md to install them.
+    ) else (
+        findstr /C:"cannot find -lglfw" /C:"cannot find -lGLEW" "%BUILD_LOG%" >nul
+        if not errorlevel 1 (
+            echo error: %STEP_DESC% failed -- GLFW or GLEW library not found at link time.
+            echo See the "Dependencies" section of processing-cpp\\README.md to install them.
+        ) else (
+            echo error: %STEP_DESC% failed. See the output above.
+        )
+    )
+    del "%BUILD_LOG%" >nul 2>nul
+    exit /b 1
+)
+del "%BUILD_LOG%" >nul 2>nul
+goto :eof
+
+:main
 set NEED_ENGINE_BUILD=0
 if not exist "%LIB_A%" set NEED_ENGINE_BUILD=1
 
 if %NEED_ENGINE_BUILD%==1 (
     echo Compiling engine ^(first run; ~10-15s^)...
-    g++ -std=c++17 -O2 -c -I"%ENGINE_DIR%include" %DEFINES% "%ENGINE_DIR%src\\Processing.cpp" -o "%LIB_DIR%\\Processing.o"
+    call :run_build_step "engine compile" g++ -std=c++17 -O2 -c -I"%ENGINE_DIR%include" %DEFINES% "%ENGINE_DIR%src\\Processing.cpp" -o "%LIB_DIR%\\Processing.o"
     if errorlevel 1 exit /b 1
-    g++ -std=c++17 -O2 -c -I"%ENGINE_DIR%include" %DEFINES% "%ENGINE_DIR%src\\Processing_defaults.cpp" -o "%LIB_DIR%\\Processing_defaults.o"
+    call :run_build_step "engine compile" g++ -std=c++17 -O2 -c -I"%ENGINE_DIR%include" %DEFINES% "%ENGINE_DIR%src\\Processing_defaults.cpp" -o "%LIB_DIR%\\Processing_defaults.o"
     if errorlevel 1 exit /b 1
     ar rcs "%LIB_A%" "%LIB_DIR%\\Processing.o" "%LIB_DIR%\\Processing_defaults.o"
     del "%LIB_DIR%\\Processing.o" "%LIB_DIR%\\Processing_defaults.o"
@@ -533,16 +616,17 @@ if %NEED_PCH_BUILD%==1 (
     REM by actually building this package and checking with the
     REM -Winvalid-pch warning flag -- it's not a build failure, the
     REM caching just quietly stops working).
-    g++ -std=c++17 -I"%ENGINE_DIR%include" %DEFINES% -pthread -x c++-header "%ENGINE_DIR%include\\Processing.h" -o "%PCH_FILE%"
+    call :run_build_step "header precompile" g++ -std=c++17 -I"%ENGINE_DIR%include" %DEFINES% -pthread -x c++-header "%ENGINE_DIR%include\\Processing.h" -o "%PCH_FILE%"
     if errorlevel 1 exit /b 1
 )
 
-g++ -std=c++17 -I"%ENGINE_DIR%include" %DEFINES% %SOURCES% -L"%LIB_DIR%" -lprocessing_cpp -lglfw3 -lglew32 -lopengl32 -lglu32 -lcomdlg32 -lshell32 -lole32 -luuid -mwindows -pthread -o "%PROJECT_DIR%\\.processing-cpp-build.exe"
+call :run_build_step "sketch compile" g++ -std=c++17 -I"%ENGINE_DIR%include" %DEFINES% %SOURCES% -L"%LIB_DIR%" -lprocessing_cpp -lglfw3 -lglew32 -lopengl32 -lglu32 -lcomdlg32 -lshell32 -lole32 -luuid -mwindows -pthread -o "%PROJECT_DIR%\\.processing-cpp-build.exe"
 if errorlevel 1 exit /b 1
 
 echo Running...
 "%PROJECT_DIR%\\.processing-cpp-build.exe"
 '''
+
 
 DRAGDROP_GITIGNORE = '''\
 # Generated by run.sh / run.bat -- safe to delete, will be rebuilt

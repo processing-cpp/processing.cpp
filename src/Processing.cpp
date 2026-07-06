@@ -292,6 +292,8 @@ static float _colorMaxA(){
 
 color::color(int gray)              { value = _makeColor((float)gray, _colorMaxA()).value; }
 color::color(int gray, int a)       { value = _makeColor((float)gray, (float)a).value; }
+color::color(int r, int g, int b)   { value = _makeColor((float)r, (float)g, (float)b, _colorMaxA()).value; }
+color::color(int r, int g, int b, int a) { value = _makeColor((float)r, (float)g, (float)b, (float)a).value; }
 color::color(float gray)            { value = _makeColor(gray, _colorMaxA()).value; }
 color::color(float gray, float a)   { value = _makeColor(gray, a).value; }
 color::color(float r,float g,float b){ value = _makeColor(r,g,b,_colorMaxA()).value; }
@@ -576,8 +578,7 @@ void PApplet::fullScreen() {
         glfwSetWindowMonitor(gWindow, m, 0, 0, v->width, v->height, v->refreshRate);
     }
 }
-void PApplet::frameRate(int fps){currentFrameRate=fps;targetFrameTime=1.0/fps;}
-void PApplet::vsync(bool on){if(gWindow) glfwSwapInterval(on?1:0);}
+void PApplet::frameRate(int fps){ targetFrameTime = 1.0/fps; }
 void PApplet::noLoop(){looping=false;}
 void PApplet::loop()  {looping=true;}
 void PApplet::redraw(){redrawOnce=true;}
@@ -2580,12 +2581,18 @@ void PApplet::loadPixels() {
     std::vector<unsigned char> rgba(total * 4);
     glReadPixels(0, 0, winWidth, winHeight, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
 
-    for (int i = 0; i < total; i++) {
-        unsigned char r = rgba[i*4 + 0];
-        unsigned char g = rgba[i*4 + 1];
-        unsigned char b = rgba[i*4 + 2];
-        unsigned char a = rgba[i*4 + 3];
-        pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;  // ARGB format
+    // glReadPixels returns rows bottom-to-top; Processing's pixels[] is
+    // top-to-bottom (row 0 = top of window), so flip rows on the way in.
+    for (int y = 0; y < winHeight; y++) {
+        for (int x = 0; x < winWidth; x++) {
+            int di = y * winWidth + x;
+            int si = (winHeight - 1 - y) * winWidth + x;
+            unsigned char r = rgba[si*4 + 0];
+            unsigned char g = rgba[si*4 + 1];
+            unsigned char b = rgba[si*4 + 2];
+            unsigned char a = rgba[si*4 + 3];
+            pixels[di] = (a << 24) | (r << 16) | (g << 8) | b;  // ARGB format
+        }
     }
 }
 
@@ -2593,11 +2600,17 @@ void PApplet::updatePixels() {
     int total = winWidth * winHeight;
     std::vector<unsigned char> rgba(total * 4);
 
-    for (int i = 0; i < total; i++) {
-        rgba[i*4 + 0] = (pixels[i] >> 16) & 0xFF;  // R
-        rgba[i*4 + 1] = (pixels[i] >>  8) & 0xFF;  // G
-        rgba[i*4 + 2] =  pixels[i]        & 0xFF;  // B
-        rgba[i*4 + 3] = (pixels[i] >> 24) & 0xFF;  // A
+    // pixels[] is top-to-bottom; glDrawPixels expects bottom-to-top,
+    // so flip rows on the way out.
+    for (int y = 0; y < winHeight; y++) {
+        for (int x = 0; x < winWidth; x++) {
+            int si = y * winWidth + x;
+            int di = (winHeight - 1 - y) * winWidth + x;
+            rgba[di*4 + 0] = (pixels[si] >> 16) & 0xFF;  // R
+            rgba[di*4 + 1] = (pixels[si] >>  8) & 0xFF;  // G
+            rgba[di*4 + 2] =  pixels[si]        & 0xFF;  // B
+            rgba[di*4 + 3] = (pixels[si] >> 24) & 0xFF;  // A
+        }
     }
     glDrawPixels(winWidth, winHeight, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
 }
@@ -3072,7 +3085,6 @@ void PApplet::run(){
         glfwTerminate(); return;
     }
     glfwMakeContextCurrent(gWindow);
-    glfwSwapInterval(1); // vsync on by default
     GLenum glewErr = glewInit();
     if(glewErr != GLEW_OK){
 #ifdef _WIN32
@@ -3411,14 +3423,19 @@ void PApplet::run(){
         // Only re-save persist if an event callback drew something.
         // Checked via _eventDrewSomething flag set in keyPressed/mousePressed.
         if(persistFBO && _eventDrewSomething) { saveToPersist(); _eventDrewSomething=false; }
-        auto now=std::chrono::steady_clock::now();
-        double elapsed=std::chrono::duration<double>(now-last).count();
-        if(elapsed>0) measuredFrameRate=measuredFrameRate*0.9f+(float)(1.0/elapsed)*0.1f;
-        _frameRate=(float)(1.0/elapsed);
-        deltaTime=(float)elapsed;
-        double sl=targetFrameTime-elapsed;
-        if(sl>0)std::this_thread::sleep_for(std::chrono::duration<double>(sl));
-        last=std::chrono::steady_clock::now();
+
+        // Frame timing -- matches Processing Java's model exactly:
+        // sleep the remainder of the target frame time, then measure
+        // the full wall-clock frame duration (draw + swap + sleep) and
+        // report it as _frameRate.
+        auto now = std::chrono::steady_clock::now();
+        double elapsed = std::chrono::duration<double>(now - last).count();
+        double sl = targetFrameTime - elapsed;
+        if (sl > 0) std::this_thread::sleep_for(std::chrono::duration<double>(sl));
+        auto frameEnd = std::chrono::steady_clock::now();
+        double fullFrame = std::chrono::duration<double>(frameEnd - last).count();
+        if (fullFrame > 0) _frameRate = (float)(1.0 / fullFrame);
+        last = frameEnd;
     }
     if(phongProg){glDeleteProgram(phongProg);phongProg=0;}
     glfwDestroyWindow(gWindow);gWindow=nullptr;glfwTerminate();
@@ -4621,12 +4638,32 @@ std::string PApplet::trim(const std::string& s) {
     size_t a=s.find_first_not_of(" \t\n\r"), b=s.find_last_not_of(" \t\n\r");
     return a==std::string::npos?"":s.substr(a,b-a+1);
 }
-std::string PApplet::nf(float v, int digits) {
-    std::ostringstream ss; ss<<std::fixed<<std::setprecision(digits)<<v; return ss.str();
-}
-std::string PApplet::nf(int v, int d) {
-    std::ostringstream ss; ss<<std::setw(d)<<std::setfill('0')<<v; return ss.str();
-}
+std::string PApplet::nf(int v)                                      { return Processing::nf(v); }
+std::string PApplet::nf(int v, int digits)                          { return Processing::nf(v, digits); }
+std::string PApplet::nf(float v, int digits)                        { return Processing::nf(v, digits); }
+std::string PApplet::nf(float v, int left, int right)                { return Processing::nf(v, left, right); }
+std::vector<std::string> PApplet::nf(const std::vector<int>& nums)   { return Processing::nf(nums); }
+std::vector<std::string> PApplet::nf(const std::vector<int>& nums, int digits) { return Processing::nf(nums, digits); }
+std::vector<std::string> PApplet::nf(const std::vector<float>& nums, int left, int right) { return Processing::nf(nums, left, right); }
+
+std::string PApplet::nfc(int v)                                      { return Processing::nfc(v); }
+std::string PApplet::nfc(float v, int right)                         { return Processing::nfc(v, right); }
+std::vector<std::string> PApplet::nfc(const std::vector<int>& nums)  { return Processing::nfc(nums); }
+std::vector<std::string> PApplet::nfc(const std::vector<float>& nums, int right) { return Processing::nfc(nums, right); }
+
+std::string PApplet::nfp(int v)                                      { return Processing::nfp(v); }
+std::string PApplet::nfp(int v, int digits)                          { return Processing::nfp(v, digits); }
+std::string PApplet::nfp(float v, int left, int right)               { return Processing::nfp(v, left, right); }
+std::vector<std::string> PApplet::nfp(const std::vector<int>& nums)  { return Processing::nfp(nums); }
+std::vector<std::string> PApplet::nfp(const std::vector<int>& nums, int digits) { return Processing::nfp(nums, digits); }
+std::vector<std::string> PApplet::nfp(const std::vector<float>& nums, int left, int right) { return Processing::nfp(nums, left, right); }
+
+std::string PApplet::nfs(int v)                                      { return Processing::nfs(v); }
+std::string PApplet::nfs(int v, int digits)                          { return Processing::nfs(v, digits); }
+std::string PApplet::nfs(float v, int left, int right)               { return Processing::nfs(v, left, right); }
+std::vector<std::string> PApplet::nfs(const std::vector<int>& nums)  { return Processing::nfs(nums); }
+std::vector<std::string> PApplet::nfs(const std::vector<int>& nums, int digits) { return Processing::nfs(nums, digits); }
+std::vector<std::string> PApplet::nfs(const std::vector<float>& nums, int left, int right) { return Processing::nfs(nums, left, right); }
 std::string PApplet::hex(int v) {
     std::ostringstream ss; ss<<std::uppercase<<std::hex<<std::setw(8)<<std::setfill('0')<<v; return ss.str();
 }

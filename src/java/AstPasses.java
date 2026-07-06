@@ -166,11 +166,27 @@ final class ArrayHoister {
             }
         }
 
-        // --- PHASE 1: hoist const-qualified scalar decls matching those names ---
+        // BUG FIX, found via a real, official Processing example sketch
+        // (Blur.pde): "float kernel[3][3] = {{v,v,v},{v,v,v},{v,v,v}};"
+        // depends on a plain (non-const) "float v" referenced inside its
+        // INITIALIZER, not its dimensions. Scan every array declaration's
+        // INITIALIZER for identifier references too, adding them to the
+        // same hoist-candidate set used for sizing identifiers.
+        for (TopLevelItem item : items) {
+            if (!(item instanceof VariableDecl vd)) continue;
+            if (vd.arrayDims().isEmpty()) continue;
+            if (vd.initializer() == null) continue;
+            collectIdentifierNames(vd.initializer(), arraySizeIdentifiers);
+        }
+
+        // --- PHASE 1: hoist scalar decls matching those names ---
+        // NOTE: no longer requires vd.isConst() -- a non-const scalar
+        // referenced inside an array's initializer has the exact same
+        // "must precede the array, at the same scope" requirement as a
+        // const sizing constant does.
         List<TopLevelItem> afterPhase1 = new ArrayList<>();
         for (TopLevelItem item : items) {
             if (item instanceof VariableDecl vd
-                && vd.isConst()
                 && vd.arrayDims().isEmpty()
                 && arraySizeIdentifiers.contains(vd.name())) {
                 result.hoistedSizingConstants.add(vd);
@@ -189,6 +205,33 @@ final class ArrayHoister {
         }
 
         return result;
+    }
+
+    /**
+     * Recursively walks an expression tree collecting every bare
+     * Identifier's name into `out`. Deliberately broad (any identifier
+     * anywhere in the initializer, not just direct children) for
+     * correctness on arbitrarily nested initializers -- collecting a
+     * name that doesn't correspond to any real top-level scalar is
+     * harmless (it simply never matches anything in PHASE 1 above).
+     */
+    private static void collectIdentifierNames(Expr e, Set<String> out) {
+        if (e instanceof Identifier id) {
+            out.add(id.name());
+        } else if (e instanceof InitializerListExpr il) {
+            for (Expr el : il.elements()) collectIdentifierNames(el, out);
+        } else if (e instanceof BinaryExpr be) {
+            collectIdentifierNames(be.left(), out);
+            collectIdentifierNames(be.right(), out);
+        } else if (e instanceof UnaryExpr ue) {
+            collectIdentifierNames(ue.operand(), out);
+        } else if (e instanceof CallExpr ce) {
+            collectIdentifierNames(ce.callee(), out);
+            for (Expr arg : ce.args()) collectIdentifierNames(arg, out);
+        } else if (e instanceof CastExpr cae) {
+            collectIdentifierNames(cae.expr(), out);
+        }
+        // Other Expr kinds (Literal, etc.) contain no identifiers to collect.
     }
 
     /**
@@ -496,7 +539,8 @@ final class ForwardDeclGenerator {
                 fd.returnType(), fd.name(), fd.templateParams(), fd.params(),
                 fd.initializerList(), null /* body -- this is what makes it a forward decl */,
                 fd.isConstructor(), fd.isDestructor(), fd.isVirtual(), fd.isOverride(),
-                fd.isConst(), fd.isStatic(), fd.line(), fd.col(), List.of() /* no comments on the forward decl */
+                fd.isConst(), fd.isStatic(), false /* isPureVirtual -- never applies to a hoisted free function */,
+                fd.line(), fd.col(), List.of() /* no comments on the forward decl */
             ));
         }
         return decls;
@@ -561,3 +605,4 @@ final class EnumScopeExtractor {
         return result;
     }
 }
+

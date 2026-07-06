@@ -32,6 +32,7 @@ from _processing_cpp_packaging import (  # noqa: E402
     ENGINE_SOURCES,
     check_source_layout,
     copy_engine_files,
+    get_library_version,
     write_examples,
     zip_directory,
 )
@@ -48,21 +49,37 @@ def generate(out_dir: Path) -> None:
     write_examples(out_dir)
     (out_dir / "examples" / "CMakeLists.txt").write_text(EXAMPLES_CMAKELISTS_TXT)
 
-    cmakelists = CMAKELISTS_TXT + (
+    # The version baked into project(processing_cpp VERSION ...) -- and
+    # from there, automatically, into PROJECT_VERSION, which
+    # write_basic_package_version_file() reads further down in
+    # CMAKELISTS_TXT. Pulled from mode.properties (the same version
+    # CppMode itself reports) rather than a separately hardcoded number,
+    # so this package's version can't silently drift from the real one.
+    version = get_library_version()
+    cmakelists = CMAKELISTS_TXT.replace("__PROCESSING_CPP_VERSION__", version) + (
         "\noption(PROCESSING_CPP_BUILD_EXAMPLES \"Build examples/\" ON)\n"
         "if(PROCESSING_CPP_BUILD_EXAMPLES)\n"
         "    add_subdirectory(examples)\n"
         "endif()\n"
     )
     (out_dir / "CMakeLists.txt").write_text(cmakelists)
+    (out_dir / "processing_cpp-config.cmake.in").write_text(PACKAGE_CONFIG_CMAKE_IN)
     (out_dir / "README.md").write_text(README_MD)
+
+    # Covers the build/ directory someone gets if they configure/build
+    # this package standalone (the README's own "Examples" section tells
+    # them to run cmake -S . -B build right here) -- without this, that
+    # directory is one `git add .` away from landing inside whatever repo
+    # this folder gets vendored into.
+    (out_dir / ".gitignore").write_text(CMAKE_GITIGNORE)
 
     shutil.copy2(REPO_ROOT / "LICENSE", out_dir / "LICENSE")
 
     print(f"Generated CMake package: {out_dir}")
+    print(f"  version {version}")
     print(f"  include/ ({len(ENGINE_HEADERS)} headers), "
           f"src/ ({len(ENGINE_SOURCES)} engine source files), "
-          f"CMakeLists.txt, README.md, examples/, LICENSE")
+          f"CMakeLists.txt, processing_cpp-config.cmake.in, README.md, .gitignore, examples/, LICENSE")
 
 
 # =============================================================================
@@ -80,8 +97,7 @@ packaged as a normal CMake target. There's no Processing IDE involved, no
 
 If you're not using CMake, there's a separate drag-and-drop release built
 for that instead -- look for `processing-cpp-dragdrop.zip` on the same
-page you got this from, or in the
-[CppMode repo](https://github.com/processing-cpp/processing.cpp). That one
+page you got this from, or check the project's repository. That one
 needs no build system at all; this one assumes you already have CMake.
 
 ## Writing a sketch
@@ -135,7 +151,7 @@ target_link_libraries(my_sketch PRIVATE processing_cpp)
 ```cmake
 include(FetchContent)
 FetchContent_Declare(processing_cpp
-    GIT_REPOSITORY https://github.com/processing-cpp/processing-cpp-lib.git
+    GIT_REPOSITORY <url of your processing-cpp git repo>
     GIT_TAG main
 )
 FetchContent_MakeAvailable(processing_cpp)
@@ -143,6 +159,11 @@ FetchContent_MakeAvailable(processing_cpp)
 add_executable(my_sketch main.cpp)
 target_link_libraries(my_sketch PRIVATE processing_cpp)
 ```
+
+This only works once this package's contents live in a git repo somewhere
+reachable by URL -- FetchContent clones it the same way `git clone` would.
+If this folder hasn't been pushed anywhere yet, use one of the other two
+options below instead in the meantime.
 
 ### Installed system-wide
 
@@ -154,8 +175,17 @@ sudo cmake --install build
 
 ```cmake
 find_package(processing_cpp REQUIRED)
-target_link_libraries(my_sketch PRIVATE processing_cpp)
+target_link_libraries(my_sketch PRIVATE processing_cpp::processing_cpp)
 ```
+
+Note the `processing_cpp::` prefix here -- it's different from the other
+two methods above, which both use the bare `processing_cpp` name. That's
+intentional, not an inconsistency to work around: CMake convention
+namespaces targets that come from an installed, `find_package`-located
+package specifically so they can't collide with some other unrelated
+package's target of the same name on your system; `add_subdirectory` and
+`FetchContent` build the target directly in your own project, where that
+collision risk doesn't apply, so the plain name is fine there.
 
 ## Dependencies
 
@@ -177,11 +207,25 @@ brew install glfw glew
 pacman -S mingw-w64-x86_64-glfw mingw-w64-x86_64-glew
 ```
 
-If you'd rather not install them yourself, configure with
+If you'd rather not install the prebuilt packages above, configure with
 `-DPROCESSING_CPP_FETCH_DEPS=ON` and CMake will build GLFW and GLEW from
 source automatically as part of your build. This is off by default
 because building two extra libraries from source on someone's first
 `cmake configure` can be a surprising thing to have happen silently.
+
+Worth knowing before relying on this: building GLFW from source still
+needs *something* installed on Linux -- either the X11 development
+headers (e.g. Ubuntu/Debian's `xorg-dev` package, which pulls in
+`libxrandr-dev`, `libxinerama-dev`, `libxcursor-dev`, `libxi-dev`) or, if
+you set `-DGLFW_BUILD_WAYLAND=ON` yourself, the Wayland equivalents
+(`libwayland-dev`, `libxkbcommon-dev`, `wayland-protocols`). This
+`CMakeLists.txt` builds for X11 by default when fetching from source,
+since it's the more universally available baseline on Linux, but X11's
+own dev headers are still a real, separate thing to have installed --
+`PROCESSING_CPP_FETCH_DEPS=ON` fetches GLFW's *source*, not a magic
+zero-dependency build. If you hit a build error inside `_deps/glfw3_fetched-src`,
+installing the prebuilt `libglfw3-dev`/`libglew-dev` packages directly
+(above) is simpler than chasing down GLFW's own build dependencies.
 
 ## The two examples included here
 
@@ -200,18 +244,45 @@ cmake --build build -j
   sees `app.h`'s plain `run_particle_view()` function. Built as
   `embedded_sketch` by the same `cmake --build` above.
 
+## License
+
+The engine is licensed under the **GNU Lesser General Public License
+v2.1** (see `LICENSE`). LGPL is meant to allow linking from proprietary
+software, unlike plain GPL, but it does come with real obligations --
+notably around static linking. `processing_cpp` is a `STATIC` library in
+this `CMakeLists.txt`, meaning it gets compiled into your sketch's
+binary directly rather than loaded as a separate shared library. LGPL
+2.1 requires that anyone you distribute that binary to be able to relink
+it against a modified version of the engine -- in practice, that means
+making the engine's object files (or this source) available alongside
+your binary, not just the binary itself. Building `processing_cpp` as a
+`SHARED` library instead would change this; that's not how this
+`CMakeLists.txt` is currently set up, but it's a legitimate way to avoid
+the static-linking obligation if it matters for your project.
+
+This isn't legal advice, and the specifics depend on how you're
+distributing your project -- read `LICENSE` itself, and talk to an actual
+lawyer if it matters for what you're shipping. It's flagged here mainly
+so it doesn't come as a surprise after the fact.
+
+`include/stb_image.h`, `stb_image_write.h`, and `stb_truetype.h` are
+bundled third-party libraries (by Sean Barrett and contributors), not
+part of the engine -- they're each dual-licensed under MIT or public
+domain (your choice), which is unrestricted enough that it doesn't add
+anything beyond what's already true of the LGPL 2.1 engine itself. Their
+full license text is included at the bottom of each of those files.
+
 ## Where this comes from
 
-This release is built by `scripts/generate_cmake.py` in the main
-[CppMode repo](https://github.com/processing-cpp/processing.cpp), and it's
-generated directly from that repo's real engine source
+This release is built by `scripts/generate_cmake.py` in the main CppMode
+repo, and it's generated directly from that repo's real engine source
 (`src/Processing.h`, `src/Processing.cpp`) -- the very same code CppMode's
 Processing IDE plugin compiles your sketches against.
 '''
 
 CMAKELISTS_TXT = '''\
 cmake_minimum_required(VERSION 3.16)
-project(processing_cpp LANGUAGES CXX)
+project(processing_cpp VERSION __PROCESSING_CPP_VERSION__ LANGUAGES CXX)
 
 # Usage from a parent project:
 #
@@ -229,13 +300,20 @@ project(processing_cpp LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Needed early -- CMAKE_INSTALL_INCLUDEDIR (used a few lines down, in
+# the INSTALL_INTERFACE include path) only exists after this is included.
+# The actual install() calls that need it are further below; this just
+# has to come before the first place that variable gets read.
+include(GNUInstallDirs)
+
 add_library(processing_cpp STATIC
     src/Processing.cpp
     src/Processing_defaults.cpp
 )
 
 target_include_directories(processing_cpp PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/processing_cpp>
 )
 
 target_compile_definitions(processing_cpp PUBLIC
@@ -292,6 +370,19 @@ if((NOT _have_glfw OR NOT _have_glew) AND PROCESSING_CPP_FETCH_DEPS)
         set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
         set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
         set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+        if(UNIX AND NOT APPLE)
+            # Building GLFW from source pulls in its own build-time
+            # dependency on wayland-scanner if Wayland support is left
+            # on -- not something every machine has installed, and not
+            # something this script can silently install for you the
+            # way it can FetchContent a git repo. X11 is the more
+            # universally available baseline on Linux, so that's what
+            # gets built when fetching from source; a machine with
+            # GLFW/GLEW already installed via find_package/pkg-config
+            # never hits this at all; it only applies in the fallback.
+            set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
+            set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
+        endif()
         FetchContent_Declare(glfw3_fetched
             GIT_REPOSITORY https://github.com/glfw/glfw.git GIT_TAG 3.4 GIT_SHALLOW TRUE)
         FetchContent_MakeAvailable(glfw3_fetched)
@@ -339,6 +430,80 @@ endif()
 if(WIN32 AND NOT MSVC)
     target_link_options(processing_cpp PUBLIC -mwindows)
 endif()
+
+# -----------------------------------------------------------------------------
+# install + export, so `cmake --install` followed by `find_package(processing_cpp)`
+# from a separate project actually works -- this is what the README's
+# "Installed system-wide" section depends on. GNUInstallDirs is already
+# included near the top of this file (CMAKE_INSTALL_INCLUDEDIR is needed
+# there, before this point).
+# -----------------------------------------------------------------------------
+include(CMakePackageConfigHelpers)
+
+# Only install/export processing_cpp's own artifacts when this
+# CMakeLists.txt is the top-level project being configured directly --
+# i.e. someone built/installed this package on its own, the scenario the
+# README's "Installed system-wide" section describes. When this folder
+# is pulled in via add_subdirectory() from a parent project instead, skip
+# all of this: without the guard, the PARENT project's own
+# `cmake --install` would also silently install processing_cpp's headers
+# and library into the parent's install tree, alongside (and easily
+# mistaken for part of) the parent's own install output -- confirmed by
+# actually vendoring this package and running cmake --install on the
+# parent without the guard before adding it.
+#
+# CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR is the portable way
+# to detect this on CMake 3.16 (the minimum this file declares);
+# PROJECT_IS_TOP_LEVEL only exists from CMake 3.21 onward.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    install(TARGETS processing_cpp
+        EXPORT processing_cpp-targets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+    install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/processing_cpp)
+    install(EXPORT processing_cpp-targets
+        FILE processing_cpp-targets.cmake
+        NAMESPACE processing_cpp::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/processing_cpp
+    )
+
+    configure_package_config_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/processing_cpp-config.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/processing_cpp-config.cmake"
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/processing_cpp
+    )
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/processing_cpp-config-version.cmake"
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion
+    )
+    install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/processing_cpp-config.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/processing_cpp-config-version.cmake"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/processing_cpp
+    )
+endif()
+
+# find_package(processing_cpp) resolves to processing_cpp::processing_cpp
+# (the namespaced form CMake convention expects), as well as the plain
+# processing_cpp target also used by add_subdirectory/FetchContent --
+# both names point at the same library, so the README's
+# target_link_libraries(... processing_cpp) line works regardless of
+# which of the three installation methods was used.
+add_library(processing_cpp::processing_cpp ALIAS processing_cpp)
+'''
+
+PACKAGE_CONFIG_CMAKE_IN = '''\
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(OpenGL)
+
+include("${CMAKE_CURRENT_LIST_DIR}/processing_cpp-targets.cmake")
+
+check_required_components(processing_cpp)
 '''
 
 EXAMPLES_CMAKELISTS_TXT = '''\
@@ -347,6 +512,13 @@ target_link_libraries(bouncing_ball PRIVATE processing_cpp)
 
 add_executable(embedded_sketch embedding/main.cpp embedding/app.cpp)
 target_link_libraries(embedded_sketch PRIVATE processing_cpp)
+'''
+
+CMAKE_GITIGNORE = '''\
+# Generated by CMake when this package is configured/built standalone
+# (e.g. by following the "Examples" section of this README directly
+# inside this folder). Safe to delete; cmake -S . -B build recreates it.
+build/
 '''
 
 

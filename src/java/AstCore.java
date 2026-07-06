@@ -184,5 +184,9 @@ record FunctionSignatureType(
  * them on a lambda either).
  */
 
-record Param(TypeRef type, String name, Expr defaultValue) {
+record Param(TypeRef type, String name, Expr defaultValue, List<Integer> innerArrayDims) {
+    Param(TypeRef type, String name, Expr defaultValue) {
+        this(type, name, defaultValue, List.of());
+    }
 }
+

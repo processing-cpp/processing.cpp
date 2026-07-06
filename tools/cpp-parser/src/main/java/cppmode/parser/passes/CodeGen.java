@@ -247,7 +247,7 @@ public final class CodeGen {
         }
         sb.append(renderTypeAndName(vd.type(), vd.name()));
         emitArrayDims(sb, vd.arrayDims());
-        emitDeclaratorTail(sb, vd.name(), vd.initializer());
+        emitDeclaratorTail(sb, vd.type(), vd.name(), vd.initializer(), true);
         sb.append(";\n");
     }
 
@@ -299,16 +299,117 @@ public final class CodeGen {
      * different properties -- this was caught by reading the output, not
      * by an automated check, and a real test for it was added after.
      */
-    private static void emitDeclaratorTail(StringBuilder sb, String declaratorName, Expr initializer) {
+    /**
+     * Standard-library (and closely related) container/wrapper types that
+     * have a real initializer_list constructor, meaning brace-init and
+     * paren-init are NOT interchangeable syntax for the same call -- they
+     * have genuinely different SEMANTICS. Found as a real bug via a real
+     * user-reported sketch (Wolfram.pde): "std::vector<int> nextgen(cells.size(), 0);"
+     * (constructor form: cells.size() elements, each 0) was being
+     * unconditionally brace-wrapped by emitDeclaratorTail's most-vexing-
+     * parse protection into "std::vector<int> nextgen{cells.size(), 0};"
+     * (initializer-list form: a 2-element vector containing the VALUES
+     * cells.size() and 0) -- confirmed directly via g++ that these produce
+     * different .size() results (5 vs 2 for "(5, 0)" vs "{5, 0}").
+     *
+     * The most-vexing-parse protection this brace-wrapping exists for
+     * only matters for actual USER-DEFINED class types being constructed
+     * with a bare-type-name-shaped argument (the original confirmed case,
+     * "Eye e1(Bar());") -- a template instantiation like
+     * "std::vector<int>" was never at risk of that specific ambiguity in
+     * the first place (confirmed directly via g++: "std::vector<int> v(5, 0);"
+     * has no competing function-declaration interpretation to be
+     * disambiguated from). For these types, paren-init is both safe and
+     * semantically correct, so brace-wrapping must be skipped.
+     */
+    private static final java.util.Set<String> INITIALIZER_LIST_AMBIGUOUS_TYPES = java.util.Set.of(
+        // C++ stdlib types (original set -- see comment above for full rationale)
+        "vector", "std::vector",
+        "string", "std::string",
+        "wstring", "std::wstring",
+        "array", "std::array",
+        "deque", "std::deque",
+        "list", "std::list",
+        "set", "std::set",
+        "map", "std::map",
+        "unordered_set", "std::unordered_set",
+        "unordered_map", "std::unordered_map",
+        "initializer_list", "std::initializer_list",
+        // CppMode's own Java-mimicking container types -- all have BOTH a
+        // length constructor AND an initializer_list constructor, so brace-init
+        // and paren-init are NOT interchangeable:
+        //   IntList hist(256)  -> 256-element zeroed list  (correct)
+        //   IntList hist{256}  -> 1-element list, hist[0]==256  (WRONG)
+        // Found via Histogram.pde: "malloc(): unaligned tcache chunk detected"
+        // then "IntList index 206 out of bounds for length 1" after adding
+        // bounds-checks -- the sketch writes hist[bright]++ where bright can
+        // be anywhere in [0,255], but hist was silently constructed as length 1.
+        "IntList", "FloatList", "StringList", "ArrayList", "Array",
+        // color has both color(float r,float g,float b) and color(int gray) --
+        // brace-init "color c{r,g,b}" with int r,g,b narrows int->float.
+        // Keep as paren-init so the int 3/4-arg overloads (added to Processing.h/cpp)
+        // resolve cleanly without narrowing warnings.
+        "color"
+    );
+
+    private static void emitDeclaratorTail(StringBuilder sb, TypeRef declaratorType, String declaratorName, Expr initializer) {
+        emitDeclaratorTail(sb, declaratorType, declaratorName, initializer, false);
+    }
+
+    /**
+     * Emits the initializer portion of a variable declaration.
+     *
+     * atMemberOrGlobalScope: true for VariableDecl (class members and
+     * namespace-scope globals), false for DeclStatement (local variables
+     * inside function bodies).
+     *
+     * The distinction matters because C++ parses "Type name(args)" differently
+     * depending on scope:
+     *   - Inside a function body: always a constructor call. Brace-rewrite
+     *     ("name{args}") is used as the most-vexing-parse guard for non-
+     *     ambiguous types; paren-init is preserved for INITIALIZER_LIST_AMBIGUOUS_TYPES.
+     *   - At member or namespace scope: ALWAYS parsed as a function declaration.
+     *     "Array<PVector> coords(0)" at member scope is "coords(int)" not a
+     *     variable. Fix: use copy-init "= Type(args)" which is unambiguous
+     *     at all scopes.
+     */
+    private static void emitDeclaratorTail(StringBuilder sb, TypeRef declaratorType, String declaratorName, Expr initializer, boolean atMemberOrGlobalScope) {
         if (initializer == null) return;
         if (initializer instanceof CallExpr ce && ce.callee() instanceof Identifier id
             && id.name().equals(declaratorName)) {
-            sb.append('{');
+            if (atMemberOrGlobalScope) {
+                // At member/global scope, paren-init is always a function
+                // declaration in C++. Use copy-init "= Type(args)" instead,
+                // which is unambiguous at all scopes and preserves the
+                // constructor-call semantics.
+                sb.append(" = ").append(renderTypeRef(declaratorType)).append('(');
+                for (int i = 0; i < ce.args().size(); i++) {
+                    if (i > 0) sb.append(", ");
+                    sb.append(renderExpr(ce.args().get(i)));
+                }
+                sb.append(')');
+                return;
+            }
+            if (!(declaratorType instanceof NamedType nt && INITIALIZER_LIST_AMBIGUOUS_TYPES.contains(nt.baseName()))) {
+                // Inside a function body, non-ambiguous types: use brace-init
+                // as the most-vexing-parse guard.
+                sb.append('{');
+                for (int i = 0; i < ce.args().size(); i++) {
+                    if (i > 0) sb.append(", ");
+                    sb.append(renderExpr(ce.args().get(i)));
+                }
+                sb.append('}');
+                return;
+            }
+            // Inside a function body, initializer-list-ambiguous types:
+            // preserve paren-init (brace-init would change semantics,
+            // e.g. IntList hist{256} is 1 element containing 256 not 256 zeros).
+            sb.append('(');
             for (int i = 0; i < ce.args().size(); i++) {
                 if (i > 0) sb.append(", ");
                 sb.append(renderExpr(ce.args().get(i)));
             }
-            sb.append('}');
+            sb.append(')');
             return;
         }
         sb.append(" = ").append(renderExpr(initializer));
@@ -340,7 +441,20 @@ public final class CodeGen {
             emitParamList(sb, fd.params());
             sb.append(')');
         } else {
-            sb.append(renderTypeRef(fd.returnType())).append(' ').append(fd.name()).append('(');
+            // Cast operators ("operator int()", "operator float()") have no
+            // separate return type in C++; the cast target IS the name. When
+            // parseTypeRef consumed "operator" as a bare identifier (NamedType
+            // with baseName "operator") and parseFunctionOrVariableName then
+            // consumed "operator int" as the full name, suppress the spurious
+            // "operator" prefix so we don't render "operator operator int()".
+            boolean isCastOp = fd.name().startsWith("operator ")
+                && fd.returnType() instanceof NamedType nt
+                && nt.baseName().equals("operator")
+                && nt.pointerDepth() == 0;
+            if (!isCastOp) {
+                sb.append(renderTypeRef(fd.returnType())).append(' ');
+            }
+            sb.append(fd.name()).append('(');
             emitParamList(sb, fd.params());
             sb.append(')');
         }
@@ -363,6 +477,7 @@ public final class CodeGen {
         }
 
         if (fd.body() == null) {
+            if (fd.isPureVirtual()) sb.append(" = 0");
             sb.append(";\n");
             return;
         }
@@ -375,7 +490,23 @@ public final class CodeGen {
         for (int i = 0; i < params.size(); i++) {
             if (i > 0) sb.append(", ");
             Param p = params.get(i);
-            if (p.name() != null && !p.name().isEmpty()) {
+            if (!p.innerArrayDims().isEmpty()) {
+                // Multi-dimensional array parameter: "float m[3][3]" must
+                // render as "float (*m)[3]" (pointer-to-array-of-N), not
+                // "float* m" (pointer-to-scalar). The base type's pointer
+                // depth was already bumped by parseParam (representing the
+                // first [] decay); we restore it to the underlying element
+                // type and use the (*name)[N] declarator form instead.
+                TypeRef base = p.type();
+                if (base instanceof NamedType nt && nt.pointerDepth() > 0) {
+                    base = new NamedType(nt.baseName(), nt.templateArgs(),
+                        nt.pointerDepth() - 1, nt.isReference(), nt.isConst());
+                }
+                sb.append(renderTypeRef(base)).append(" (*").append(p.name()).append(")");
+                for (int dim : p.innerArrayDims()) {
+                    sb.append("[").append(dim > 0 ? dim : "").append("]");
+                }
+            } else if (p.name() != null && !p.name().isEmpty()) {
                 sb.append(renderTypeAndName(p.type(), p.name()));
             } else {
                 sb.append(renderTypeRef(p.type()));
@@ -411,7 +542,7 @@ public final class CodeGen {
             }
             sb.append(renderTypeAndName(ds.type(), ds.name()));
             emitArrayDims(sb, ds.arrayDims());
-            emitDeclaratorTail(sb, ds.name(), ds.initializer());
+            emitDeclaratorTail(sb, ds.type(), ds.name(), ds.initializer());
             sb.append(";\n");
         } else if (s instanceof ExprStatement es) {
             indent(sb, depth);
@@ -499,7 +630,7 @@ public final class CodeGen {
             }
             sb.append(renderTypeAndName(ds.type(), ds.name()));
             emitArrayDims(sb, ds.arrayDims());
-            emitDeclaratorTail(sb, ds.name(), ds.initializer());
+            emitDeclaratorTail(sb, ds.type(), ds.name(), ds.initializer());
         } else if (s.init() instanceof ExprStatement es) {
             sb.append(renderExpr(es.expr()));
         }
@@ -666,12 +797,14 @@ public final class CodeGen {
             return "(" + renderExpr(t.condition()) + " ? " + renderExpr(t.thenExpr()) + " : " + renderExpr(t.elseExpr()) + ")";
         }
         if (e instanceof CallExpr c) {
-            StringBuilder sb = new StringBuilder(renderExpr(c.callee())).append('(');
+            char open = c.isBraceInit() ? '{' : '(';
+            char close = c.isBraceInit() ? '}' : ')';
+            StringBuilder sb = new StringBuilder(renderExpr(c.callee())).append(open);
             for (int i = 0; i < c.args().size(); i++) {
                 if (i > 0) sb.append(", ");
                 sb.append(renderExpr(c.args().get(i)));
             }
-            return sb.append(')').toString();
+            return sb.append(close).toString();
         }
         if (e instanceof MemberAccessExpr m) {
             return renderExpr(m.target()) + (m.isArrow() ? "->" : ".") + m.memberName();

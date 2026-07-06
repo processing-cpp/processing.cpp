@@ -192,7 +192,7 @@ final class CodeGen {
         }
         sb.append(renderTypeAndName(vd.type(), vd.name()));
         emitArrayDims(sb, vd.arrayDims());
-        emitDeclaratorTail(sb, vd.type(), vd.name(), vd.initializer());
+        emitDeclaratorTail(sb, vd.type(), vd.name(), vd.initializer(), true);
         sb.append(";\n");
     }
 
@@ -260,6 +260,7 @@ final class CodeGen {
      * function-declaration interpretation exists for it).
      */
     private static final java.util.Set<String> INITIALIZER_LIST_AMBIGUOUS_TYPES = java.util.Set.of(
+        // C++ stdlib types (original set -- see comment above for full rationale)
         "vector", "std::vector",
         "string", "std::string",
         "wstring", "std::wstring",
@@ -270,27 +271,56 @@ final class CodeGen {
         "map", "std::map",
         "unordered_set", "std::unordered_set",
         "unordered_map", "std::unordered_map",
-        "initializer_list", "std::initializer_list"
+        "initializer_list", "std::initializer_list",
+        // CppMode's own Java-mimicking container types -- all have BOTH a
+        // length constructor AND an initializer_list constructor, so brace-init
+        // and paren-init are NOT interchangeable:
+        //   IntList hist(256)  -> 256-element zeroed list  (correct)
+        //   IntList hist{256}  -> 1-element list, hist[0]==256  (WRONG)
+        // Found via Histogram.pde crash: "IntList index 206 out of bounds for length 1"
+        "IntList", "FloatList", "StringList", "ArrayList", "Array",
+        "color"
     );
 
+    /** Convenience overload for statement-scope (local variable) declarations. */
     private static void emitDeclaratorTail(StringBuilder sb, TypeRef declaratorType, String declaratorName, Expr initializer) {
+        emitDeclaratorTail(sb, declaratorType, declaratorName, initializer, false);
+    }
+
+    /**
+     * Emits the initializer portion of a variable declaration.
+     * atMemberOrGlobalScope=true for VariableDecl (class members and globals),
+     * false for DeclStatement (local variables inside function bodies).
+     * At member/global scope, paren-init is always a function declaration in C++.
+     * "Array<PVector> coords(0)" at member scope = "coords(int)" not a variable.
+     * Fix: use copy-init "= Type(args)" which is unambiguous at all scopes.
+     */
+    private static void emitDeclaratorTail(StringBuilder sb, TypeRef declaratorType, String declaratorName, Expr initializer, boolean atMemberOrGlobalScope) {
         if (initializer == null) return;
         if (initializer instanceof CallExpr ce && ce.callee() instanceof Identifier id
-            && id.name().equals(declaratorName)
-            && !(declaratorType instanceof NamedType nt && INITIALIZER_LIST_AMBIGUOUS_TYPES.contains(nt.baseName()))) {
-            sb.append('{');
+            && id.name().equals(declaratorName)) {
+            if (atMemberOrGlobalScope) {
+                sb.append(" = ").append(renderTypeRef(declaratorType)).append('(');
+                for (int i = 0; i < ce.args().size(); i++) {
+                    if (i > 0) sb.append(", ");
+                    sb.append(renderExpr(ce.args().get(i)));
+                }
+                sb.append(')');
+                return;
+            }
+            if (!(declaratorType instanceof NamedType nt && INITIALIZER_LIST_AMBIGUOUS_TYPES.contains(nt.baseName()))) {
+                sb.append('{');
+                for (int i = 0; i < ce.args().size(); i++) {
+                    if (i > 0) sb.append(", ");
+                    sb.append(renderExpr(ce.args().get(i)));
+                }
+                sb.append('}');
+                return;
+            }
+            sb.append('(');
             for (int i = 0; i < ce.args().size(); i++) {
                 if (i > 0) sb.append(", ");
                 sb.append(renderExpr(ce.args().get(i)));
-            }
-            sb.append('}');
-            return;
-        }
-        if (initializer instanceof CallExpr ce2 && ce2.callee() instanceof Identifier id2 && id2.name().equals(declaratorName)) {
-            sb.append('(');
-            for (int i = 0; i < ce2.args().size(); i++) {
-                if (i > 0) sb.append(", ");
-                sb.append(renderExpr(ce2.args().get(i)));
             }
             sb.append(')');
             return;
@@ -324,7 +354,14 @@ final class CodeGen {
             emitParamList(sb, fd.params());
             sb.append(')');
         } else {
-            sb.append(renderTypeRef(fd.returnType())).append(' ').append(fd.name()).append('(');
+            boolean isCastOp = fd.name().startsWith("operator ")
+                && fd.returnType() instanceof NamedType nt
+                && nt.baseName().equals("operator")
+                && nt.pointerDepth() == 0;
+            if (!isCastOp) {
+                sb.append(renderTypeRef(fd.returnType())).append(' ');
+            }
+            sb.append(fd.name()).append('(');
             emitParamList(sb, fd.params());
             sb.append(')');
         }
@@ -347,6 +384,7 @@ final class CodeGen {
         }
 
         if (fd.body() == null) {
+            if (fd.isPureVirtual()) sb.append(" = 0");
             sb.append(";\n");
             return;
         }
@@ -359,7 +397,17 @@ final class CodeGen {
         for (int i = 0; i < params.size(); i++) {
             if (i > 0) sb.append(", ");
             Param p = params.get(i);
-            if (p.name() != null && !p.name().isEmpty()) {
+            if (!p.innerArrayDims().isEmpty()) {
+                TypeRef base = p.type();
+                if (base instanceof NamedType nt && nt.pointerDepth() > 0) {
+                    base = new NamedType(nt.baseName(), nt.templateArgs(),
+                        nt.pointerDepth() - 1, nt.isReference(), nt.isConst());
+                }
+                sb.append(renderTypeRef(base)).append(" (*").append(p.name()).append(")");
+                for (int dim : p.innerArrayDims()) {
+                    sb.append("[").append(dim > 0 ? dim : "").append("]");
+                }
+            } else if (p.name() != null && !p.name().isEmpty()) {
                 sb.append(renderTypeAndName(p.type(), p.name()));
             } else {
                 sb.append(renderTypeRef(p.type()));
@@ -646,12 +694,14 @@ final class CodeGen {
             return "(" + renderExpr(t.condition()) + " ? " + renderExpr(t.thenExpr()) + " : " + renderExpr(t.elseExpr()) + ")";
         }
         if (e instanceof CallExpr c) {
-            StringBuilder sb = new StringBuilder(renderExpr(c.callee())).append('(');
+            char open = c.isBraceInit() ? '{' : '(';
+            char close = c.isBraceInit() ? '}' : ')';
+            StringBuilder sb = new StringBuilder(renderExpr(c.callee())).append(open);
             for (int i = 0; i < c.args().size(); i++) {
                 if (i > 0) sb.append(", ");
                 sb.append(renderExpr(c.args().get(i)));
             }
-            return sb.append(')').toString();
+            return sb.append(close).toString();
         }
         if (e instanceof MemberAccessExpr m) {
             return renderExpr(m.target()) + (m.isArrow() ? "->" : ".") + m.memberName();

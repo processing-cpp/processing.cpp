@@ -45,6 +45,41 @@ ENGINE_SOURCES = [
     "Processing_defaults.cpp",
 ]
 
+# Fallback only -- get_library_version() below reads the real value from
+# mode.properties at generation time. This constant exists so a missing
+# or unparseable mode.properties degrades to an obviously-a-fallback
+# version rather than crashing the generator outright, since shipping a
+# package without a version isn't worse than a hard failure here.
+_FALLBACK_VERSION = "0.0.0"
+
+
+def get_library_version() -> str:
+    """Reads prettyVersion from mode.properties -- the same version
+    number CppMode itself reports inside the Processing IDE -- so the
+    standalone packages and the IDE plugin can never silently drift to
+    different version numbers from having two separately-maintained
+    sources of truth. Used for the CMake package's
+    write_basic_package_version_file() call, so find_package(processing_cpp 1.0)
+    -style version constraints (if anyone ever writes one) check against
+    a real, meaningful number instead of an arbitrary one."""
+    props_path = REPO_ROOT / "mode.properties"
+    try:
+        for line in props_path.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("prettyVersion="):
+                value = line.split("=", 1)[1].strip()
+                if value:
+                    return value
+    except OSError:
+        pass
+    print(
+        f"warning: could not read prettyVersion from {props_path} -- "
+        f"falling back to {_FALLBACK_VERSION}. The generated package's "
+        f"version number will not reflect the real CppMode version.",
+        file=sys.stderr,
+    )
+    return _FALLBACK_VERSION
+
 
 def die(msg: str) -> None:
     print(f"error: {msg}", file=sys.stderr)

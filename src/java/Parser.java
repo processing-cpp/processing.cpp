@@ -118,6 +118,14 @@ final class Parser {
         return peek().isOp(op);
     }
 
+    /** True if the current token is the integer literal "0" specifically
+     * (not any other literal or expression) -- used to recognize the
+     * pure-virtual specifier "= 0" precisely. */
+    private boolean checkLiteralZero() {
+        CppLexerToken t = peek();
+        return t.type() == CppLexerTokenType.INT_LITERAL && t.text().equals("0");
+    }
+
     private boolean matchKeyword(String kw) {
         if (checkKeyword(kw)) { advance(); return true; }
         return false;
@@ -148,8 +156,25 @@ final class Parser {
         throw error("expected '" + kw + "' but found '" + peek().text() + "'");
     }
 
+    /**
+     * Set of KEYWORD-classified tokens that are NOT actually reserved
+     * words in real Processing/Java/C++ -- they're lexed as keywords
+     * purely so they can be recognized as TYPE names in a type-name
+     * position, but that classification incorrectly also blocked them
+     * from ever being used as a declarator/variable NAME. Found via a
+     * real user sketch (RayTracer.pde's "Vec3 color;" struct field).
+     * Deliberately a narrow, explicit allow-list, not a general
+     * relaxation -- real reserved words must still be rejected as names.
+     */
+    private static final java.util.Set<String> PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES = java.util.Set.of(
+        "color"
+    );
+
     private CppLexerToken expectIdentifier() {
         if (check(CppLexerTokenType.IDENTIFIER)) return advance();
+        if (check(CppLexerTokenType.KEYWORD) && PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES.contains(peek().text())) {
+            return advance();
+        }
         throw error("expected identifier but found '" + peek().text() + "'");
     }
 
@@ -396,11 +421,27 @@ final class Parser {
             }
         }
 
+        // Pure-virtual specifier ("= 0"), e.g. "virtual ~A() = 0;" -- a
+        // real, valid C++ idiom for ensuring polymorphic deletion through
+        // an abstract base. Must be checked BEFORE the body/";" check
+        // below, since "= 0;" replaces both.
+        boolean isPureVirtual = false;
+        if (checkOp("=")) {
+            int save = pos;
+            advance();
+            if (checkLiteralZero()) {
+                advance();
+                isPureVirtual = true;
+            } else {
+                pos = save;
+            }
+        }
+
         Block body = checkPunct("{") ? parseBlock() : null;
         if (body == null) expectPunct(";");
 
         return new FunctionDecl(null, name, templateParams, params, initList, body,
-            !isDestructor, isDestructor, isVirtual, isOverride, isConst, false,
+            !isDestructor, isDestructor, isVirtual, isOverride, isConst, false, isPureVirtual,
             start.line(), start.col(), leadingComments);
     }
 
@@ -491,10 +532,31 @@ final class Parser {
                 if (matchKeyword("const")) { isMethodConst = true; continue; }
                 if (matchKeyword("override")) { isOverride = true; continue; }
             }
+            // Trailing return type: "auto f() -> int" -- "->" is PUNCTUATION
+            // in this lexer, so checkPunct not checkOp.
+            if (checkPunct("->")) {
+                advance();
+                parseTypeRef(); // consume and discard
+            }
+            // Pure-virtual specifier ("= 0"), e.g. "virtual void draw() = 0;"
+            // -- a real, ordinary OOP idiom for declaring an abstract
+            // method on a base class. Must be checked BEFORE the
+            // body/";" check below, since "= 0;" replaces both.
+            boolean isPureVirtual = false;
+            if (checkOp("=")) {
+                int save = pos;
+                advance();
+                if (checkLiteralZero()) {
+                    advance();
+                    isPureVirtual = true;
+                } else {
+                    pos = save;
+                }
+            }
             Block body = checkPunct("{") ? parseBlock() : null;
             if (body == null) expectPunct(";");
             FunctionDecl fn = new FunctionDecl(type, name, templateParams, params, List.of(), body,
-                false, false, isVirtual, isOverride, isMethodConst, isStatic,
+                false, false, isVirtual, isOverride, isMethodConst, isStatic, isPureVirtual,
                 start.line(), start.col(), leadingComments);
             return List.of(fn);
         }
@@ -598,7 +660,27 @@ final class Parser {
     private String parseFunctionOrVariableName() {
         if (checkKeyword("operator")) {
             CppLexerToken opKw = advance();
-            CppLexerToken opTok = advance(); // the operator symbol itself, e.g. "==", "+", "<<"
+            if (checkPunct("[")) {
+                advance(); expectPunct("]");
+                return opKw.text() + "[]";
+            }
+            if (checkPunct("(")) {
+                advance(); expectPunct(")");
+                return opKw.text() + "()";
+            }
+            if (checkKeyword("new") || checkKeyword("delete")) {
+                CppLexerToken kw = advance();
+                return opKw.text() + " " + kw.text();
+            }
+            if (check(CppLexerTokenType.KEYWORD) && CAST_OPERATOR_TYPE_KEYWORDS.contains(peek().text())) {
+                CppLexerToken castTok = advance();
+                return opKw.text() + " " + castTok.text();
+            }
+            if (check(CppLexerTokenType.IDENTIFIER)) {
+                CppLexerToken castTok = advance();
+                return opKw.text() + " " + castTok.text();
+            }
+            CppLexerToken opTok = advance(); // ordinary single-token operator, e.g. "==", "+", "<<"
             return opKw.text() + opTok.text();
         }
         String name = expectIdentifier().text();
@@ -1242,6 +1324,13 @@ final class Parser {
                 CppLexerToken t = peek();
                 List<Expr> args = parseArgList();
                 expr = new CallExpr(expr, args, t.line(), t.col(), List.of());
+            } else if (checkPunct("{") && expr instanceof Identifier id && id.name().contains("<")) {
+                // Brace-init of a templated type, e.g. "Rect<float>{x, y, w, h}"
+                // -- only reachable when the callee Identifier already has
+                // template args folded into its name.
+                CppLexerToken t = peek();
+                InitializerListExpr init = (InitializerListExpr) parseInitializerList();
+                expr = new CallExpr(expr, init.elements(), true, t.line(), t.col(), List.of());
             } else if (checkPunct("[")) {
                 CppLexerToken t = advance();
                 Expr index = parseExpr();
@@ -1392,7 +1481,10 @@ final class Parser {
             } catch (ParseException e) {
                 return false;
             }
-            return checkPunct("(");
+            // Brace-init of a templated type ("Rect<float>{x, y, w, h}")
+            // is real, ordinary modern C++. Previously only recognized
+            // the paren-init form.
+            return checkPunct("(") || checkPunct("{");
         } finally {
             pos = save;
         }
@@ -1489,15 +1581,29 @@ final class Parser {
     private Param parseParam() {
         TypeRef type = parseTypeRef();
         String name = expectIdentifier().text();
-        if (matchPunct("[")) {
-            expectPunct("]");
+        List<Integer> innerDims = new ArrayList<>();
+        if (checkPunct("[")) {
+            boolean first = true;
+            while (checkPunct("[")) {
+                advance();
+                Integer dimSize = null;
+                if (!checkPunct("]")) {
+                    if (peek().type() == CppLexerTokenType.INT_LITERAL) {
+                        try { dimSize = Integer.parseInt(peek().text()); } catch (NumberFormatException ignored) {}
+                    }
+                    parseExpr();
+                }
+                expectPunct("]");
+                if (!first) innerDims.add(dimSize != null ? dimSize : 0);
+                first = false;
+            }
             type = bumpPointerDepth(type);
         }
         Expr defaultValue = null;
         if (matchOp("=")) {
             defaultValue = parseExpr();
         }
-        return new Param(type, name, defaultValue);
+        return new Param(type, name, defaultValue, innerDims);
     }
 
     private TypeRef bumpPointerDepth(TypeRef type) {
@@ -1664,7 +1770,10 @@ final class Parser {
             } catch (ParseException e) {
                 return false;
             }
-            if (!check(CppLexerTokenType.IDENTIFIER)) return false;
+            if (!check(CppLexerTokenType.IDENTIFIER)
+                && !(check(CppLexerTokenType.KEYWORD) && PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES.contains(peek().text()))) {
+                return false;
+            }
             advance();
             return checkPunct(":");
         } finally {
@@ -1824,6 +1933,11 @@ final class Parser {
         "try", "delete", "case", "default", "else", "throw"
     );
 
+    private static final java.util.Set<String> CAST_OPERATOR_TYPE_KEYWORDS = java.util.Set.of(
+        "int", "float", "double", "bool", "char", "long", "short",
+        "unsigned", "signed", "void", "size_t"
+    );
+
     private boolean looksLikeDeclaration() {
         int save = pos;
         try {
@@ -1839,6 +1953,7 @@ final class Parser {
             // own handling of that same qualifier.
             if (checkKeyword("static")) advance();
             if (checkKeyword("const")) advance();
+            if (checkKeyword("constexpr")) advance();
             if (checkKeyword("static")) advance(); // tolerate either order
             if (!(check(CppLexerTokenType.IDENTIFIER) || check(CppLexerTokenType.KEYWORD))) return false;
             // Function-pointer-variable form: "Type (*name)(Params) = init;"
@@ -1852,7 +1967,10 @@ final class Parser {
             } catch (ParseException e) {
                 return false;
             }
-            if (!check(CppLexerTokenType.IDENTIFIER)) return false;
+            if (!check(CppLexerTokenType.IDENTIFIER)
+                && !(check(CppLexerTokenType.KEYWORD) && PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES.contains(peek().text()))) {
+                return false;
+            }
             advance(); // tentatively consume the name
             return checkOp("=") || checkPunct(";") || checkPunct("[") || checkPunct(",") || checkPunct("(") || checkPunct("{");
         } finally {
@@ -1880,6 +1998,7 @@ final class Parser {
         // top-level path's own tolerance.
         boolean isStatic = matchKeyword("static");
         boolean isConst = matchKeyword("const");
+        if (matchKeyword("constexpr")) isConst = true;
         if (!isStatic) isStatic = matchKeyword("static");
 
         if (looksLikeFunctionPointerVariable()) {
