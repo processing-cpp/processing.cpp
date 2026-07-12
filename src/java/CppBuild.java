@@ -1026,6 +1026,7 @@ public class CppBuild {
     warnReservedNames(code, listener);
     checkForUnsupportedJavaArraySyntax(code, listener);
     checkForArrayListGetValueCopy(code, listener);
+    checkForArrayListGetDotAccess(code, listener);
     code = stripRawStringLiterals(code);
     code = code.replaceAll("(?<=[0-9a-fA-FxXbB])'(?=[0-9a-fA-F])", "");
     code = javaToC(code);
@@ -1206,6 +1207,10 @@ public class CppBuild {
         } else if (item instanceof FunctionDecl fdce && fdce.isConstexpr()) {
           // constexpr functions must be at namespace scope for static_assert to use them
           autoHoisted.add(item);
+        } else if (item instanceof VariableDecl vdq && vdq.name().contains("::")) {
+          // Out-of-class static member definition: "int Agent::totalAgents = 0"
+          // must be at namespace scope, never inside struct Sketch
+          autoHoisted.add(item);
         } else {
           filteredRest.add(item);
         }
@@ -1240,6 +1245,13 @@ public class CppBuild {
       for (var e : enumResult.enums) out.append(CodeGen.generateNode(e, 0));
       for (FunctionDecl fd : forwardDecls) out.append(CodeGen.generateNode(fd, 0));
       for (var v : arrayResult.hoistedSizingConstants) out.append(CodeGen.generateNode(v, 0));
+      // Emit hoisted dependency variables BEFORE class definitions so
+      // hoisted classes can reference them (e.g. FloatList readings used by SensorBank).
+      java.util.Set<String> autoHoistedNames2 = new java.util.HashSet<>();
+      for (TopLevelItem av : autoHoisted) if (av instanceof VariableDecl avd2) autoHoistedNames2.add(avd2.name());
+      for (var v : depResult.hoistedVariables) {
+        if (!autoHoistedNames2.contains(v.name())) out.append(CodeGen.generateNode(v, 0));
+      }
       // Forward-declare every hoisted class before any definitions -- handles
       // cross-references between classes (e.g. Liquid::contains(Mover*) when
       // Liquid is emitted before Mover). Template classes can't be forward-declared
@@ -1258,12 +1270,7 @@ public class CppBuild {
       for (TopLevelItem alias : deferredAliases) out.append(CodeGen.generateNode(alias, 0));
       // Emit auto-hoisted variables at namespace scope
       for (TopLevelItem av : autoHoisted) out.append(CodeGen.generateNode(av, 0));
-      // Skip auto-hoisted variables from hoistedVariables to avoid redefinition
-      java.util.Set<String> autoHoistedNames = new java.util.HashSet<>();
-      for (TopLevelItem av : autoHoisted) if (av instanceof VariableDecl avd) autoHoistedNames.add(avd.name());
-      for (var v : depResult.hoistedVariables) {
-        if (!autoHoistedNames.contains(v.name())) out.append(CodeGen.generateNode(v, 0));
-      }
+      // hoistedVariables already emitted before class definitions above
       for (var v : arrayResult.hoistedArrays) out.append(CodeGen.generateNode(v, 0));
       for (FunctionDecl fd : depResult.hoistedFunctions) out.append(CodeGen.generateNode(fd, 0));
       // constexprScope (the NOT-PORTED half -- see EnumScopeExtractor's
@@ -2310,6 +2317,45 @@ public class CppBuild {
       }
     }
   }
+  // [E0005b] Detect inline .get().field pattern: particles.get(0).x
+  // This is a pointer dereference error -- should use -> not .
+  private void checkForArrayListGetDotAccess(String code, RunnerListener listener) {
+    List<CppLexerToken> tokens;
+    try { tokens = new CppLexer(code).tokenize(); } catch (Exception e) { return; }
+    for (int i = 0; i + 6 < tokens.size(); i++) {
+      // Pattern: .get( ... ) . IDENTIFIER (not "(") -- member access on get() result
+      if (!tokens.get(i).isPunct(".")) continue;
+      if (!tokens.get(i + 1).text().equals("get")) continue;
+      if (!tokens.get(i + 2).isPunct("(")) continue;
+      // Consume the get(...) args
+      int j = i + 3; int depth = 1;
+      while (j < tokens.size() && depth > 0) {
+        if (tokens.get(j).isPunct("(")) depth++;
+        else if (tokens.get(j).isPunct(")")) depth--;
+        j++;
+      }
+      // After get(...), check if "." follows (not "->")
+      if (j < tokens.size() && tokens.get(j).isPunct(".")
+          && j + 1 < tokens.size()
+          && tokens.get(j + 1).type() == CppLexerTokenType.IDENTIFIER) {
+        int line = tokens.get(i).line();
+        String field = tokens.get(j + 1).text();
+        String url = getWebsiteBaseUrl() + "/error/E0005.html";
+        String msg =
+          "\n[E0005] .get() returns T* (pointer) -- use -> not . to access members.\n" +
+          "  Line " + line + ": \"...get(...)." + field + "\"\n" +
+          "  Fix: use -> instead of .:\n" +
+          "    list.get(i)->" + field + ";\n" +
+          "  Or store as pointer first:\n" +
+          "    Type* p = list.get(i);  p->" + field + ";\n" +
+          "  Reference: " + url + "\n";
+        System.err.println(msg);
+        listener.statusError("E0005: use -> not . after ArrayList.get() -- see console. " + url);
+        throw new AlreadyReportedException("E0005: .get().field -- see console.");
+      }
+    }
+  }
+
   private void checkForUnsupportedJavaArraySyntax(String code, RunnerListener listener) {
     try {
       CppJavaArrayCheck.check(code);

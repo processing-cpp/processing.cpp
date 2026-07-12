@@ -81,17 +81,26 @@ final class ClassHoister {
         }
 
         // Deduplicate: drop empty forward declarations when a full definition exists.
+        // When a forward decl is replaced by a full definition, use the full
+        // definition's position in the list (not the forward decl's position)
+        // so that class ordering matches source order of definitions.
         java.util.Map<String, TypeDef> best = new java.util.LinkedHashMap<>();
+        java.util.List<String> order = new java.util.ArrayList<>();
         for (TypeDef td : classBlocks) {
             String name = td.name();
             TypeDef existing = best.get(name);
             if (existing == null) {
                 best.put(name, td);
+                order.add(name);
             } else if (!td.members().isEmpty() && existing.members().isEmpty()) {
-                best.put(name, td); // full definition beats forward declaration
+                // Full definition replaces forward decl -- move to end to preserve source order
+                best.put(name, td);
+                order.remove(name);
+                order.add(name);
             }
         }
-        classBlocks = new ArrayList<>(best.values());
+        classBlocks = new ArrayList<>();
+        for (String n : order) classBlocks.add(best.get(n));
 
         boolean changed = true;
         for (int pass = 0; pass < classBlocks.size() * 2 && changed; pass++) {
@@ -502,11 +511,59 @@ final class PSketchInjector {
      *         never first) unless the class has no methods at all
      */
     public static List<Result> injectAll(List<TypeDef> hoistedClasses) {
+        // Build map of class name -> TypeDef for transitive base lookup
+        java.util.Map<String, TypeDef> byName = new java.util.LinkedHashMap<>();
+        for (TypeDef td : hoistedClasses) byName.put(td.name(), td);
+
+        // Determine which classes will get _PSketch injected
+        // A class should NOT get _PSketch if any of its bases already
+        // (transitively) gets _PSketch -- it will inherit it from them.
+        // This prevents ambiguous base errors in diamond hierarchies.
+        java.util.Set<String> willBeInjected = new java.util.LinkedHashSet<>();
+        for (TypeDef td : hoistedClasses) {
+            Result r = inject(td);
+            if (r.injected()) willBeInjected.add(td.name());
+        }
+
+        // For each class that would get _PSketch, check if any of its
+        // transitive bases also gets _PSketch. If so, skip injection
+        // since it inherits _PSketch already.
+        java.util.Set<String> skipInjection = new java.util.HashSet<>();
+        for (TypeDef td : hoistedClasses) {
+            if (!willBeInjected.contains(td.name())) continue;
+            // Check if any base (transitively) is also getting _PSketch
+            if (transitiveBasesGetPSketch(td, willBeInjected, byName)) {
+                skipInjection.add(td.name());
+            }
+        }
+
         List<Result> results = new ArrayList<>(hoistedClasses.size());
         for (TypeDef td : hoistedClasses) {
-            results.add(inject(td));
+            if (skipInjection.contains(td.name())) {
+                results.add(new Result(td, false)); // skip -- inherits via base
+            } else {
+                results.add(inject(td));
+            }
         }
         return results;
+    }
+
+    /** True if any transitive base of td is in the willBeInjected set. */
+    private static boolean transitiveBasesGetPSketch(
+            TypeDef td,
+            java.util.Set<String> willBeInjected,
+            java.util.Map<String, TypeDef> byName) {
+        for (String base : td.baseClasses()) {
+            // Strip "virtual ", "public ", "protected ", "private " qualifiers
+            String baseName = base.replaceAll("\b(virtual|public|protected|private)\b\s*", "").trim();
+            // Strip template args if any
+            int lt = baseName.indexOf('<');
+            if (lt >= 0) baseName = baseName.substring(0, lt).trim();
+            if (willBeInjected.contains(baseName)) return true;
+            TypeDef baseTd = byName.get(baseName);
+            if (baseTd != null && transitiveBasesGetPSketch(baseTd, willBeInjected, byName)) return true;
+        }
+        return false;
     }
 
     private static Result inject(TypeDef td) {

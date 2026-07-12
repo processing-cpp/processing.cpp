@@ -1489,6 +1489,9 @@ static constexpr int KEY_S=83; static constexpr int KEY_T=84;
 static constexpr int KEY_U=85; static constexpr int KEY_V=86;
 static constexpr int KEY_W=87; static constexpr int KEY_X=88;
 static constexpr int KEY_Y=89; static constexpr int KEY_Z=90;
+static constexpr int KEY_0=48; static constexpr int KEY_1=49; static constexpr int KEY_2=50; static constexpr int KEY_3=51; static constexpr int KEY_4=52;
+static constexpr int KEY_5=53; static constexpr int KEY_6=54; static constexpr int KEY_7=55; static constexpr int KEY_8=56; static constexpr int KEY_9=57;
+static constexpr int SPACE=32;
 
 static constexpr int PERIOD_KEY = 46;
 static constexpr int SLASH_KEY  = 47;

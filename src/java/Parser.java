@@ -694,13 +694,13 @@ public final class Parser {
 
     /** "public BaseName" / "private BaseName" / "protected BaseName" / bare "BaseName". */
     private String parseBaseClassEntry() {
-        matchKeyword("virtual");
+        boolean isVirtualBase = matchKeyword("virtual");
         matchKeyword("public");
         if (!checkKeyword("public")) {
             matchKeyword("private");
             matchKeyword("protected");
         }
-        matchKeyword("virtual"); // virtual can appear before OR after access specifier
+        if (!isVirtualBase) isVirtualBase = matchKeyword("virtual");
         String name = parseQualifiedTypeName();
         // Consume template args on base class name: "Base<Derived>" (CRTP),
         // "std::enable_shared_from_this<T>", etc.
@@ -720,7 +720,7 @@ public final class Parser {
             sb.append('>');
             name = sb.toString();
         }
-        return name;
+        return isVirtualBase ? "virtual " + name : name;
     }
 
     /**
@@ -2534,6 +2534,8 @@ public final class Parser {
             return new Capture("", true);
         }
         boolean byRef = matchOp("&");
+        // "this" is a keyword capture: [this] or [&this]
+        if (checkKeyword("this")) { advance(); return new Capture("this", byRef); }
         String name = expectIdentifier().text();
         // Init-capture: "z = z * 2" or "w = x + y" -- encode into name string
         if (checkOp("=")) {
