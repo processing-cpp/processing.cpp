@@ -1413,6 +1413,8 @@ public final class Parser {
     }
 
     private TypeRef parseTypeRefAfterConst(boolean isConst) {
+        // typename X::Y -- dependent type name, consume and continue
+        if (checkKeyword("typename")) advance();
 
         // decltype(expr) -- C++11 computed type
         if (checkKeyword("decltype")) {
@@ -1570,8 +1572,11 @@ public final class Parser {
         List<TypeRef> args = new ArrayList<>();
         if (!checkOp(">")) {
             args.add(parseTemplateArg());
+            matchPunct("..."); // trailing pack expansion: "Ts..."
             while (matchPunct(",")) {
+                if (checkOp(">") || checkOp(">>")) break;
                 args.add(parseTemplateArg());
+                matchPunct("..."); // trailing pack expansion
             }
         }
         // Note: ">>"  closing two nested template lists at once (e.g.
@@ -1646,6 +1651,12 @@ public final class Parser {
             }
             dt.append(")");
             return new NamedType(dt.toString(), List.of(), 0, false, false);
+        }
+        // Pack expansion "..." trailing a type: "Ts..." in template args
+        // Also handles standalone "..." as a variadic marker
+        if (checkPunct("...")) {
+            advance();
+            return new NamedType("...", List.of(), 0, false, false);
         }
         // sizeof expression: sizeof(T) or sizeof...(Args)
         if (checkKeyword("sizeof")) {
@@ -2451,7 +2462,9 @@ public final class Parser {
         if (checkPunct("{")) {
             return parseInitializerList(); // anonymous nested brace-init
         }
-        return parseExpr(); // expression (may itself end with {} for named brace-init via parsePrimary)
+        Expr e = parseExpr();
+        matchPunct("..."); // pack expansion in brace-init: "{args...}"
+        return e;
     }
 
     /**
@@ -2537,6 +2550,8 @@ public final class Parser {
         // "this" is a keyword capture: [this] or [&this]
         if (checkKeyword("this")) { advance(); return new Capture("this", byRef); }
         String name = expectIdentifier().text();
+        // Pack expansion in capture: "[args...]"
+        if (checkPunct("...")) { advance(); name = name + "..."; }
         // Init-capture: "z = z * 2" or "w = x + y" -- encode into name string
         if (checkOp("=")) {
             advance();

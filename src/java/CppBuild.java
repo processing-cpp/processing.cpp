@@ -1027,6 +1027,7 @@ public class CppBuild {
     checkForUnsupportedJavaArraySyntax(code, listener);
     checkForArrayListGetValueCopy(code, listener);
     checkForArrayListGetDotAccess(code, listener);
+    checkForJavaStaticCallSyntax(code, listener);
     code = stripRawStringLiterals(code);
     code = code.replaceAll("(?<=[0-9a-fA-FxXbB])'(?=[0-9a-fA-F])", "");
     code = javaToC(code);
@@ -2353,6 +2354,73 @@ public class CppBuild {
         listener.statusError("E0005: use -> not . after ArrayList.get() -- see console. " + url);
         throw new AlreadyReportedException("E0005: .get().field -- see console.");
       }
+    }
+  }
+
+  // [E0006] Java static method/field call syntax: ClassName.member must be ClassName::member in C++
+  //
+  // Generalized rule: any identifier that starts with an uppercase letter followed
+  // by a "." and then another identifier (with optional "(") is likely a Java
+  // static access pattern. This covers:
+  //   Integer.parseInt(...)    -> Integer::parseInt(...)
+  //   Math.PI                  -> Math::PI (or just PI)
+  //   MyClass.CONSTANT         -> MyClass::CONSTANT
+  //   Collections.sort(...)    -> Collections::sort(...) or std::sort
+  //
+  // Excluded: known instance-access patterns where the variable name
+  // happens to start with uppercase (e.g. PImage, PFont, PVector variables).
+  private void checkForJavaStaticCallSyntax(String code, RunnerListener listener) {
+    List<CppLexerToken> tokens;
+    try { tokens = new CppLexer(code).tokenize(); } catch (Exception e) { return; }
+    // Types known to be used as instances (not static-only classes)
+    java.util.Set<String> instanceTypes = java.util.Set.of(
+        "PImage", "PFont", "PVector", "PShape", "PGraphics",
+        "ArrayList", "IntList", "FloatList", "StringList",
+        "String", "Array", "Table", "TableRow", "JSONObject", "JSONArray",
+        "PrintWriter", "BufferedReader", "XML"
+    );
+    // Definitely-static classes (always trigger E0006)
+    java.util.Set<String> staticClasses = java.util.Set.of(
+        "Integer", "Float", "Double", "Long", "Boolean", "Character",
+        "Byte", "Short", "Math", "Arrays", "Collections", "System",
+        "Thread", "Runtime", "Class", "Objects"
+    );
+    for (int i = 0; i + 2 < tokens.size(); i++) {
+      CppLexerToken t0 = tokens.get(i);
+      CppLexerToken t1 = tokens.get(i + 1);
+      CppLexerToken t2 = tokens.get(i + 2);
+      // Pattern: IDENTIFIER . IDENTIFIER where first IDENTIFIER starts uppercase
+      if (t0.type() != CppLexerTokenType.IDENTIFIER) continue;
+      if (!t1.isPunct(".")) continue;
+      if (t2.type() != CppLexerTokenType.IDENTIFIER) continue;
+      String firstName = t0.text();
+      if (firstName.isEmpty() || !Character.isUpperCase(firstName.charAt(0))) continue;
+      if (instanceTypes.contains(firstName)) continue; // known instance type
+      // Only fire for known static classes OR if preceded by nothing
+      // (i.e. not "obj.UpperMethod()" which is a method call)
+      // Check context: if previous token is ")", "]", or identifier, skip
+      boolean preceded = i > 0 && (
+          tokens.get(i-1).isPunct(")")
+          || tokens.get(i-1).isPunct("]")
+          || tokens.get(i-1).isPunct(">")
+          || tokens.get(i-1).type() == CppLexerTokenType.IDENTIFIER);
+      if (preceded && !staticClasses.contains(firstName)) continue;
+      // Check that next token after t2 is "(" or nothing method-like
+      boolean isCall = i + 3 < tokens.size() && tokens.get(i + 3).isPunct("(");
+      boolean isField = !isCall; // field access like Math.PI
+      if (!staticClasses.contains(firstName) && !isCall) continue; // only fire on known statics for field access
+      int line = t0.line();
+      String url = getWebsiteBaseUrl() + "/error/E0006.html";
+      String access = t2.text() + (isCall ? "(...)" : "");
+      String msg =
+        "\n[E0006] Java static access syntax is not valid in C++.\n" +
+        "  Line " + line + ": \"" + firstName + "." + access + "\"\n" +
+        "  In C++, static members use :: not .:\n" +
+        "    " + firstName + "::" + access + "\n" +
+        "  Reference: " + url + "\n";
+      System.err.println(msg);
+      listener.statusError("E0006: use " + firstName + "::" + t2.text() + " not . -- see console");
+      throw new AlreadyReportedException("E0006: Java static access syntax -- see console.");
     }
   }
 
