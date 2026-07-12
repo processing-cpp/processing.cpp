@@ -1,6 +1,10 @@
 package processing.mode.cpp;
 
-
+import processing.mode.cpp.FunctionPointerType;
+import processing.mode.cpp.FunctionSignatureType;
+import processing.mode.cpp.NamedType;
+import processing.mode.cpp.Param;
+import processing.mode.cpp.TypeRef;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -10,15 +14,15 @@ import java.util.List;
  *
  * Design notes:
  *  - Comments are consumed by skipComments() and attached as leadingComments
- *    on the next real node produced, per the CppLexer's comment-as-first-class-
- *    token design (see CppLexer notes). This is the direct replacement for the
+ *    on the next real node produced, per the Lexer's comment-as-first-class-
+ *    token design (see Lexer notes). This is the direct replacement for the
  *    old blankCommentsAndLiterals regex pass.
  *  - Fail-fast: the first parse error throws ParseException immediately.
  *    No error recovery is attempted (see ParseException's notes for why).
  *  - Multi-declarator statements ("int rectX, rectY;") are desugared into
  *    multiple single-name nodes at this layer -- see parseVariableDeclTail.
  */
-final class Parser {
+public final class Parser {
 
     private final List<CppLexerToken> tokens;
     private int pos = 0;
@@ -45,7 +49,7 @@ final class Parser {
     // testing: a line comment can legally appear in the MIDDLE of a
     // multi-line expression (e.g. a function call whose arguments are each
     // commented, confirmed real by Move_Eye.pde's
-    // "camera(x, y, z, // eyeX, eyeY, eyeZ \n ...)"). The original design
+    // "camera(x, y, z, // eyeX, eyeY, eyeZ \n ...")). The original design
     // only collected leading comments at statement/declaration boundaries
     // via consumeLeadingComments(), which left every OTHER parse point
     // (inside parseArgList, parsePostfix, anywhere mid-expression) just as
@@ -120,7 +124,8 @@ final class Parser {
 
     /** True if the current token is the integer literal "0" specifically
      * (not any other literal or expression) -- used to recognize the
-     * pure-virtual specifier "= 0" precisely. */
+     * pure-virtual specifier "= 0" precisely, without accidentally
+     * matching some other "= <expr>" shape. */
     private boolean checkLiteralZero() {
         CppLexerToken t = peek();
         return t.type() == CppLexerTokenType.INT_LITERAL && t.text().equals("0");
@@ -160,11 +165,22 @@ final class Parser {
      * Set of KEYWORD-classified tokens that are NOT actually reserved
      * words in real Processing/Java/C++ -- they're lexed as keywords
      * purely so they can be recognized as TYPE names in a type-name
-     * position, but that classification incorrectly also blocked them
-     * from ever being used as a declarator/variable NAME. Found via a
-     * real user sketch (RayTracer.pde's "Vec3 color;" struct field).
-     * Deliberately a narrow, explicit allow-list, not a general
-     * relaxation -- real reserved words must still be rejected as names.
+     * position (see Lexer's KEYWORDS set and its own comment on this),
+     * but that classification incorrectly also blocked them from ever
+     * being used as a declarator/variable NAME, which real Processing
+     * code is free to do.
+     *
+     * Found via a real sketch (RayTracer.pde's "Vec3 color;" struct
+     * field -- "color" the Processing pseudo-type, used as an ordinary
+     * field name, which is completely legal Processing/C++ and not
+     * something the language itself reserves) hitting
+     * "expected identifier but found 'color'" outright.
+     *
+     * Deliberately a narrow, explicit allow-list -- NOT a general
+     * relaxation letting any KEYWORD stand in for an identifier, which
+     * would incorrectly let real reserved words ("int", "if", "class",
+     * etc.) be used as names too. Only pseudo-type keywords that this
+     * project itself introduced for type-name recognition belong here.
      */
     private static final java.util.Set<String> PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES = java.util.Set.of(
         "color"
@@ -236,18 +252,95 @@ final class Parser {
      * single-element list.
      */
     private List<TopLevelItem> parseTopLevelItem(List<CppLexerToken> leadingComments) {
+        consumeAttributes();
         if (check(CppLexerTokenType.PREPROCESSOR_DIRECTIVE)) {
             CppLexerToken t = advance();
             return List.of(new PreprocessorLine(t.text(), t.line(), t.col(), leadingComments));
+        }
+
+        // C++20 concept definition: "concept Name = constraint-expr;"
+        // "concept" is lexed as IDENTIFIER (not in the keyword set), so
+        // use text comparison rather than checkKeyword.
+        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("concept")) {
+            int startPos = pos;
+            { int _d=0; while(!isAtEnd()){if(checkPunct("{"))_d++;else if(checkPunct("}")){if(_d==0){advance();break;}_d--;}else if(checkPunct(";")&&_d==0)break;advance();} matchPunct(";"); }
+            // Reconstruct the raw text and emit as-is (concept defs are valid at
+            // namespace scope and must be visible before use in template params).
+            StringBuilder raw = new StringBuilder();
+            for (int i = startPos; i < pos - 1; i++) {
+                if (i > startPos) raw.append(' ');
+                raw.append(tokens.get(i).text());
+            }
+            raw.append(';');
+            return List.of(new PreprocessorLine(raw.toString(), tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
         }
 
         List<String> templateParams = List.of();
         if (checkKeyword("template")) {
             templateParams = parseTemplateParamList();
             consumeLeadingComments();
+
+            // C++20 concept definition: "template<typename T> concept Foo = ..."
+            if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("concept")) {
+                int startPos = pos - templateParams.size() - 3; // approximate; use simpler reconstruction
+                // Build the full concept declaration text
+                StringBuilder raw = new StringBuilder("template<");
+                for (int i = 0; i < templateParams.size(); i++) {
+                    if (i > 0) raw.append(", ");
+                    raw.append(templateParams.get(i));
+                }
+                raw.append("> ");
+                // Capture from "concept" through ";"
+                int conceptStart = pos;
+                { int _d=0; while(!isAtEnd()){if(checkPunct("{"))_d++;else if(checkPunct("}")){if(_d==0){advance();break;}_d--;}else if(checkPunct(";")&&_d==0)break;advance();} } matchPunct(";");
+                for (int i = conceptStart; i < pos - 1; i++) {
+                    if (i > conceptStart) raw.append(' ');
+                    raw.append(tokens.get(i).text());
+                }
+                raw.append(';');
+                return List.of(new PreprocessorLine(raw.toString(), tokens.get(conceptStart).line(), tokens.get(conceptStart).col(), leadingComments));
+            }
+
+            // C++20 "requires" clause after template params.
+            // "requires" is lexed as IDENTIFIER (not in the keyword set).
+            if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("requires")) {
+                advance(); // 'requires'
+                int depth = 0;
+                while (!isAtEnd()) {
+                    if (checkPunct("(") || checkPunct("[")) { depth++; advance(); continue; }
+                    if (checkPunct(")") || checkPunct("]")) { depth--; advance(); continue; }
+                    if (checkOp("<")) { depth++; advance(); continue; }
+                    if (checkOp(">")) { depth--; advance(); continue; }
+                    if (checkOp(">>")) { depth -= 2; advance(); continue; }
+                    if (checkPunct("{") || checkPunct(";")) break;
+                    if (depth == 0) {
+                        if (checkKeyword("void") || checkKeyword("auto") ||
+                            checkKeyword("int")  || checkKeyword("float") ||
+                            checkKeyword("bool") || checkKeyword("char") ||
+                            checkKeyword("double")|| checkKeyword("long") ||
+                            checkKeyword("class") || checkKeyword("struct") ||
+                            checkKeyword("const") || checkKeyword("static") ||
+                            checkKeyword("inline")|| checkKeyword("virtual") ||
+                            checkKeyword("explicit")|| checkKeyword("friend")) {
+                            break;
+                        }
+                        if (check(CppLexerTokenType.IDENTIFIER) && pos + 1 < tokens.size()) {
+                            CppLexerToken next = tokens.get(pos + 1);
+                            if (next.type() == CppLexerTokenType.IDENTIFIER) break;
+                        }
+                    }
+                    advance();
+                }
+            }
+
+            // C++20 concept used as a constraint directly in the template head:
+            // "template<Concept T>" -- Concept is an identifier, not typename/class.
+            // This is handled in parseTemplateParamName already.
         }
 
         if (checkKeyword("class") || checkKeyword("struct")) {
+            // Partial specialization: "template<typename T> struct Foo<T*> { ... }"
+            // After parsing the class/struct, check for a specialization arg list.
             return List.of(parseTypeDef(leadingComments, templateParams));
         }
         if (checkKeyword("enum")) {
@@ -256,15 +349,84 @@ final class Parser {
         if (checkKeyword("namespace")) {
             return List.of(parseNamespaceDecl(leadingComments));
         }
-        if (checkKeyword("using") && peek(1).isKeyword("namespace")) {
+        // typedef -- emit verbatim as-is (covers function-pointer typedefs, etc.)
+        if (checkKeyword("typedef")) {
+            int startPos = pos;
+            { int _d=0; while(!isAtEnd()){if(checkPunct("{"))_d++;else if(checkPunct("}")){if(_d==0){advance();break;}_d--;}else if(checkPunct(";")&&_d==0)break;advance();} matchPunct(";"); }
+            StringBuilder raw = new StringBuilder();
+            for (int i = startPos; i < pos - 1; i++) {
+                if (i > startPos) raw.append(' ');
+                raw.append(tokens.get(i).text());
+            }
+            raw.append(';');
+            return List.of(new PreprocessorLine(raw.toString(), tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
+        }
+        if (checkKeyword("typedef")) {
+            int startPos = pos;
+            { int _d=0; while(!isAtEnd()){if(checkPunct("{"))_d++;else if(checkPunct("}")){if(_d==0){advance();break;}_d--;}else if(checkPunct(";")&&_d==0)break;advance();} } matchPunct(";");
+            StringBuilder raw = new StringBuilder();
+            for (int i = startPos; i < pos - 1; i++) {
+                if (i > startPos) raw.append(' ');
+                raw.append(tokens.get(i).text());
+            }
+            raw.append(';');
+            return List.of(new PreprocessorLine(raw.toString(), tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
+        }
+        if (checkKeyword("typedef")) {
+            int startPos = pos;
+            { int _d=0; while(!isAtEnd()){if(checkPunct("{"))_d++;else if(checkPunct("}")){if(_d==0){advance();break;}_d--;}else if(checkPunct(";")&&_d==0)break;advance();} } matchPunct(";");
+            StringBuilder raw = new StringBuilder();
+            for (int i = startPos; i < pos - 1; i++) {
+                if (i > startPos) raw.append(' ');
+                raw.append(tokens.get(i).text());
+            }
+            raw.append(';');
+            return List.of(new PreprocessorLine(raw.toString(), tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
+        }
+        // static_assert at top level: emit verbatim as PreprocessorLine
+        if (checkKeyword("static_assert")) {
+            int startPos = pos; advance();
+            expectPunct("("); int _d=1;
+            while (!isAtEnd() && _d > 0) {
+                if (checkPunct("(")) _d++; else if (checkPunct(")")) _d--;
+                advance();
+            }
+            matchPunct(";");
+            StringBuilder raw = new StringBuilder();
+            for (int i = startPos; i < pos; i++) { if (i > startPos) raw.append(" "); raw.append(tokens.get(i).text()); }
+            if (!raw.toString().endsWith(";")) raw.append(";");
+            CppLexerToken t0 = tokens.get(startPos);
+            return List.of(new TopLevelStatement(
+                new ExprStatement(new Identifier(raw.toString(), t0.line(), t0.col(), List.of()),
+                    t0.line(), t0.col(), List.of()),
+                t0.line(), t0.col(), leadingComments));
+        }
+        if (checkKeyword("using") && tokens.get(pos + 1).isKeyword("namespace")) {
             return List.of(parseUsingNamespaceDecl(leadingComments));
         }
-        // Destructor: "~Name() { ... }" or "virtual ~Name() { ... }" -- only
-        // valid inside a class body in real C++, but the parser doesn't
-        // enforce that positional rule; a later semantic pass can if it
-        // matters. Must look past an optional leading "virtual", same as
-        // the parseClassMember dispatch.
-        if (checkOp("~") || (checkKeyword("virtual") && peek(1).isOp("~"))) {
+        // using T = Type; -- type alias. Consume to ';' and emit as-is.
+        // template<typename T> using Alias = ...; -- template alias, prepend template params.
+        if (checkKeyword("using")) {
+            int startPos = pos;
+            { int _d=0; while(!isAtEnd()){if(checkPunct("{"))_d++;else if(checkPunct("}")){if(_d==0){advance();break;}_d--;}else if(checkPunct(";")&&_d==0)break;advance();} matchPunct(";"); }
+            StringBuilder raw = new StringBuilder();
+            // Prepend template params if this is a template alias
+            if (!templateParams.isEmpty()) {
+                raw.append("template<");
+                for (int ti = 0; ti < templateParams.size(); ti++) {
+                    if (ti > 0) raw.append(", ");
+                    raw.append(templateParams.get(ti));
+                }
+                raw.append("> ");
+            }
+            for (int i = startPos; i < pos - 1; i++) {
+                if (i > startPos) raw.append(' ');
+                raw.append(tokens.get(i).text());
+            }
+            raw.append(';');
+            return List.of(new PreprocessorLine(raw.toString(), tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
+        }
+        if (checkOp("~") || (checkKeyword("virtual") && tokens.get(pos + 1).isOp("~"))) {
             return List.of(parseFunctionOrConstructorOrDestructor(leadingComments, templateParams));
         }
 
@@ -276,10 +438,11 @@ final class Parser {
         expectKeyword("template");
         expectOp("<");
         List<String> params = new ArrayList<>();
+        // template<> is a valid explicit full specialization marker -- emit as empty list
         if (!checkOp(">")) {
-            params.add(parseTemplateParamName());
+            params.add(parseTemplateParamText());
             while (matchPunct(",")) {
-                params.add(parseTemplateParamName());
+                params.add(parseTemplateParamText());
             }
         }
         if (checkOp(">>")) {
@@ -289,11 +452,175 @@ final class Parser {
         return params;
     }
 
-    private String parseTemplateParamName() {
-        if (!matchKeyword("typename")) {
-            matchKeyword("class"); // "template<class T>" is also valid C++, accept both spellings
+    /**
+     * Parses one template parameter and returns its FULL TEXT as a String,
+     * preserving everything needed for CodeGen to emit it verbatim:
+     *   "typename T"
+     *   "typename... Args"
+     *   "class T"
+     *   "template<typename> class Container"
+     *   "auto V"
+     *   "int N = sizeof(T)"
+     *   "typename std::enable_if<std::is_integral<T>::value, int>::type = 0"
+     *   "Numeric T"  (concept-constrained)
+     *
+     * The AST stores List<String> for template params. Previously it stored only
+     * the param name, which lost all type/variadic/default information. Now it
+     * stores the full text so CodeGen can round-trip it as "template<FULL_TEXT>".
+     */
+    private String parseTemplateParamText() {
+        int startPos = pos;
+        // We'll capture tokens until we hit ',' or '>' or '>>' at depth 0.
+        // Complex cases (template-template, SFINAE) are handled by parseTemplateParamName
+        // for semantic purposes, but here we just need the text.
+        parseTemplateParamName(); // advance pos past the parameter
+        int endPos = pos;
+        // Reconstruct the text from the tokens we consumed
+        StringBuilder sb = new StringBuilder();
+        for (int i = startPos; i < endPos; i++) {
+            if (i > startPos) {
+                CppLexerToken prev = tokens.get(i - 1);
+                CppLexerToken cur = tokens.get(i);
+                // Add spacing between tokens where needed
+                if (needsSpace(prev, cur)) sb.append(' ');
+            }
+            sb.append(tokens.get(i).text());
         }
-        return expectIdentifier().text();
+        return sb.toString();
+    }
+
+    /** Whether two adjacent tokens need a space between them in output. */
+    private boolean needsSpace(CppLexerToken prev, CppLexerToken cur) {
+        String p = prev.text(), c = cur.text();
+        // No space needed before/after punctuation pairs
+        if (p.equals("<") || p.equals(">") || p.equals(">>") || p.equals("*")
+            || p.equals("&") || p.equals("&&") || p.equals("::")) return false;
+        if (c.equals(">") || c.equals(">>") || c.equals("<") || c.equals("::")
+            || c.equals("(") || c.equals(")") || c.equals(",")) return false;
+        // Space between two word tokens (keywords, identifiers)
+        if ((prev.type() == CppLexerTokenType.KEYWORD || prev.type() == CppLexerTokenType.IDENTIFIER)
+         && (cur.type() == CppLexerTokenType.KEYWORD || cur.type() == CppLexerTokenType.IDENTIFIER)) return true;
+        // Space before/after ellipsis in most contexts  
+        if (p.equals("...") || c.equals("...")) return true;
+        // Space after "=" for defaults
+        if (p.equals("=") || c.equals("=")) return true;
+        return false;
+    }
+
+    /**
+     * Parses one template parameter in any of the C++ forms:
+     *
+     *   typename T                     -- type param
+     *   class T                        -- type param (alternate spelling)
+     *   typename... Args               -- variadic type param pack
+     *   class... Args                  -- variadic type param pack
+     *   template<typename> class C     -- template-template param
+     *   template<typename> class... C  -- variadic template-template param
+     *   int N                          -- non-type param
+     *   auto V                         -- non-type param (C++17 auto NTTP)
+     *   typename T = Default           -- type param with default
+     *   int N = 42                     -- non-type param with default
+     *   typename std::enable_if<...>::type = 0  -- SFINAE sink param
+     *   Concept T                      -- constrained type param (C++20)
+     *
+     * Returns just the name string (or a descriptive placeholder for complex
+     * params the AST doesn't fully model -- consistent with existing practice
+     * where template params are stored as strings, not as typed AST nodes).
+     */
+    private String parseTemplateParamName() {
+        // --- template-template parameter: "template<...> class Name" ---
+        if (checkKeyword("template")) {
+            parseTemplateParamList(); // consume the nested <...> (recursive)
+            matchKeyword("class");
+            matchKeyword("typename");
+            // variadic template-template: "template<typename> class... C"
+            if (checkPunct("...")) advance();
+            if (check(CppLexerTokenType.IDENTIFIER)) return advance().text();
+            return "<template-template>";
+        }
+
+        // --- typename / class type parameter ---
+        if (checkKeyword("typename") || checkKeyword("class")) {
+            advance(); // consume typename/class
+            // variadic pack: "typename... Args"
+            if (checkPunct("...")) advance();
+            // SFINAE sink: "typename std::enable_if<cond, T>::type = 0"
+            // After typename, if what follows is a qualified name (has :: or
+            // template args), it's a non-type SFINAE param, not a plain
+            // type-param name. Parse it as a full type and grab any default.
+            if (check(CppLexerTokenType.IDENTIFIER) || check(CppLexerTokenType.KEYWORD)) {
+                boolean isSfinaeType = checkPunct("::")
+                    || (pos + 1 < tokens.size() && (
+                        tokens.get(pos + 1).isPunct("::") ||
+                        tokens.get(pos + 1).isOp("<")));
+                if (isSfinaeType) {
+                    try { parseTypeRef(); } catch (ParseException ignored) {}
+                    if (matchOp("=")) parseTemplateDefaultValue();
+                    return "<sfinae>";
+                }
+                String name = advance().text();
+                if (matchOp("=")) parseTemplateDefaultValue();
+                return name;
+            }
+            // Anonymous typename with default: "typename = std::enable_if<true>"
+            if (matchOp("=")) parseTemplateDefaultValue();
+            return "<anon>";
+        }
+
+        // --- auto NTTP: "auto V" or "auto... Vs" ---
+        if (checkKeyword("auto")) {
+            advance();
+            if (checkPunct("...")) advance();
+            String name = check(CppLexerTokenType.IDENTIFIER) ? advance().text() : "<anon>";
+            if (matchOp("=")) parseTemplateDefaultValue();
+            return name;
+        }
+
+        // --- Non-type parameter: "int N", "std::size_t N", "const char* S",
+        //     or member-pointer NTTP: "int T::* Field"
+        TypeRef type = parseTypeRef();
+        if (checkPunct("...")) advance();
+        String name;
+        if (check(CppLexerTokenType.IDENTIFIER)) {
+            name = advance().text();
+            // Member pointer NTTP: "int T::* Field" -- consume ::* and actual name
+            if (checkPunct("::") && pos + 1 < tokens.size() && tokens.get(pos + 1).isOp("*")) {
+                advance(); advance(); // :: and *
+                if (check(CppLexerTokenType.IDENTIFIER)) name = advance().text();
+            }
+        } else if (checkPunct("(")) {
+            // Member function pointer NTTP: "int (T::* Method)(int) const"
+            // or pointer-to-array NTTP: "int (*Arr)[N]"
+            advance(); // consume (
+            // consume optional Class:: qualifier
+            if (check(CppLexerTokenType.IDENTIFIER) && pos + 1 < tokens.size()
+                    && tokens.get(pos + 1).isPunct("::")) {
+                advance(); advance(); // Class ::
+            }
+            matchOp("*"); matchOp("&"); // * or &
+            name = check(CppLexerTokenType.IDENTIFIER) ? advance().text() : "<nttp-ptr>";
+            expectPunct(")");
+            // consume trailing (params) and optional const
+            if (checkPunct("(")) {
+                advance(); int d = 1;
+                while (!isAtEnd() && d > 0) {
+                    if (checkPunct("(")) d++; else if (checkPunct(")")) d--;
+                    advance();
+                }
+                matchKeyword("const");
+            }
+            // consume trailing [dims] for pointer-to-array
+            while (checkPunct("[")) {
+                advance();
+                if (!checkPunct("]")) parseExpr();
+                expectPunct("]");
+            }
+        } else {
+            name = type instanceof NamedType nt ? nt.baseName() : "<nttp>";
+        }
+        // optional default value: "int N = 42" or "::type = 0"
+        if (matchOp("=")) parseTemplateDefaultValue();
+        return name;
     }
 
     /**
@@ -308,6 +635,31 @@ final class Parser {
         String kind = checkKeyword("class") ? "class" : "struct";
         advance();
         String name = expectIdentifier().text();
+
+        // Partial or explicit specialization: "template<typename T> struct Foo<T*>"
+        // or "template<> struct TypeName<int>" -- capture the specialization arg
+        // text and fold it into the name so CodeGen emits "TypeName<int>" correctly.
+        if (checkOp("<") && looksLikeTemplateArgList()) {
+            int argStart = pos;
+            try { parseTemplateArgList(); } catch (ParseException ignored) {}
+            int argEnd = pos;
+            // Reconstruct the specialization suffix verbatim from tokens
+            StringBuilder spec = new StringBuilder("<");
+            for (int i = argStart + 1; i < argEnd - 1; i++) {
+                if (i > argStart + 1) spec.append(tokens.get(i-1).text().matches("[<>:,(]") ? "" : " ");
+                spec.append(tokens.get(i).text());
+            }
+            spec.append(">");
+            name = name + spec.toString();
+        }
+
+        // Forward declaration: "struct Node;" or "class Container;" with no body.
+        // Also handles "template<typename T = int> class Container;" with default args.
+        if (checkPunct(";")) {
+            advance();
+            return new TypeDef(kind, name, templateParams, List.of(), List.of(),
+                start.line(), start.col(), leadingComments);
+        }
 
         List<String> baseClasses = new ArrayList<>();
         if (matchPunct(":")) {
@@ -342,12 +694,33 @@ final class Parser {
 
     /** "public BaseName" / "private BaseName" / "protected BaseName" / bare "BaseName". */
     private String parseBaseClassEntry() {
+        matchKeyword("virtual");
         matchKeyword("public");
         if (!checkKeyword("public")) {
             matchKeyword("private");
             matchKeyword("protected");
         }
-        return parseQualifiedTypeName();
+        matchKeyword("virtual"); // virtual can appear before OR after access specifier
+        String name = parseQualifiedTypeName();
+        // Consume template args on base class name: "Base<Derived>" (CRTP),
+        // "std::enable_shared_from_this<T>", etc.
+        if (checkOp("<") && looksLikeTemplateArgList()) {
+            StringBuilder sb = new StringBuilder(name);
+            sb.append('<');
+            advance(); // '<'
+            int depth = 1;
+            while (!isAtEnd() && depth > 0) {
+                if (checkOp("<")) depth++;
+                else if (checkOp(">")) { depth--; if (depth == 0) break; }
+                else if (checkOp(">>")) { depth -= 2; if (depth <= 0) { splitTrailingShiftIntoTwoCloseAngles(); break; } }
+                sb.append(peek().text());
+                advance();
+            }
+            expectOp(">");
+            sb.append('>');
+            name = sb.toString();
+        }
+        return name;
     }
 
     /**
@@ -362,6 +735,37 @@ final class Parser {
         if (check(CppLexerTokenType.PREPROCESSOR_DIRECTIVE)) {
             CppLexerToken t = advance();
             return List.of(new PreprocessorLine(t.text(), t.line(), t.col(), leadingComments));
+        }
+        consumeAttributes();
+        // friend declarations: "friend class Foo;" or "friend void func(...);"
+        // Consume entirely -- friend declarations don't produce AST members we need.
+        if (checkKeyword("friend")) {
+            advance(); // consume 'friend'
+            // Friend function with a body: "friend T operator*(...)  { ... }"
+            // Must be parsed as a real function, not consumed to ';'.
+            // Detect by scanning ahead: if we find '{' before ';', it has a body.
+            int scan = pos;
+            int depth = 0;
+            boolean hasBody = false;
+            while (scan < tokens.size()) {
+                String txt = tokens.get(scan).text();
+                if (txt.equals("{")) { if (depth++ == 0) { hasBody = true; break; } }
+                else if (txt.equals("}")) { if (--depth == 0) break; }
+                else if (txt.equals(";") && depth == 0) break;
+                scan++;
+            }
+            if (hasBody) {
+                // Friend function WITH a body is a free function defined in-class
+                // but semantically at namespace scope. Return it as a TopLevelItem
+                // to be hoisted out of the class body.
+                // We must NOT emit it as a class member since free functions with 2+
+                // parameters can't be member functions.
+                List<TopLevelItem> items = parseFunctionOrVariable(leadingComments, List.of(), false);
+                return items; // will be added to class members and hoisted by ClassHoister
+            }
+            // Friend declaration (no body) -- consume to ';'
+            { int _d=0; while(!isAtEnd()){if(checkPunct("{"))_d++;else if(checkPunct("}")){if(_d==0){advance();break;}_d--;}else if(checkPunct(";")&&_d==0)break;advance();} matchPunct(";"); }
+            return List.of();
         }
         List<String> templateParams = List.of();
         if (checkKeyword("template")) {
@@ -378,16 +782,21 @@ final class Parser {
         // must look one token past an optional leading "virtual", since that
         // keyword (confirmed common on destructors, e.g. "virtual ~LSystem()")
         // precedes the '~' that would otherwise be the dispatch signal.
-        if (checkOp("~") || (checkKeyword("virtual") && peek(1).isOp("~"))) {
+        if (checkOp("~") || (checkKeyword("virtual") && tokens.get(pos + 1).isOp("~"))) {
             return List.of(parseFunctionOrConstructorOrDestructor(leadingComments, templateParams));
         }
         // Constructor dispatch: identifier matching the enclosing class name,
-        // directly followed by '(' with no return type preceding it. Also
-        // allow an optional leading "virtual" for symmetry, though
-        // constructors can't actually be virtual in real C++ -- tolerated
-        // here rather than rejected, since enforcing that isn't this parser's
-        // job (see grammar-scope notes on not modeling full C++ semantics).
-        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals(enclosingClassName) && peek(1).isPunct("(")) {
+        // directly followed by '(' with no return type preceding it.
+        // Also handle "constexpr ClassName(...)" -- consume constexpr first.
+        boolean isConstexprCtor = false;
+        if (checkKeyword("constexpr") && pos + 1 < tokens.size()
+                && tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
+                && tokens.get(pos + 1).text().equals(enclosingClassName)
+                && pos + 2 < tokens.size() && tokens.get(pos + 2).isPunct("(")) {
+            advance(); // consume constexpr
+            isConstexprCtor = true;
+        }
+        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals(enclosingClassName) && tokens.get(pos + 1).isPunct("(")) {
             return List.of(parseFunctionOrConstructorOrDestructor(leadingComments, templateParams));
         }
         return parseFunctionOrVariable(leadingComments, templateParams, false);
@@ -421,15 +830,34 @@ final class Parser {
             }
         }
 
+        // Consume trailing qualifiers: noexcept, noexcept(expr), override, final
+        // These can appear after the param list in any order before "= 0" or body.
+        while (true) {
+            if (checkKeyword("noexcept")) {
+                advance();
+                if (checkPunct("(")) { advance(); int d=1; while(!isAtEnd()&&d>0){if(checkPunct("("))d++;else if(checkPunct(")"))d--;advance();} }
+            } else if (checkKeyword("override")) {
+                advance();
+            } else if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("final")) {
+                advance();
+            } else break;
+        }
+
         // Pure-virtual specifier ("= 0"), e.g. "virtual ~A() = 0;" -- a
         // real, valid C++ idiom for ensuring polymorphic deletion through
-        // an abstract base. Must be checked BEFORE the body/";" check
-        // below, since "= 0;" replaces both.
+        // an abstract base. Found via a realistic builder-pattern sketch
+        // using "virtual void draw() = 0;" on an abstract base class --
+        // confirmed real, ordinary OOP, not exotic. Must be checked
+        // BEFORE the body/";" check below, since "= 0;" replaces both.
         boolean isPureVirtual = false;
         if (checkOp("=")) {
             int save = pos;
             advance();
-            if (checkLiteralZero()) {
+            if (checkKeyword("default")) {
+                advance(); // = default
+            } else if (checkKeyword("delete")) {
+                advance(); // = delete
+            } else if (checkLiteralZero()) {
                 advance();
                 isPureVirtual = true;
             } else {
@@ -438,10 +866,11 @@ final class Parser {
         }
 
         Block body = checkPunct("{") ? parseBlock() : null;
-        if (body == null) expectPunct(";");
+        if (body == null && !isPureVirtual) expectPunct(";");
+        else if (isPureVirtual) expectPunct(";");
 
         return new FunctionDecl(null, name, templateParams, params, initList, body,
-            !isDestructor, isDestructor, isVirtual, isOverride, isConst, false, isPureVirtual,
+            !isDestructor, isDestructor, isVirtual, isOverride, isConst, false, false, isPureVirtual,
             start.line(), start.col(), leadingComments);
     }
 
@@ -504,8 +933,13 @@ final class Parser {
 
         boolean isVirtual = matchKeyword("virtual");
         boolean isStatic = matchKeyword("static");
+        matchKeyword("inline");
+        matchKeyword("volatile"); // consume volatile qualifier
         boolean isConst = matchKeyword("const");
-        if (!isStatic) isStatic = matchKeyword("static"); // tolerate either order
+        boolean isConstexprFn = matchKeyword("constexpr"); if (isConstexprFn) isConst = true;
+        if (!isStatic) isStatic = matchKeyword("static");
+        if (!isConst) isConst = matchKeyword("const");
+        matchKeyword("volatile"); // volatile may appear after const
 
         // Raw function-pointer variable declaration: "Type (*name)(Params) = init;"
         if (looksLikeFunctionPointerVariable()) {
@@ -520,8 +954,18 @@ final class Parser {
                 isConst, isStatic, start.line(), start.col(), leadingComments));
         }
 
-        TypeRef type = parseTypeRef();
-        String name = parseFunctionOrVariableName();
+        TypeRef type = parseTypeRef(isConst); // pass leading const to mark return type correctly
+        // Constructor: if ( follows the type with no name AND we have leading constexpr/virtual,
+        // the type name IS the function name (e.g. "constexpr RGBA(...)")
+        String name;
+        if (checkPunct("(") && type instanceof NamedType nt2
+                && !looksLikeFunctionPointerDeclarator()
+                && (isConst || isVirtual || isStatic) // only when qualifier precedes
+                && looksLikeParamList()) {
+            name = nt2.baseName();
+        } else {
+            name = parseFunctionOrVariableName();
+        }
 
         if (checkPunct("(") && !looksLikeFunctionPointerDeclarator() && looksLikeParamList()) {
             List<Param> params = parseParamList();
@@ -532,58 +976,85 @@ final class Parser {
                 if (matchKeyword("const")) { isMethodConst = true; continue; }
                 if (matchKeyword("override")) { isOverride = true; continue; }
             }
-            // Trailing return type: "auto f() -> int" -- "->" is PUNCTUATION
-            // in this lexer, so checkPunct not checkOp.
+            // Trailing return type: "auto f() -> ReturnType"
+            // Capture it and use it as the actual return type (replacing "auto").
+            TypeRef trailingReturnType = null;
             if (checkPunct("->")) {
                 advance();
-                parseTypeRef(); // consume and discard
+                trailingReturnType = parseTypeRef();
             }
-            // Pure-virtual specifier ("= 0"), e.g. "virtual void draw() = 0;"
-            // -- a real, ordinary OOP idiom for declaring an abstract
-            // method on a base class. Must be checked BEFORE the
-            // body/";" check below, since "= 0;" replaces both.
+            TypeRef effectiveReturnType = (trailingReturnType != null) ? trailingReturnType : type;
+            // Consume trailing qualifiers: noexcept, noexcept(expr), override, final
+            while (true) {
+                if (checkKeyword("noexcept")) {
+                    advance();
+                    if (checkPunct("(")) { advance(); int d=1; while(!isAtEnd()&&d>0){if(checkPunct("("))d++;else if(checkPunct(")"))d--;advance();} }
+                } else if (checkKeyword("override")) {
+                    isOverride = true; advance();
+                } else if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("final")) {
+                    advance();
+                } else break;
+            }
+            // Pure-virtual specifier ("= 0") or = default / = delete
             boolean isPureVirtual = false;
             if (checkOp("=")) {
                 int save = pos;
                 advance();
                 if (checkLiteralZero()) {
-                    advance();
-                    isPureVirtual = true;
+                    advance(); isPureVirtual = true;
+                } else if (checkKeyword("default") || checkKeyword("delete")) {
+                    advance(); // = default or = delete
                 } else {
                     pos = save;
                 }
             }
+            // Constructor initializer list: ": mem(val), mem2(val2)"
+            if (matchPunct(":") && !checkPunct(":")) {
+                // consume initializer list entries until { or ;
+                int _d = 0;
+                while (!isAtEnd()) {
+                    if (checkPunct("{") && _d == 0) break;
+                    if (checkPunct("(") || checkPunct("{")) _d++;
+                    else if (checkPunct(")") || checkPunct("}")) _d--;
+                    advance();
+                }
+            }
             Block body = checkPunct("{") ? parseBlock() : null;
             if (body == null) expectPunct(";");
-            FunctionDecl fn = new FunctionDecl(type, name, templateParams, params, List.of(), body,
-                false, false, isVirtual, isOverride, isMethodConst, isStatic, isPureVirtual,
+            FunctionDecl fn = new FunctionDecl(effectiveReturnType, name, templateParams, params, List.of(), body,
+                false, false, isVirtual, isOverride, isMethodConst, isConstexprFn, isStatic, isPureVirtual,
                 start.line(), start.col(), leadingComments);
             return List.of(fn);
         }
 
         // Variable declaration, possibly multi-declarator.
         List<TopLevelItem> result = new ArrayList<>();
-        result.add(parseOneTopLevelDeclarator(type, name, isConst, isStatic, start, leadingComments));
+        result.add(parseOneTopLevelDeclarator(type, name, isConst, isStatic, templateParams, start, leadingComments));
         while (matchPunct(",")) {
             // Each declarator after the first comma can carry its OWN
             // leading "*"/"&" markers, independent of every other
             // declarator on the line -- real, standard C++ syntax
             // ("int* a, b;" -- only a is a pointer; "int* a, *b;" --
-            // both are pointers). Confirmed real and necessary by
-            // Scrollbar.pde's real "HScrollbar* hs1, * hs2;", found via
-            // RealHeaderStressTest after fixing the boolean/null
-            // test-fidelity gap let parsing get further into that file.
+            // both are pointers, the "*" repeated per declarator).
+            // Confirmed real and necessary by Scrollbar.pde's own
+            // corrected declaration ("HScrollbar* hs1, * hs2;").
             //
-            // Build each declarator's type from the base type's
-            // NAME/TEMPLATE-ARGS/CONST ONLY -- never reuse "type"'s own
-            // pointerDepth/isReference, which already belongs
-            // EXCLUSIVELY to the first declarator (parseTypeRef consumes
-            // a "*"/"&" immediately after the base type name, before the
-            // first declarator's name is even parsed). Adding each
-            // subsequent declarator's marker count ON TOP of that would
-            // produce "HScrollbar**" for the second declarator instead
-            // of the correct "HScrollbar*" -- caught by checking
-            // rendered output, not just parse success.
+            // IMPORTANT: build each declarator's type from the base
+            // type's NAME/TEMPLATE-ARGS/CONST ONLY -- never reuse
+            // "type"'s own pointerDepth/isReference, which already
+            // belongs EXCLUSIVELY to the first declarator (parseTypeRef
+            // consumes a "*"/"&" immediately after the base type name,
+            // before the first declarator's name is even parsed). A
+            // first attempt at this fix added each subsequent
+            // declarator's marker count ON TOP of the shared type's
+            // existing pointerDepth, which produced "HScrollbar**" for
+            // the second declarator in "HScrollbar* hs1, * hs2;"
+            // instead of the correct "HScrollbar*" -- caught by
+            // checking the RENDERED OUTPUT, not just parse success;
+            // "does this parse" and "is the resulting AST actually
+            // correct" are different questions, the same lesson from
+            // the return-statement misparse bug found much earlier in
+            // this project.
             int extraPointerDepth = 0;
             boolean extraIsReference = false;
             while (checkOp("*") || checkOp("&")) {
@@ -596,7 +1067,7 @@ final class Parser {
                 declaratorType = new NamedType(nt.baseName(), nt.templateArgs(),
                     extraPointerDepth, extraIsReference, nt.isConst());
             }
-            result.add(parseOneTopLevelDeclarator(declaratorType, nextName, isConst, isStatic, start, List.of()));
+            result.add(parseOneTopLevelDeclarator(declaratorType, nextName, isConst, isStatic, List.of(), start, List.of()));
         }
         expectPunct(";");
         return result;
@@ -617,7 +1088,10 @@ final class Parser {
         try {
             matchKeyword("virtual");
             matchKeyword("static");
+            matchKeyword("volatile");
             matchKeyword("const");
+            matchKeyword("constexpr");
+            matchKeyword("inline");
             matchKeyword("static"); // tolerate either order, mirroring the real parse path
 
             if (looksLikeFunctionPointerVariable()) return true;
@@ -645,6 +1119,8 @@ final class Parser {
                 || checkKeyword("operator")) {
                 return true;
             }
+            // Constructor: type name followed by ( -- "RGBA(...)" inside struct RGBA
+            if (checkPunct("(")) return true;
             return check(CppLexerTokenType.IDENTIFIER);
         } finally {
             pos = save;
@@ -660,30 +1136,89 @@ final class Parser {
     private String parseFunctionOrVariableName() {
         if (checkKeyword("operator")) {
             CppLexerToken opKw = advance();
+            // Special multi-token operator names:
+            // operator[]  -- subscript
+            // operator()  -- function call
+            // operator new / operator delete
+            // operator== / operator+ / etc. -- single-token symbols
             if (checkPunct("[")) {
-                advance(); expectPunct("]");
+                advance(); // '['
+                expectPunct("]");
                 return opKw.text() + "[]";
             }
             if (checkPunct("(")) {
-                advance(); expectPunct(")");
+                advance(); // '('
+                expectPunct(")");
                 return opKw.text() + "()";
             }
             if (checkKeyword("new") || checkKeyword("delete")) {
                 CppLexerToken kw = advance();
                 return opKw.text() + " " + kw.text();
             }
+            // Cast operator: "operator int", "operator float", "operator bool", etc.
+            // ONLY fire for actual C++ primitive type keywords, not arbitrary
+            // keywords that happen to follow "operator" in other contexts.
+            // Using a small explicit set prevents keywords like "color", "auto",
+            // "return", etc. from being misidentified as cast targets.
             if (check(CppLexerTokenType.KEYWORD) && CAST_OPERATOR_TYPE_KEYWORDS.contains(peek().text())) {
                 CppLexerToken castTok = advance();
                 return opKw.text() + " " + castTok.text();
             }
+            // Also handle identifier type names used as cast targets (e.g.
+            // "operator MyType()" where MyType is a user-defined class).
+            // Only safe when the next token is an identifier (not a keyword),
+            // so we don't misidentify keyword-named things like "color".
             if (check(CppLexerTokenType.IDENTIFIER)) {
                 CppLexerToken castTok = advance();
                 return opKw.text() + " " + castTok.text();
             }
-            CppLexerToken opTok = advance(); // ordinary single-token operator, e.g. "==", "+", "<<"
+            // User-defined literal operator: "operator"" _suffix"
+            // The "" is a STRING_LITERAL token; the suffix is an IDENTIFIER.
+            if (check(CppLexerTokenType.STRING_LITERAL) && peek().text().equals("\"\"")) {
+                advance(); // consume ""
+                // Optional suffix identifier (e.g. _deg, _kb, _v)
+                if (check(CppLexerTokenType.IDENTIFIER) || (check(CppLexerTokenType.KEYWORD) &&
+                        peek().text().startsWith("_"))) {
+                    CppLexerToken suffix = advance();
+                    return opKw.text() + "\"\"" + suffix.text();
+                }
+                return opKw.text() + "\"\"";
+            }
+            // Ordinary single-token operator, e.g. "==", "+", "<<".
+            // Special case: spaceship operator "<=>" is lexed as "<=" then ">".
+            CppLexerToken opTok = advance();
+            if (opTok.text().equals("<=") && checkOp(">")) {
+                advance(); // consume the ">"
+                return opKw.text() + "<=>";
+            }
             return opKw.text() + opTok.text();
         }
+        // Cast-operator case: "operator" was already consumed by parseTypeRef()
+        // as NamedType("operator"), leaving a keyword type like "bool"/"int" as
+        // the current token. "operator bool()" and "operator int()" reach here.
+        // Guard against mistakenly eating real qualifiers, storage specifiers, OR
+        // Processing-specific keywords like "color" that are legitimately used as
+        // method names (e.g. "Builder& color(int r, int g, int b)" in the
+        // builder pattern) -- these must fall through to expectIdentifier() below.
+        if (check(CppLexerTokenType.KEYWORD) && !checkKeyword("const") && !checkKeyword("override")
+                && !checkKeyword("virtual") && !checkKeyword("static")
+                && !checkKeyword("inline") && !checkKeyword("explicit")
+                && !PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES.contains(peek().text())) {
+            CppLexerToken castTok = advance();
+            String suffix = "";
+            while (checkOp("*") || checkOp("&")) suffix += advance().text();
+            return "operator " + castTok.text() + suffix;
+        }
         String name = expectIdentifier().text();
+        // Member data pointer: "ClassName::* varName" -- e.g. "int Point::* ptr"
+        // After consuming "Point" as the name, if :: follows and then * (not another identifier),
+        // this is a pointer-to-member-data declarator, not a qualified name.
+        if (checkPunct("::") && pos + 1 < tokens.size() && tokens.get(pos + 1).isOp("*")) {
+            advance(); // "::"
+            advance(); // "*"
+            String memberName = expectIdentifier().text();
+            return name + "::* " + memberName;
+        }
         while (checkPunct("::")) {
             advance();
             name += "::" + expectIdentifier().text();
@@ -692,7 +1227,7 @@ final class Parser {
     }
 
     private VariableDecl parseOneTopLevelDeclarator(TypeRef type, String name, boolean isConst, boolean isStatic,
-                                                     CppLexerToken start, List<CppLexerToken> leadingComments) {
+                                                     List<String> templateParams, CppLexerToken start, List<CppLexerToken> leadingComments) {
         List<Expr> dims = parseOptionalArrayDims();
         Expr initializer = null;
         if (matchOp("=")) {
@@ -715,7 +1250,7 @@ final class Parser {
             initializer = parseDirectInitAsCall(name);
         }
         return new VariableDecl(type, name, dims, initializer, isConst, isStatic,
-            start.line(), start.col(), leadingComments);
+            templateParams, start.line(), start.col(), leadingComments);
     }
 
     /**
@@ -736,19 +1271,20 @@ final class Parser {
         int save = pos;
         try {
             expectPunct("(");
-            if (checkPunct(")")) return true; // "()" -- ambiguous but treated as a function with no params, matching prior behavior
+            if (checkPunct(")")) return true;
             if (!(check(CppLexerTokenType.IDENTIFIER) || check(CppLexerTokenType.KEYWORD))) return false;
             try {
                 parseTypeRef();
             } catch (ParseException e) {
                 return false;
             }
-            // A real parameter needs a name after its type (or a function-
-            // pointer declarator's own "(" -- not modeled here since no
-            // corpus fixture nests a function-pointer param inside a
-            // direct-init-ambiguous position; flagged as a known gap if it
-            // ever occurs).
-            return check(CppLexerTokenType.IDENTIFIER);
+            // Accept: named param, variadic pack "...", anonymous param ")", or
+            // reference/pointer-to-array: "int (&arr)[10]" -- ( follows the type
+            return check(CppLexerTokenType.IDENTIFIER)
+                || checkPunct("...")   // variadic: "Args... args" or "T..."
+                || checkPunct(")")    // anonymous param: "void f(int)"
+                || checkPunct(",")    // next param after anonymous
+                || checkPunct("(");   // reference/pointer-to-array param: "int (&arr)[10]"
         } finally {
             pos = save;
         }
@@ -792,14 +1328,21 @@ final class Parser {
     private EnumDecl parseEnumDecl(List<CppLexerToken> leadingComments) {
         CppLexerToken start = expectKeyword("enum");
         boolean isScoped = matchKeyword("class");
+        if (!isScoped) matchKeyword("struct"); // "enum struct" is also valid
         String name = expectIdentifier().text();
+        // Optional underlying type: "enum class Color : int"
+        if (matchPunct(":")) {
+            parseTypeRef(); // consume the underlying type, discard
+        }
         expectPunct("{");
         List<String> values = new ArrayList<>();
         if (!checkPunct("}")) {
             values.add(expectIdentifier().text());
+            if (matchOp("=")) parseExpr(); // optional initializer: "Red = 1"
             while (matchPunct(",")) {
                 if (checkPunct("}")) break; // tolerate a trailing comma
                 values.add(expectIdentifier().text());
+                if (matchOp("=")) parseExpr(); // optional initializer
             }
         }
         expectPunct("}");
@@ -809,7 +1352,9 @@ final class Parser {
 
     private NamespaceDecl parseNamespaceDecl(List<CppLexerToken> leadingComments) {
         CppLexerToken start = expectKeyword("namespace");
-        String name = expectIdentifier().text();
+        StringBuilder nameBuilder = new StringBuilder(expectIdentifier().text());
+        while (checkPunct("::")) { advance(); nameBuilder.append("::").append(expectIdentifier().text()); }
+        String name = nameBuilder.toString();
         expectPunct("{");
         List<TopLevelItem> items = new ArrayList<>();
         while (!checkPunct("}")) {
@@ -855,21 +1400,75 @@ final class Parser {
      */
     private TypeRef parseTypeRef() {
         boolean isConst = matchKeyword("const");
+        return parseTypeRefAfterConst(isConst);
+    }
+
+    private TypeRef parseTypeRef(boolean leadingConst) {
+        // Always consume "const" if present. If leadingConst=true, isConst is already
+        // set; we still MUST consume the token so parseQualifiedTypeName doesn't see
+        // "const" as the type name (e.g. "constexpr const char* p" -- constexpr sets
+        // leadingConst=true, then "const" must still be consumed before "char").
+        matchKeyword("const");
+        return parseTypeRefAfterConst(leadingConst);
+    }
+
+    private TypeRef parseTypeRefAfterConst(boolean isConst) {
+
+        // decltype(expr) -- C++11 computed type
+        if (checkKeyword("decltype")) {
+            advance();
+            expectPunct("(");
+            int d = 1;
+            StringBuilder dtExpr = new StringBuilder("decltype(");
+            while (!isAtEnd() && d > 0) {
+                if (checkPunct("(")) { d++; dtExpr.append("("); advance(); }
+                else if (checkPunct(")")) { d--; if (d > 0) dtExpr.append(")"); advance(); }
+                else { dtExpr.append(peek().text()); advance(); }
+            }
+            dtExpr.append(")");
+            return new NamedType(dtExpr.toString(), List.of(), 0, false, isConst);
+        }
 
         String baseName = parseQualifiedTypeName();
+        if (checkKeyword("auto")) { advance(); baseName = "auto"; } // C++20 concept-constrained auto
+        if (matchKeyword("const")) isConst = true; // east-const: "int const" == "const int"
+        matchKeyword("volatile"); // consume optional volatile after type name
 
         List<TypeRef> templateArgs = List.of();
-        if (checkOp("<")) {
-            templateArgs = parseTemplateArgList();
+        if (checkOp("<") && !checkOp("<>")) {
+            // Empty diamond <> in "new Foo<>()" -- skip template args,
+            // the declared type on the LHS already has the full type.
+            if (pos + 1 < tokens.size() && tokens.get(pos + 1).isOp(">")) {
+                advance(); advance(); // consume < and >
+            } else {
+                templateArgs = parseTemplateArgList();
+            }
+            // After template args, may have "::member" -- e.g.
+            // "std::enable_if<B,T>::type" or "std::is_pointer<T>::value".
+            // Fold these into the baseName as a qualified suffix so the full
+            // type name round-trips correctly.
+            while (checkPunct("::")) {
+                advance(); // '::'
+                if (check(CppLexerTokenType.IDENTIFIER) || check(CppLexerTokenType.KEYWORD)) {
+                    baseName = baseName + "<...>::" + advance().text();
+                    // May have further template args after the member
+                    if (checkOp("<")) {
+                        try { parseTemplateArgList(); } catch (ParseException ignored) {}
+                    }
+                }
+            }
         }
 
         int pointerDepth = 0;
         while (matchOp("*")) {
             pointerDepth++;
+            matchKeyword("const"); // east-const pointer: "int* const" -- consume trailing const
+            matchKeyword("volatile"); // similarly for volatile
         }
         boolean isReference = matchOp("&");
+        boolean isRvalueRef = !isReference && matchOp("&&");
 
-        return new NamedType(baseName, templateArgs, pointerDepth, isReference, isConst);
+        return new NamedType(baseName, templateArgs, pointerDepth, isReference, isConst, isRvalueRef);
     }
 
     /**
@@ -878,7 +1477,7 @@ final class Parser {
      * "int" or "Handle". Accepts KEYWORD tokens too (not just IDENTIFIER)
      * since C++ builtin type keywords ("int", "float", "bool", "void", "auto",
      * "char", etc.) are lexed as KEYWORD, and "color" (a Processing-flavored
-     * pseudo-keyword, see CppLexer notes) needs the same treatment.
+     * pseudo-keyword, see Lexer notes) needs the same treatment.
      */
     /**
      * Parses a "::"-joined sequence of identifiers/keywords-used-as-typenames,
@@ -913,7 +1512,7 @@ final class Parser {
     }
 
     private static final java.util.Set<String> INTEGER_TYPE_WORDS = java.util.Set.of(
-        "signed", "unsigned", "long", "short", "int", "char"
+        "signed", "unsigned", "long", "short", "int", "char", "double", "float"
     );
 
     /** True if every space-separated word in s is one of the integer-type-modifier/base words. */
@@ -922,6 +1521,35 @@ final class Parser {
             if (!INTEGER_TYPE_WORDS.contains(word)) return false;
         }
         return true;
+    }
+
+    /**
+     * Consumes tokens for a default template argument value or type expression,
+     * stopping when it hits an unbalanced '>' or ',' or ';' at depth 0.
+     * This is necessary because parseExpr() would consume '>' as a comparison
+     * operator, swallowing the closing '>' of the template parameter list.
+     */
+    private void parseTemplateDefaultValue() {
+        int depth = 0;
+        while (!isAtEnd()) {
+            if (checkPunct("(") || checkPunct("[")) { depth++; advance(); }
+            else if (checkPunct(")") || checkPunct("]")) {
+                if (depth == 0) break;
+                depth--; advance();
+            }
+            else if (checkOp("<")) { depth++; advance(); }
+            else if (checkOp(">")) {
+                if (depth == 0) break;
+                depth--; advance();
+            }
+            else if (checkOp(">>")) {
+                if (depth <= 1) break;
+                depth -= 2; advance();
+            }
+            else if (depth == 0 && checkPunct(",")) break;
+            else if (depth == 0 && checkPunct(";")) break;
+            else advance();
+        }
     }
 
     private String parseTypeNameSegment() {
@@ -977,10 +1605,59 @@ final class Parser {
     }
 
     private TypeRef parseTemplateArg() {
+        if (checkKeyword("true") || checkKeyword("false")) {
+            String val = advance().text();
+            return new NamedType(val, List.of(), 0, false, false);
+        }
+        if (check(CppLexerTokenType.INT_LITERAL) || check(CppLexerTokenType.FLOAT_LITERAL)
+                || check(CppLexerTokenType.CHAR_LITERAL)) {
+            String val = advance().text();
+            return new NamedType(val, List.of(), 0, false, false);
+        }
+        if (checkOp("-") && pos + 1 < tokens.size() &&
+                (tokens.get(pos + 1).type() == CppLexerTokenType.INT_LITERAL ||
+                 tokens.get(pos + 1).type() == CppLexerTokenType.FLOAT_LITERAL)) {
+            advance(); String val = "-" + advance().text();
+            return new NamedType(val, List.of(), 0, false, false);
+        }
+        // Address-of non-type template argument: "&Widget::value", "&Class::method"
+        if (checkOp("&")) {
+            advance(); // consume &
+            String name = parseQualifiedTypeName(); // Widget::value
+            return new NamedType("&" + name, List.of(), 0, false, false);
+        }
+        // Logical negation: "!std::is_integral<T>::value" in enable_if<!...>
+        if (checkOp("!")) {
+            advance(); // consume '!'
+            parseTemplateDefaultValue(); // consume the rest of the expression
+            return new NamedType("!...", List.of(), 0, false, false);
+        }
+        // decltype as template argument: "Pair<decltype(x), decltype(z)>"
+        // Must be handled before parseTypeRef() which would consume "decltype" as a type.
+        if (checkKeyword("decltype")) {
+            advance(); // consume "decltype"
+            expectPunct("(");
+            int d = 1;
+            StringBuilder dt = new StringBuilder("decltype(");
+            while (!isAtEnd() && d > 0) {
+                if (checkPunct("(")) { d++; dt.append("("); advance(); }
+                else if (checkPunct(")")) { d--; if (d > 0) dt.append(")"); advance(); }
+                else { dt.append(peek().text()); advance(); }
+            }
+            dt.append(")");
+            return new NamedType(dt.toString(), List.of(), 0, false, false);
+        }
+        // sizeof expression: sizeof(T) or sizeof...(Args)
+        if (checkKeyword("sizeof")) {
+            int save = pos; advance();
+            if (checkPunct("...")) advance();
+            if (checkPunct("(")) {
+                advance(); int d = 1;
+                while (!isAtEnd() && d > 0) { if (checkPunct("(")) d++; else if (checkPunct(")")) d--; advance(); }
+            }
+            return new NamedType("sizeof(...)", List.of(), 0, false, false);
+        }
         TypeRef maybeReturnType = parseTypeRef();
-        // If a '(' follows immediately, this was actually the return type of a
-        // bare function-signature template arg (std::function<void(int)>),
-        // not a complete type by itself -- reinterpret.
         if (checkPunct("(")) {
             return parseFunctionSignatureTail(maybeReturnType);
         }
@@ -1009,9 +1686,26 @@ final class Parser {
      * only; does not consume.
      */
     private boolean looksLikeFunctionPointerDeclarator() {
-        return checkPunct("(") && peek(1).isOp("*")
-            && peek(2).type() == CppLexerTokenType.IDENTIFIER
-            && peek(3).isPunct(")");
+        if (!checkPunct("(")) return false;
+        int i = 1;
+        // Consume optional Class:: qualifier for member function pointers
+        while (pos + i + 1 < tokens.size()
+               && tokens.get(pos + i).type() == CppLexerTokenType.IDENTIFIER
+               && tokens.get(pos + i + 1).isPunct("::")) {
+            i += 2;
+        }
+        if (pos + i >= tokens.size()) return false;
+        if (!tokens.get(pos + i).isOp("*") && !tokens.get(pos + i).isOp("&")) return false;
+        i++; // past * or &
+        if (pos + i >= tokens.size()) return false;
+        // name (possibly followed by [N] for array-of-function-pointers)
+        if (tokens.get(pos + i).type() != CppLexerTokenType.IDENTIFIER) return false;
+        i++; // past name
+        if (pos + i >= tokens.size()) return false;
+        // Either ) directly, or [N] then )
+        if (tokens.get(pos + i).isPunct(")")) return true;
+        if (tokens.get(pos + i).isPunct("[")) return true; // array of fn ptrs
+        return false;
     }
 
     /**
@@ -1022,9 +1716,34 @@ final class Parser {
      */
     private NameAndFunctionPointerType parseFunctionPointerDeclaratorTail(TypeRef returnType) {
         expectPunct("(");
-        expectOp("*");
+        // Consume optional Class:: qualifier for member function pointers: (Widget::*name)
+        // Encode Class:: and & vs * into name so CodeGen can render correctly.
+        StringBuilder classQual = new StringBuilder();
+        while (check(CppLexerTokenType.IDENTIFIER) && tokens.get(pos + 1).isPunct("::")) {
+            classQual.append(advance().text()).append("::");
+            advance(); // consume "::"
+        }
+        boolean isRef = matchOp("&"); if (!isRef) matchOp("*"); // (&name) or (*name)
         String name = expectIdentifier().text();
+        // Encoded name: "Point::*memberFuncPtr" or "&refToRow" etc.
+        String encodedName = classQual.length() > 0
+            ? classQual.toString() + (isRef ? "&" : "*") + name
+            : (isRef ? "&" : "") + name;
+        // Array-of-function-pointers: (*arr[5]) -- consume the [N] subscript
+        List<Expr> arrayDims = parseOptionalArrayDims();
         expectPunct(")");
+        // Pointer-to-array or reference-to-array: "int (*p)[20]" / "int (&r)[20]"
+        // Encode array dims into name for CodeGen: "&refToRow[20]"
+        if (checkPunct("[")) {
+            StringBuilder dimStr = new StringBuilder();
+            while (checkPunct("[")) {
+                advance(); dimStr.append("[");
+                if (!checkPunct("]")) { dimStr.append(peek().text()); parseExpr(); }
+                expectPunct("]"); dimStr.append("]");
+            }
+            return new NameAndFunctionPointerType(encodedName + dimStr.toString(),
+                new FunctionPointerType(returnType, List.of()));
+        }
         expectPunct("(");
         List<TypeRef> paramTypes = new ArrayList<>();
         if (!checkPunct(")")) {
@@ -1034,7 +1753,10 @@ final class Parser {
             }
         }
         expectPunct(")");
-        return new NameAndFunctionPointerType(name, new FunctionPointerType(returnType, paramTypes));
+        boolean isConstMethod = matchKeyword("const"); // trailing const on member function pointer
+        // Encode const into name with sentinel __const__ for CodeGen
+        if (isConstMethod) encodedName = encodedName + "__const__";
+        return new NameAndFunctionPointerType(encodedName, new FunctionPointerType(returnType, paramTypes));
     }
 
     private record NameAndFunctionPointerType(String name, FunctionPointerType type) {
@@ -1157,6 +1879,13 @@ final class Parser {
     private Expr parseRelational() {
         Expr left = parseShift();
         while (checkOp("<") || checkOp(">") || checkOp("<=") || checkOp(">=")) {
+            // Spaceship operator <=> is lexed as <= then > -- detect and merge
+            if (checkOp("<=") && pos + 1 < tokens.size() && tokens.get(pos + 1).isOp(">")) {
+                CppLexerToken t = advance(); advance(); // consume <= and >
+                Expr right = parseShift();
+                left = new BinaryExpr("<=>", left, right, t.line(), t.col(), List.of());
+                continue;
+            }
             CppLexerToken t = advance();
             Expr right = parseShift();
             left = new BinaryExpr(t.text(), left, right, t.line(), t.col(), List.of());
@@ -1303,18 +2032,53 @@ final class Parser {
     private Expr parsePostfix() {
         Expr expr = parsePrimary();
         while (true) {
-            if (checkPunct(".") || checkPunct("->")) {
+            if (checkPunct("::")) {
+                // Static member / scope resolution in expression context:
+                // "std::is_pointer<T>::value", "MyClass::staticMethod()", etc.
+                // Fold the "::" and member name into the existing identifier string.
+                advance(); // '::'
+                String member = check(CppLexerTokenType.IDENTIFIER) || check(CppLexerTokenType.KEYWORD)
+                    ? advance().text() : "";
+                if (expr instanceof Identifier id) {
+                    expr = new Identifier(id.name() + "::" + member,
+                        id.line(), id.col(), List.of());
+                } else {
+                    expr = new Identifier("::" + member,
+                        peek().line(), peek().col(), List.of());
+                }
+            } else if (checkOp("->*")) {
+                // "->*" lexed as a single token
+                CppLexerToken t = advance();
+                Expr rhs = parseUnary();
+                expr = new BinaryExpr("->*", expr, rhs, t.line(), t.col(), List.of());
+                continue;
+            } else if (checkPunct(".") || checkPunct("->")) {
                 boolean isArrow = checkPunct("->");
                 CppLexerToken t = advance();
+                // Pointer-to-member dereference: "obj.*ptr" or "obj->*ptr"
+                // After consuming "." or "->", if "*" follows, this is ".*" / "->*"
+                if (checkOp("*")) {
+                    advance(); // consume the "*"
+                    Expr rhs = parseUnary(); // the member pointer expression
+                    expr = new BinaryExpr(isArrow ? "->*" : ".*", expr, rhs, t.line(), t.col(), List.of());
+                    continue;
+                }
                 String member = expectIdentifierOrKeywordName();
                 // Sibling fix to the std::vector<int>(...) bug found via
                 // RealHeaderStressTest: a member name can ALSO be
                 // followed by explicit template arguments before the
-                // call parens ("obj.method<int>(5)"). Without this
+                // call parens ("obj.method<int>(5)" -- calling a
+                // template member function with an explicit type
+                // argument, since the argument types alone aren't always
+                // enough for the compiler to deduce it). Without this
                 // check, "obj.method<int>(5)" misparses the same way
                 // "std::vector<int>(rows)" did before that fix: as
                 // "obj.method" followed by an unrelated
-                // "< int > (5)" comparison chain.
+                // "< int > (5)" comparison chain. Folded the member name
+                // and its template args into one combined member-name
+                // string, consistent with how a templated callee
+                // Identifier already folds its name and args together
+                // elsewhere in this parser.
                 if (checkOp("<") && looksLikeTemplatedConstructionCallee()) {
                     List<TypeRef> templateArgs = parseTemplateArgList();
                     member = member + "<" + renderTemplateArgs(templateArgs) + ">";
@@ -1324,10 +2088,12 @@ final class Parser {
                 CppLexerToken t = peek();
                 List<Expr> args = parseArgList();
                 expr = new CallExpr(expr, args, t.line(), t.col(), List.of());
-            } else if (checkPunct("{") && expr instanceof Identifier id && id.name().contains("<")) {
-                // Brace-init of a templated type, e.g. "Rect<float>{x, y, w, h}"
-                // -- only reachable when the callee Identifier already has
-                // template args folded into its name.
+            } else if (checkPunct("{") && expr instanceof Identifier id) {
+                // Brace-init of a named type: "Inner{1, 2}", "Rect<float>{x, y}"
+                // Any identifier (with or without template args) can be
+                // brace-initialized this way in C++. The guard "expr instanceof
+                // Identifier" prevents misfiring on expressions like "x{..." which
+                // are never valid C++ (x would be a function call target, not a type).
                 CppLexerToken t = peek();
                 InitializerListExpr init = (InitializerListExpr) parseInitializerList();
                 expr = new CallExpr(expr, init.elements(), true, t.line(), t.col(), List.of());
@@ -1373,9 +2139,29 @@ final class Parser {
         CppLexerToken t = peek();
 
         switch (t.type()) {
-            case INT_LITERAL -> { advance(); return new Literal(Literal.Kind.INT, t.text(), t.line(), t.col(), List.of()); }
-            case FLOAT_LITERAL -> { advance(); return new Literal(Literal.Kind.FLOAT, t.text(), t.line(), t.col(), List.of()); }
-            case STRING_LITERAL -> { advance(); return new Literal(Literal.Kind.STRING, t.text(), t.line(), t.col(), List.of()); }
+            case INT_LITERAL -> {
+                String txt = advance().text();
+                if (txt.equals("0") && !isAtEnd() && check(CppLexerTokenType.IDENTIFIER)) { String nx=peek().text(); if(nx.startsWith("b")||nx.startsWith("B")||nx.startsWith("x")||nx.startsWith("X")) txt+=advance().text(); }
+                while (!isAtEnd() && check(CppLexerTokenType.CHAR_LITERAL)) { String chunk=peek().text(); if(!chunk.startsWith("'"))break; String inner=chunk.substring(1); boolean wf=inner.endsWith("'"); if(wf)inner=inner.substring(0,inner.length()-1); if(!inner.matches("[0-9a-fA-F]+"))break; advance();txt+=inner; if(wf&&!isAtEnd()&&check(CppLexerTokenType.INT_LITERAL))txt+=advance().text(); if(!wf)break; }
+                txt += consumeUdlSuffix();
+                return new Literal(Literal.Kind.INT, txt, t.line(), t.col(), List.of());
+            }
+            case FLOAT_LITERAL -> {
+                String txt = advance().text();
+                while (!isAtEnd() && check(CppLexerTokenType.CHAR_LITERAL)) { String chunk=peek().text(); if(!chunk.startsWith("'"))break; String inner=chunk.substring(1); boolean wf=inner.endsWith("'"); if(wf)inner=inner.substring(0,inner.length()-1); if(!inner.matches("[0-9a-fA-F]+"))break; advance();txt+=inner; if(wf&&!isAtEnd()&&(check(CppLexerTokenType.INT_LITERAL)||check(CppLexerTokenType.FLOAT_LITERAL)))txt+=advance().text(); if(!wf)break; }
+                txt += consumeUdlSuffix();
+                return new Literal(Literal.Kind.FLOAT, txt, t.line(), t.col(), List.of());
+            }
+            case STRING_LITERAL -> {
+                String txt = advance().text();
+                txt += consumeUdlSuffix();
+                // Adjacent string literal concatenation: "hello" " " "world"
+                while (check(CppLexerTokenType.STRING_LITERAL)) {
+                    txt += advance().text();
+                    txt += consumeUdlSuffix();
+                }
+                return new Literal(Literal.Kind.STRING, txt, t.line(), t.col(), List.of());
+            }
             case CHAR_LITERAL -> { advance(); return new Literal(Literal.Kind.CHAR, t.text(), t.line(), t.col(), List.of()); }
             case BOOL_LITERAL -> { advance(); return new Literal(Literal.Kind.BOOL, t.text(), t.line(), t.col(), List.of()); }
             default -> { /* fall through below */ }
@@ -1388,13 +2174,82 @@ final class Parser {
         if (checkPunct("(")) {
             advance();
             Expr inner = parseExpr();
+            // Fold expression or comma operator inside parens.
+            // Binary fold: "(init op ... op pack)" -- op and ... already in inner as BinaryExpr
+            // Unary fold: "(pack op ...)" -- already in inner
+            // Comma fold: "((void)(expr), ...)" -- comma then ... before ")"
+            if (!checkPunct(")")) {
+                int depth = 0;
+                boolean seenCommaFold = false;
+                while (!isAtEnd()) {
+                    if (checkPunct("(")) { depth++; advance(); }
+                    else if (checkPunct(")")) { if (depth == 0) break; depth--; advance(); }
+                    else if (checkPunct(",") && depth == 0) {
+                        advance();
+                        if (checkPunct("...")) {
+                            advance();
+                            seenCommaFold = true;
+                            break;
+                        }
+                        // Regular comma -- consume the next expression
+                        parseExpr();
+                    }
+                    else advance();
+                }
+                if (seenCommaFold) {
+                    // Comma fold: "(expr, ...)" -- wrap inner in BinaryExpr("," , ...)
+                    CppLexerToken fakeToken = peek();
+                    inner = new BinaryExpr(",", inner, new Identifier("...", fakeToken.line(), fakeToken.col(), List.of()), fakeToken.line(), fakeToken.col(), List.of());
+                }
+            }
             expectPunct(")");
             return inner;
         }
         if (checkPunct("{")) {
             return parseInitializerList();
         }
+        // Wide/unicode string prefix: L"..." u"..." U"..." u8"..."
+        if (t.type() == CppLexerTokenType.IDENTIFIER
+                && (t.text().equals("L") || t.text().equals("u") || t.text().equals("U") || t.text().equals("u8"))
+                && pos + 1 < tokens.size() && tokens.get(pos + 1).type() == CppLexerTokenType.STRING_LITERAL) {
+            String prefix = advance().text();
+            String txt = prefix + advance().text();
+            while (check(CppLexerTokenType.STRING_LITERAL)) txt += advance().text();
+            return new Literal(Literal.Kind.STRING, txt, t.line(), t.col(), List.of());
+        }
+        // sizeof expression: "sizeof(T)" or "sizeof expr" (no parens)
+        if (checkKeyword("sizeof")) {
+            int sizeofStart = pos;
+            advance(); // consume "sizeof"
+            StringBuilder sizeofText = new StringBuilder("sizeof");
+            if (checkPunct("...")) { advance(); sizeofText.append("..."); } // sizeof...
+            if (checkPunct("(")) {
+                sizeofText.append("(");
+                advance(); int d=1;
+                while(!isAtEnd()&&d>0){
+                    if(checkPunct("(")){ d++; sizeofText.append("("); advance(); }
+                    else if(checkPunct(")")){ d--; if(d>0)sizeofText.append(")"); advance(); }
+                    else { sizeofText.append(peek().text()); advance(); }
+                }
+                sizeofText.append(")");
+            } else {
+                // sizeof without parens: consume one unary expression
+                sizeofText.append(" ");
+                int before = pos;
+                parseUnary();
+                for (int si = before; si < pos; si++) { if (si > before) sizeofText.append(" "); sizeofText.append(tokens.get(si).text()); }
+            }
+            return new Identifier(sizeofText.toString(), t.line(), t.col(), List.of());
+        }
+        // alignof expression
+        if (checkKeyword("alignof") || (t.type() == CppLexerTokenType.IDENTIFIER && t.text().equals("alignof"))) {
+            advance(); expectPunct("("); int d=1;
+            while(!isAtEnd()&&d>0){if(checkPunct("("))d++;else if(checkPunct(")"))d--;advance();}
+            return new Literal(Literal.Kind.INT, "alignof(...)", t.line(), t.col(), List.of());
+        }
         if (t.type() == CppLexerTokenType.IDENTIFIER || t.type() == CppLexerTokenType.KEYWORD) {
+            if (t.text().equals("requires")) { advance(); if(checkPunct("(")){ advance();int d=1;while(!isAtEnd()&&d>0){if(checkPunct("("))d++;else if(checkPunct(")"))d--;advance();}} if(checkPunct("{")){ advance();int d=1;while(!isAtEnd()&&d>0){if(checkPunct("{"))d++;else if(checkPunct("}"))d--;advance();}} return new Literal(Literal.Kind.BOOL,"true",t.line(),t.col(),List.of()); }
+            if (t.text().equals("R") && !isAtEnd() && check(CppLexerTokenType.STRING_LITERAL)) { advance(); String raw=advance().text(); return new Literal(Literal.Kind.STRING,"R"+raw,t.line(),t.col(),List.of()); }
             // Could be a plain identifier, the start of a "::"-qualified
             // ScopedName, or a bare templated-construction-call callee like
             // "ArrayList<Handle>()" / "PenroseSnowflakeLSystem()" (the latter
@@ -1427,17 +2282,17 @@ final class Parser {
                 // branch used to return immediately as a plain ScopedName
                 // the moment it saw "::", WITHOUT ever checking for a
                 // following "<Args>(" templated-construction-call suffix
-                // -- unlike the bare-identifier case just below, which
-                // already had this check. This meant
-                // "std::vector<int>(rows)" was parsed as "std::vector" (a
-                // ScopedName) followed by a SEPARATE, unrelated
-                // "< int > (rows)" comparison-chain expression --
-                // confirmed directly: g++ rejected the resulting
+                // -- unlike the bare-identifier case just below (line
+                // ~1342 in this method), which already had this check.
+                // This meant "std::vector<int>(rows)" was parsed as
+                // "std::vector" (a ScopedName) followed by a SEPARATE,
+                // unrelated "< int > (rows)" comparison-chain expression
+                // -- confirmed directly: g++ rejected the resulting
                 // "((std::vector < int) > rows)" with "template argument
-                // 1 is invalid". A bare "Foo<int>(...)" (no "::") already
-                // worked correctly; only the "::"-qualified form (exactly
-                // what every "std::"-prefixed standard container
-                // construction looks like) had this gap.
+                // 1 is invalid". A bare bare "Foo<int>(...)" (no "::")
+                // already worked correctly; only the "::"-qualified form
+                // (which is exactly what every "std::"-prefixed standard
+                // container construction looks like) had this gap.
                 String joined = String.join("::", parts);
                 if (checkOp("<") && looksLikeTemplatedConstructionCallee()) {
                     List<TypeRef> templateArgs = parseTemplateArgList();
@@ -1452,6 +2307,14 @@ final class Parser {
                 return new Identifier(rendered, t.line(), t.col(), List.of());
             }
             return new Identifier(first, t.line(), t.col(), List.of());
+        }
+
+        // Fold expression pack expansion: "..." -- appears in "(args + ...)" and
+        // "((void)(std::cout << ts), ...)" as the RHS of a fold operator.
+        // Produce a placeholder identifier so the enclosing expression completes.
+        if (checkPunct("...")) {
+            CppLexerToken t2 = advance();
+            return new Identifier("...", t2.line(), t2.col(), List.of());
         }
 
         throw error("unexpected token '" + t.text() + "' while parsing an expression");
@@ -1473,7 +2336,77 @@ final class Parser {
      * template-arg list and checks that '(' immediately follows. Restores
      * position regardless.
      */
-    private boolean looksLikeTemplatedConstructionCallee() {
+    /** True if current position looks like a template arg list: '<' followed eventually by '>',
+     *  used to detect "Base<Derived>" in base class context. Lighter than parseTemplateArgList. */
+    private boolean looksLikeTemplateArgList() {
+        // Peek ahead to see if we can find a matching '>' without hitting ';' or '{'
+        int save = pos;
+        try {
+            if (!checkOp("<")) return false;
+            advance();
+            int depth = 1;
+            int steps = 0;
+            while (!isAtEnd() && depth > 0 && steps < 80) {
+                if (checkOp("<")) depth++;
+                else if (checkOp(">")) depth--;
+                else if (checkOp(">>")) depth -= 2;
+                else if (checkPunct(";") || checkPunct("{")) return false;
+                advance(); steps++;
+            }
+            return depth <= 0;
+        } finally {
+            pos = save;
+        }
+    }
+
+    /** Consumes a user-defined literal suffix (_deg, _kb, _v, etc.) and returns it (or empty string). */
+    private String consumeUdlSuffix() {
+        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().startsWith("_")) {
+            return advance().text();
+        }
+        return "";
+    }
+
+    private void consumeAttributes() {
+        while (checkPunct("[") && pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("[")) {
+            advance(); advance();
+            int depth = 2;
+            while (!isAtEnd() && depth > 0) {
+                if (checkPunct("[")) depth++; else if (checkPunct("]")) depth--;
+                advance();
+            }
+        }
+    }
+
+    private boolean isStructuredBindingStart() {
+        int i = pos;
+        if (i < tokens.size() && tokens.get(i).isKeyword("const")) i++;
+        if (i >= tokens.size() || !tokens.get(i).isKeyword("auto")) return false;
+        i++;
+        if (i < tokens.size() && (tokens.get(i).isOp("&") || tokens.get(i).isOp("&&"))) i++;
+        return i < tokens.size() && tokens.get(i).isPunct("[");
+    }
+
+    private Statement parseStructuredBinding(List<CppLexerToken> leadingComments) {
+        CppLexerToken start = peek();
+        matchKeyword("const");
+        expectKeyword("auto");
+        matchOp("&"); matchOp("&&");
+        expectPunct("[");
+        List<String> names = new ArrayList<>();
+        names.add(expectIdentifier().text());
+        while (matchPunct(",")) names.add(expectIdentifier().text());
+        expectPunct("]");
+        expectOp("=");
+        Expr initializer = parseExpr();
+        expectPunct(";");
+        String bindingName = "[" + String.join(", ", names) + "]";
+        return new DeclStatement(new NamedType("auto", List.of(), 0, false, false),
+            bindingName, List.of(), initializer, false, false,
+            start.line(), start.col(), leadingComments);
+    }
+
+        private boolean looksLikeTemplatedConstructionCallee() {
         int save = pos;
         try {
             try {
@@ -1481,10 +2414,14 @@ final class Parser {
             } catch (ParseException e) {
                 return false;
             }
-            // Brace-init of a templated type ("Rect<float>{x, y, w, h}")
-            // is real, ordinary modern C++. Previously only recognized
-            // the paren-init form.
-            return checkPunct("(") || checkPunct("{");
+            // Paren-init / brace-init (construction call)
+            if (checkPunct("(") || checkPunct("{")) return true;
+            // Static member access: "std::is_pointer<T>::value"
+            if (checkPunct("::")) return true;
+            // Variable template: "pi<float>" followed by ; , ) = etc.
+            if (checkPunct(";") || checkPunct(",") || checkPunct(")")
+                    || checkPunct("]") || checkOp("=") || isAtEnd()) return true;
+            return false;
         } finally {
             pos = save;
         }
@@ -1494,13 +2431,27 @@ final class Parser {
         CppLexerToken start = expectPunct("{");
         List<Expr> elements = new ArrayList<>();
         if (!checkPunct("}")) {
-            elements.add(parseExpr());
+            elements.add(parseInitializerElement());
             while (matchPunct(",")) {
-                elements.add(parseExpr());
+                if (checkPunct("}")) break; // trailing comma
+                elements.add(parseInitializerElement());
             }
         }
         expectPunct("}");
         return new InitializerListExpr(elements, start.line(), start.col(), List.of());
+    }
+
+    /**
+     * One element of a brace-init list. Can be:
+     *   - A nested brace-init:    { 1, 2 }
+     *   - A named brace-init:     Inner{1, 2}  (parsed as expr then brace-init)
+     *   - Any other expression:   a + b, func(), etc.
+     */
+    private Expr parseInitializerElement() {
+        if (checkPunct("{")) {
+            return parseInitializerList(); // anonymous nested brace-init
+        }
+        return parseExpr(); // expression (may itself end with {} for named brace-init via parsePrimary)
     }
 
     /**
@@ -1519,15 +2470,36 @@ final class Parser {
         }
         expectPunct("]");
 
-        List<Param> params = new ArrayList<>();
-        expectPunct("(");
-        if (!checkPunct(")")) {
-            params.add(parseParam());
-            while (matchPunct(",")) {
-                params.add(parseParam());
+        // C++20 template lambda: []<typename T>(T val) { ... }
+        if (checkOp("<")) {
+            StringBuilder _tp = new StringBuilder();
+            int _td = 1; advance();
+            while (!isAtEnd() && _td > 0) {
+                if (checkOp("<")) { _td++; _tp.append(peek().text()); advance(); }
+                else if (checkOp(">>")) { _td-=2; if(_td<=0)break; _tp.append(peek().text()); advance(); }
+                else if (checkOp(">")) { _td--; if (_td==0) break; _tp.append(peek().text()); advance(); }
+                else { if(_tp.length()>0 && !_tp.toString().endsWith("<") && !peek().text().equals(">") && !peek().text().equals(",")) _tp.append(" "); _tp.append(peek().text()); advance(); }
             }
+            if (!isAtEnd()) advance(); // consume final >
+            captures.add(0, new Capture("__tmpl__<" + _tp.toString() + ">", false));
         }
-        expectPunct(")");
+
+        List<Param> params = new ArrayList<>();
+        if (checkPunct("(")) {
+            advance();
+            if (!checkPunct(")")) {
+                params.add(parseParam());
+                while (matchPunct(",")) {
+                    params.add(parseParam());
+                }
+            }
+            expectPunct(")");
+        }
+
+        // mutable, noexcept, attributes
+        matchKeyword("mutable");
+        if (checkKeyword("noexcept")) { advance(); if(checkPunct("(")){advance();int _d=1;while(!isAtEnd()&&_d>0){if(checkPunct("("))_d++;else if(checkPunct(")"))_d--;advance();}} }
+        consumeAttributes();
 
         TypeRef returnType = null;
         if (matchPunct("->")) {
@@ -1557,12 +2529,25 @@ final class Parser {
             advance();
             return new Capture("=", false);
         }
-        if (checkOp("&") && peek(1).text().equals("]")) {
+        if (checkOp("&") && tokens.get(pos + 1).text().equals("]")) {
             advance();
             return new Capture("", true);
         }
         boolean byRef = matchOp("&");
         String name = expectIdentifier().text();
+        // Init-capture: "z = z * 2" or "w = x + y" -- encode into name string
+        if (checkOp("=")) {
+            advance();
+            StringBuilder _ie = new StringBuilder();
+            int _d = 0;
+            while (!isAtEnd()) {
+                if (checkPunct("(") || checkPunct("[")) { _d++; _ie.append(peek().text()); advance(); }
+                else if (checkPunct(")") || checkPunct("]")) { if (_d == 0) break; _d--; _ie.append(peek().text()); advance(); }
+                else if (checkPunct(",") && _d == 0) break;
+                else { _ie.append(" ").append(peek().text()); advance(); }
+            }
+            name = name + " = " + _ie.toString().trim();
+        }
         return new Capture(name, byRef);
     }
 
@@ -1579,8 +2564,100 @@ final class Parser {
      * size array dims already tracked on VariableDecl/DeclStatement).
      */
     private Param parseParam() {
+        // C-style variadic: bare "..." as a parameter (e.g. "void f(int, ...)")
+        if (checkPunct("...")) {
+            advance();
+            return new Param(new NamedType("...", List.of(), 0, false, false), "...", null, List.of(), false);
+        }
+
         TypeRef type = parseTypeRef();
-        String name = expectIdentifier().text();
+
+        // Member pointer parameter: "int Widget::* dp" or "int (Widget::* mp)(int) const"
+        if (check(CppLexerTokenType.IDENTIFIER) && pos + 1 < tokens.size()
+                && tokens.get(pos + 1).isPunct("::")
+                && pos + 2 < tokens.size() && tokens.get(pos + 2).isOp("*")) {
+            String className = advance().text(); // Class name
+            advance(); // ::
+            advance(); // *
+            String pname = expectIdentifier().text(); // variable name
+            // Member function pointer param: "int (Widget::* mp)(int) const" -- consume parens
+            if (checkPunct("(")) {
+                advance(); // (
+                int depth = 1;
+                while (!isAtEnd() && depth > 0) {
+                    if (checkPunct("(")) depth++;
+                    else if (checkPunct(")")) depth--;
+                    advance();
+                }
+                matchKeyword("const");
+            }
+            return new Param(type, className + "::*" + pname, null, List.of(), false);
+        }
+
+        // Member function pointer param: "int (Widget::* mp)(int) const"
+        // Detected by: ( IDENTIFIER :: * name ) ( params ) optional-const
+        if (checkPunct("(") && pos + 1 < tokens.size()
+                && tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
+                && pos + 2 < tokens.size() && tokens.get(pos + 2).isPunct("::")
+                && pos + 3 < tokens.size() && tokens.get(pos + 3).isOp("*")) {
+            advance(); // (
+            String className = advance().text(); // Widget
+            advance(); // ::
+            advance(); // *
+            String pname = expectIdentifier().text(); // mp
+            expectPunct(")");
+            // Capture (params) text for encoding
+            StringBuilder paramsSig = new StringBuilder("(");
+            if (checkPunct("(")) {
+                advance();
+                int depth = 1;
+                List<String> paramTokens = new ArrayList<>();
+                while (!isAtEnd() && depth > 0) {
+                    if (checkPunct("(")) { depth++; paramTokens.add("("); advance(); }
+                    else if (checkPunct(")")) { depth--; if (depth > 0) { paramTokens.add(")"); advance(); } else advance(); }
+                    else { paramTokens.add(peek().text()); advance(); }
+                }
+                paramsSig.append(String.join(" ", paramTokens)).append(")");
+            } else {
+                paramsSig.append(")");
+            }
+            boolean isConstMethod = matchKeyword("const");
+            String encoded = className + "::*" + pname + paramsSig + (isConstMethod ? "__const__" : "");
+            return new Param(type, encoded, null, List.of(), false);
+        }
+
+        // Reference-to-array or pointer-to-array parameter: "int (&arr)[10]" or "int (*arr)[10]"
+        // Detected after parsing the element type: if ( & name ) [ follows, consume and return.
+        if (checkPunct("(") && pos + 1 < tokens.size()
+                && (tokens.get(pos + 1).isOp("&") || tokens.get(pos + 1).isOp("*"))
+                && pos + 2 < tokens.size() && tokens.get(pos + 2).type() == CppLexerTokenType.IDENTIFIER) {
+            advance(); // consume "("
+            boolean isRef = matchOp("&"); if (!isRef) matchOp("*");
+            String pname = expectIdentifier().text();
+            expectPunct(")");
+            // Encode dims into name: "&arr[10]" -> CodeGen emits "int (&arr)[10]"
+            StringBuilder dimEnc = new StringBuilder();
+            while (checkPunct("[")) {
+                advance(); dimEnc.append("[");
+                if (!checkPunct("]")) { dimEnc.append(peek().text()); advance(); }
+                expectPunct("]"); dimEnc.append("]");
+            }
+            return new Param(type, (isRef ? "&" : "*") + pname + dimEnc.toString(), null, List.of(), false);
+        }
+
+        // Variadic pack expansion after the type: "Args... args" or "Ts&&... ts"
+        boolean isVariadic = false;
+        if (checkPunct("...")) { advance(); isVariadic = true; }
+
+        String name;
+        if (check(CppLexerTokenType.IDENTIFIER) ||
+            (check(CppLexerTokenType.KEYWORD) && PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES.contains(peek().text()))) {
+            name = advance().text();
+            if (checkPunct("...")) { advance(); isVariadic = true; }
+        } else {
+            name = "";
+        }
+
         List<Integer> innerDims = new ArrayList<>();
         if (checkPunct("[")) {
             boolean first = true;
@@ -1599,11 +2676,34 @@ final class Parser {
             }
             type = bumpPointerDepth(type);
         }
+        // Function type parameter: "Widget()" or "int(*)(int)" -- function pointer param
+        // If name is empty and "(" follows, this is a function-type or function-pointer param.
+        // Consume the "(params)" signature and treat as pointer-to-function type.
+        if (name.isEmpty() && checkPunct("(")) {
+            advance(); // consume "("
+            // Consume optional * for explicit function pointer: "int(*)(int)"
+            matchOp("*");
+            // Consume optional name inside parens: "int(*name)(int)"
+            if (check(CppLexerTokenType.IDENTIFIER)) advance();
+            expectPunct(")");
+            // Consume the actual param list of the function type: "(int, float)"
+            if (checkPunct("(")) {
+                advance(); int d = 1;
+                while (!isAtEnd() && d > 0) {
+                    if (checkPunct("(")) d++; else if (checkPunct(")")) d--;
+                    advance();
+                }
+            }
+            // Represent as a pointer type
+            if (type instanceof NamedType nt) {
+                type = new NamedType(nt.baseName(), nt.templateArgs(), nt.pointerDepth() + 1, false, nt.isConst());
+            }
+        }
         Expr defaultValue = null;
         if (matchOp("=")) {
             defaultValue = parseExpr();
         }
-        return new Param(type, name, defaultValue, innerDims);
+        return new Param(type, name, defaultValue, innerDims, isVariadic);
     }
 
     private TypeRef bumpPointerDepth(TypeRef type) {
@@ -1649,6 +2749,7 @@ final class Parser {
      * one DeclStatement per declarator, all sharing the same TypeRef.
      */
     private List<Statement> parseStatementOrMultiDecl(List<CppLexerToken> leadingComments) {
+        if (isStructuredBindingStart()) return List.of(parseStructuredBinding(leadingComments));
         if (looksLikeDeclaration()) {
             return new ArrayList<Statement>(parseDeclStatementsDesugared(leadingComments));
         }
@@ -1666,9 +2767,33 @@ final class Parser {
      * until we've already looked).
      */
     private Statement parseStatement(List<CppLexerToken> leadingComments) {
+        consumeAttributes();
+        if (checkPunct(";")) {
+            CppLexerToken t = advance();
+            return new ExprStatement(new Literal(Literal.Kind.INT, "0", t.line(), t.col(), List.of()), t.line(), t.col(), leadingComments);
+        }
         if (checkPunct("{")) {
             Block b = parseBlock();
             return new Block(b.statements(), b.line(), b.col(), leadingComments);
+        }
+        // "if constexpr" -- consume constexpr before dispatching to parseIf
+        if (checkKeyword("constexpr") && pos + 1 < tokens.size() && tokens.get(pos + 1).isKeyword("if")) {
+            advance(); // consume constexpr, leave "if" for parseIf
+        }
+        // static_assert: consume entirely and emit as-is
+        if (checkKeyword("static_assert")) {
+            int startPos = pos; advance(); // consume static_assert
+            expectPunct("("); int d=1;
+            while (!isAtEnd() && d > 0) {
+                if (checkPunct("(")) d++; else if (checkPunct(")")) d--;
+                advance();
+            }
+            matchPunct(";");
+            StringBuilder raw = new StringBuilder();
+            for (int i = startPos; i < pos; i++) { if (i > startPos) raw.append(" "); raw.append(tokens.get(i).text()); }
+            if (!raw.toString().endsWith(";")) raw.append(";");
+            CppLexerToken t0 = tokens.get(startPos);
+            return new ExprStatement(new Identifier(raw.toString(), t0.line(), t0.col(), List.of()), t0.line(), t0.col(), leadingComments);
         }
         if (checkKeyword("if")) return parseIf(leadingComments);
         if (checkKeyword("for")) return parseForOrRangeFor(leadingComments);
@@ -1692,8 +2817,18 @@ final class Parser {
 
     private Statement parseIf(List<CppLexerToken> leadingComments) {
         CppLexerToken start = expectKeyword("if");
+        matchKeyword("constexpr"); // C++17 if constexpr
+        boolean isConstexpr = matchKeyword("constexpr");
         expectPunct("(");
-        Expr cond = parseExpr();
+        // C++17 if-init-statement: if (init; cond) -- collect init decls,
+        // wrap the IfStatement in a Block so the init vars are in scope.
+        java.util.List<Statement> initStmts = new ArrayList<>();
+        Expr cond;
+        { int scan=pos,depth=0; boolean hasInit=false;
+          while(scan<tokens.size()){String stxt=tokens.get(scan).text();if(stxt.equals("(")||stxt.equals("[")||stxt.equals("{"))depth++;else if(stxt.equals(")")||stxt.equals("]")||stxt.equals("}")){if(depth==0)break;depth--;}else if(stxt.equals(";")&&depth==0){hasInit=true;break;}scan++;}
+          if(hasInit){try{if(isStructuredBindingStart()){initStmts.add(parseStructuredBinding(List.of()));}else if(looksLikeDeclaration()){initStmts.addAll(parseDeclStatementsDesugared(List.of()));}else{int sv2=pos;Expr ie=parseExpr();expectPunct(";");initStmts.add(new ExprStatement(ie,ie.line(),ie.col(),List.of()));}}catch(ParseException e){}}
+        }
+        cond = parseExpr();
         expectPunct(")");
         Statement thenBranch = parseStatement(consumeLeadingComments());
         Statement elseBranch = null;
@@ -1703,9 +2838,14 @@ final class Parser {
             advance();
             elseBranch = parseStatement(consumeLeadingComments());
         } else {
-            pos = save; // no else; rewind past any comments consumed speculatively
+            pos = save;
         }
-        return new IfStatement(cond, thenBranch, elseBranch, start.line(), start.col(), leadingComments);
+        Statement ifStmt = new IfStatement(cond, thenBranch, elseBranch, isConstexpr, start.line(), start.col(), leadingComments);
+        if (!initStmts.isEmpty()) {
+            initStmts.add(ifStmt);
+            return new Block(initStmts, start.line(), start.col(), leadingComments);
+        }
+        return ifStmt;
     }
 
     /**
@@ -1715,6 +2855,20 @@ final class Parser {
     private Statement parseForOrRangeFor(List<CppLexerToken> leadingComments) {
         CppLexerToken start = expectKeyword("for");
         expectPunct("(");
+        // Structured binding range-for: "for (const auto& [k, v] : m)"
+        if (isStructuredBindingStart()) {
+            matchKeyword("const"); expectKeyword("auto");
+            boolean isRef = matchOp("&") || matchOp("&&");
+            expectPunct("[");
+            List<String> sbNames = new ArrayList<>();
+            sbNames.add(expectIdentifier().text());
+            while (matchPunct(",")) sbNames.add(expectIdentifier().text());
+            expectPunct("]"); expectPunct(":");
+            Expr sbIterable = parseExpr(); expectPunct(")");
+            Statement sbBody = parseStatement(consumeLeadingComments());
+            String sbName = "[" + String.join(", ", sbNames) + "]";
+            return new RangeForStatement(new NamedType("auto",List.of(),0,false,false), sbName, isRef, sbIterable, sbBody, start.line(), start.col(), leadingComments);
+        }
         if (looksLikeRangeFor()) {
             TypeRef declType = parseTypeRef();
             boolean isReference = false;
@@ -1735,10 +2889,14 @@ final class Parser {
         if (!checkPunct(";")) {
             if (looksLikeDeclaration()) {
                 List<DeclStatement> decls = parseDeclStatementsDesugared(List.of());
-                if (decls.size() > 1) {
-                    throw error("multiple comma-separated declarators are not supported in a for-loop init clause");
+                // Wrap multiple declarators ("int i=0, j=10") in a block for the init slot
+                if (decls.size() == 1) {
+                    init = decls.get(0);
+                } else {
+                    // Emit as a sequence of decl statements wrapped in a synthetic block
+                    List<Statement> stmts = new ArrayList<>(decls);
+                    init = new Block(stmts, decls.get(0).line(), decls.get(0).col(), List.of());
                 }
-                init = decls.get(0);
             } else {
                 CppLexerToken t = peek();
                 Expr e = parseExpr();
@@ -1750,7 +2908,16 @@ final class Parser {
         }
         Expr cond = checkPunct(";") ? null : parseExpr();
         expectPunct(";");
-        Expr update = checkPunct(")") ? null : parseExpr();
+        // For-loop update may be comma-separated: "i++, j--"
+        Expr update = null;
+        if (!checkPunct(")")) {
+            update = parseExpr();
+            while (matchPunct(",")) {
+                CppLexerToken ct = peek();
+                Expr next = parseExpr();
+                update = new BinaryExpr(",", update, next, ct.line(), ct.col(), List.of());
+            }
+        }
         expectPunct(")");
         Statement body = parseStatement(consumeLeadingComments());
         return new ForStatement(init, cond, update, body, start.line(), start.col(), leadingComments);
@@ -1804,6 +2971,8 @@ final class Parser {
     private Statement parseSwitch(List<CppLexerToken> leadingComments) {
         CppLexerToken start = expectKeyword("switch");
         expectPunct("(");
+        java.util.List<Statement> swInitStmts = new ArrayList<>();
+        {int scan=pos,depth=0;boolean hasInit=false;while(scan<tokens.size()){String stxt=tokens.get(scan).text();if(stxt.equals("(")||stxt.equals("[")||stxt.equals("{"))depth++;else if(stxt.equals(")")||stxt.equals("]")||stxt.equals("}")){if(depth==0)break;depth--;}else if(stxt.equals(";")&&depth==0){hasInit=true;break;}scan++;}if(hasInit){try{if(looksLikeDeclaration()){swInitStmts.addAll(parseDeclStatementsDesugared(List.of()));}else{Expr ie=parseExpr();expectPunct(";");swInitStmts.add(new ExprStatement(ie,ie.line(),ie.col(),List.of()));}}catch(ParseException e){}}}
         Expr subject = parseExpr();
         expectPunct(")");
         expectPunct("{");
@@ -1828,7 +2997,12 @@ final class Parser {
             cases.add(new SwitchCase(matchValue, body));
         }
         expectPunct("}");
-        return new SwitchStatement(subject, cases, start.line(), start.col(), leadingComments);
+        Statement swStmt = new SwitchStatement(subject, cases, start.line(), start.col(), leadingComments);
+        if (!swInitStmts.isEmpty()) {
+            swInitStmts.add(swStmt);
+            return new Block(swInitStmts, start.line(), start.col(), leadingComments);
+        }
+        return swStmt;
     }
 
     private Statement parseReturn(List<CppLexerToken> leadingComments) {
@@ -1933,6 +3107,10 @@ final class Parser {
         "try", "delete", "case", "default", "else", "throw"
     );
 
+    /** Keyword type names that are valid cast-operator targets ("operator int()",
+     * "operator bool()", etc.). Kept explicit and narrow to prevent arbitrary
+     * keywords (like Processing's "color", or "auto", "return", etc.) from
+     * being misidentified as cast-operator type names in parseFunctionOrVariableName. */
     private static final java.util.Set<String> CAST_OPERATOR_TYPE_KEYWORDS = java.util.Set.of(
         "int", "float", "double", "bool", "char", "long", "short",
         "unsigned", "signed", "void", "size_t"
@@ -1950,10 +3128,14 @@ final class Parser {
             // here (parseTypeRef has no concept of consuming a leading
             // qualifier itself, so it choked on the literal token
             // "static"), before ever reaching parseDeclStatementsDesugared's
-            // own handling of that same qualifier.
+            // own (correct, but unreachable without this fix) handling of
+            // that same qualifier.
             if (checkKeyword("static")) advance();
+            if (checkKeyword("volatile")) advance();
             if (checkKeyword("const")) advance();
+            if (checkKeyword("volatile")) advance(); // volatile after const
             if (checkKeyword("constexpr")) advance();
+            if (checkKeyword("inline")) advance();
             if (checkKeyword("static")) advance(); // tolerate either order
             if (!(check(CppLexerTokenType.IDENTIFIER) || check(CppLexerTokenType.KEYWORD))) return false;
             // Function-pointer-variable form: "Type (*name)(Params) = init;"
@@ -1972,6 +3154,8 @@ final class Parser {
                 return false;
             }
             advance(); // tentatively consume the name
+            // Member data pointer: "int Point::* dp" -- ::* follows the class name
+            if (checkPunct("::") && pos + 1 < tokens.size() && tokens.get(pos + 1).isOp("*")) return true;
             return checkOp("=") || checkPunct(";") || checkPunct("[") || checkPunct(",") || checkPunct("(") || checkPunct("{");
         } finally {
             pos = save;
@@ -1993,13 +3177,19 @@ final class Parser {
         // BUG FIX, found via adversarial stress-case probing: "static"
         // (and "const") were never consumed here at all -- only the
         // TOP-LEVEL declaration path consumed them. "static int x = 5;"
-        // as a LOCAL variable failed to parse outright. Tolerate either
-        // order ("static const" or "const static"), mirroring the
-        // top-level path's own tolerance.
+        // as a LOCAL variable failed to parse outright ("expected ';'
+        // but found 'int'", since "static" was left sitting in the
+        // token stream as if it were the start of an unrelated
+        // statement, then "int" showed up where a ";" was expected).
+        // Tolerate either order ("static const" or "const static"),
+        // mirroring the top-level path's own tolerance.
         boolean isStatic = matchKeyword("static");
+        matchKeyword("volatile"); // consume volatile qualifier at statement scope
         boolean isConst = matchKeyword("const");
-        if (matchKeyword("constexpr")) isConst = true;
+        if (matchKeyword("constexpr")) isConst = true; // constexpr implies const
         if (!isStatic) isStatic = matchKeyword("static");
+        if (!isConst) isConst = matchKeyword("const");
+        matchKeyword("volatile"); // volatile may follow const
 
         if (looksLikeFunctionPointerVariable()) {
             TypeRef returnType = parseTypeRef();
@@ -2017,8 +3207,12 @@ final class Parser {
         List<DeclStatement> result = new ArrayList<>();
         result.add(parseOneDeclarator(type, isStatic, isConst, start, leadingComments));
         while (matchPunct(",")) {
-            // Same gap, same fix, as the top-level declarator loop above
-            // -- see its notes for the full rationale.
+            // Same gap, same fix, as parseOneTopLevelDeclarator's comma-
+            // continuation loop -- see its notes for the full rationale,
+            // including why each declarator's type must be built from
+            // the base type's name/templateArgs/const ONLY, never
+            // reusing "type"'s own pointerDepth/isReference (which
+            // belongs exclusively to the first declarator).
             int extraPointerDepth = 0;
             boolean extraIsReference = false;
             while (checkOp("*") || checkOp("&")) {
@@ -2039,6 +3233,10 @@ final class Parser {
     private DeclStatement parseOneDeclarator(TypeRef type, boolean isStatic, boolean isConst,
                                               CppLexerToken start, List<CppLexerToken> leadingComments) {
         String name = expectIdentifier().text();
+        if (checkPunct("::") && pos + 1 < tokens.size() && tokens.get(pos + 1).isOp("*")) {
+            advance(); advance();
+            name = name + "::* " + expectIdentifier().text();
+        }
         List<Expr> dims = parseOptionalArrayDims();
         Expr initializer = null;
         if (matchOp("=")) {
@@ -2068,13 +3266,22 @@ final class Parser {
      * an EMPTY bracket pair (no size expression, size inferred from the
      * initializer -- valid, common C++/Java-array syntax) must still be
      * recorded as a real dimension, just with a null size expression --
-     * NOT silently dropped as if no brackets were present at all. This
-     * previously made "int angles[] = {...}" structurally
-     * indistinguishable from "int angles = {...}" (a scalar) once
-     * parsed, which g++ correctly rejected ("cannot convert
-     * '<brace-enclosed initializer list>' to 'int'"). CodeGen's
-     * emitArrayDims already handled a null dim entry correctly; the
-     * parser simply never produced one.
+     * NOT silently dropped as if no brackets were present at all. The
+     * previous version of this method only ever called dims.add(...)
+     * inside the "if (!checkPunct(\"]\"))" branch, meaning an empty "[]"
+     * added NOTHING to the dims list at all, making
+     * "int angles[] = {...}" structurally indistinguishable from
+     * "int angles = {...}" (a scalar) once parsed -- confirmed directly:
+     * vd.arrayDims() was an empty list, not a list containing one null
+     * entry, for "int angles[] = { 30, 10, 45 };". This silently turned
+     * a real top-level array declaration into a scalar declaration with
+     * a brace-init initializer, which g++ correctly rejects ("cannot
+     * convert '<brace-enclosed initializer list>' to 'int'").
+     *
+     * CodeGen.emitArrayDims already handled a null dim entry correctly
+     * (rendering bare "[]" when dim is null) -- this representation was
+     * already anticipated and supported on the rendering side; the
+     * parser simply never produced it.
      */
     private List<Expr> parseOptionalArrayDims() {
         List<Expr> dims = new ArrayList<>();
@@ -2108,8 +3315,9 @@ final class Parser {
      */
     private Expr parseDirectInitAsCall(String varName) {
         CppLexerToken t = peek();
-        List<Expr> args = checkPunct("{") ? parseBraceArgList() : parseArgList();
-        return new CallExpr(new Identifier(varName, t.line(), t.col(), List.of()), args, t.line(), t.col(), List.of());
+        boolean isBrace = checkPunct("{");
+        List<Expr> args = isBrace ? parseBraceArgList() : parseArgList();
+        return new CallExpr(new Identifier(varName, t.line(), t.col(), List.of()), args, isBrace, t.line(), t.col(), List.of());
     }
 
     private List<Expr> parseBraceArgList() {

@@ -1,7 +1,6 @@
 package processing.mode.cpp;
 
 
-
 import java.util.List;
 
 /**
@@ -31,7 +30,7 @@ import java.util.List;
  *     emitted before each top-level item using that item's own line
  *     number.
  */
-final class CodeGen {
+public final class CodeGen {
     private CodeGen() {}
 
     public static String generate(CompilationUnit cu) {
@@ -40,13 +39,46 @@ final class CodeGen {
 
     /** @param sourceFileName if non-null, emits a "#line N \"file\"" directive before each top-level item. */
     public static String generate(CompilationUnit cu, String sourceFileName) {
+        // Hoist #include directives to the top of the output, before any other
+        // declarations. The wrapper (CppBuild.java / buildRealHeaderWrapper) puts
+        // generated code inside "namespace Processing { ... }". Standard library
+        // headers included inside a namespace cause lookup failures on GCC 16+
+        // (e.g. <utility> uses __and_ without std:: qualification inside noexcept
+        // specifiers, which resolves in :: but not in ::Processing).
+        // Hoisting all #include lines before the namespace avoids this entirely.
         StringBuilder sb = new StringBuilder();
+        // Pass 1: emit #include lines
         for (TopLevelItem item : cu.items()) {
+            if (item instanceof PreprocessorLine pl && pl.rawText().startsWith("#include")) {
+                sb.append(pl.rawText()).append("\n");
+            }
+        }
+        // Pass 2: emit everything except #include and "using X =" type aliases
+        for (TopLevelItem item : cu.items()) {
+            if (item instanceof PreprocessorLine pl) {
+                if (pl.rawText().startsWith("#include")) continue; // already emitted above
+                // Defer "using X = ..." type aliases to pass 3 (after struct definitions)
+                String rt = pl.rawText().trim();
+                if (rt.startsWith("using ") && !rt.startsWith("using namespace") && rt.contains("=")) continue;
+            }
             if (sourceFileName != null) {
                 sb.append("#line ").append(item.line()).append(" \"").append(sourceFileName).append("\"\n");
             }
             emitTopLevelItem(sb, item, 0);
-            sb.append('\n');
+            sb.append("\n");
+        }
+        // Pass 3: emit "using X = ..." type aliases (after struct definitions)
+        for (TopLevelItem item : cu.items()) {
+            if (item instanceof PreprocessorLine pl) {
+                String rt = pl.rawText().trim();
+                if (rt.startsWith("using ") && !rt.startsWith("using namespace") && rt.contains("=")) {
+                    if (sourceFileName != null) {
+                        sb.append("#line ").append(item.line()).append(" \"").append(sourceFileName).append("\"\n");
+                    }
+                    emitTopLevelItem(sb, item, 0);
+                    sb.append("\n");
+                }
+            }
         }
         return sb.toString();
     }
@@ -65,7 +97,7 @@ final class CodeGen {
     private static void emitComments(StringBuilder sb, List<CppLexerToken> comments, int depth) {
         for (CppLexerToken c : comments) {
             indent(sb, depth);
-            sb.append(c.text()).append('\n');
+            sb.append(c.text()).append("\n");
         }
     }
 
@@ -77,7 +109,7 @@ final class CodeGen {
         emitComments(sb, item.leadingComments(), depth);
         if (item instanceof PreprocessorLine pl) {
             indent(sb, depth);
-            sb.append(pl.rawText()).append('\n');
+            sb.append(pl.rawText()).append("\n");
         } else if (item instanceof EnumDecl e) {
             emitEnumDecl(sb, e, depth);
         } else if (item instanceof TypeDef td) {
@@ -125,13 +157,18 @@ final class CodeGen {
 
     private static void emitTypeDef(StringBuilder sb, TypeDef td, int depth) {
         indent(sb, depth);
+        boolean isSpecialization = td.name().contains("<");
         if (!td.templateParams().isEmpty()) {
             sb.append("template<");
             for (int i = 0; i < td.templateParams().size(); i++) {
                 if (i > 0) sb.append(", ");
-                sb.append("typename ").append(td.templateParams().get(i));
+                sb.append(td.templateParams().get(i)); // full text, not just name
             }
             sb.append(">\n");
+            indent(sb, depth);
+        } else if (isSpecialization) {
+            // Explicit full specialization: "template<> struct TypeName<int>"
+            sb.append("template<>\n");
             indent(sb, depth);
         }
         sb.append(td.kind()).append(' ').append(td.name());
@@ -148,6 +185,19 @@ final class CodeGen {
             sb.append("public:\n");
         }
         for (TopLevelItem member : td.members()) {
+            // Friend operator functions (e.g. "friend Vec3 operator*(double s, const Vec3& v)")
+            // need "friend" prefix when they're binary operators (2 params).
+            // Regular friend functions (drawVector etc.) stay as members so they can
+            // access Processing API (stroke, line) through the _PSketch virtual base.
+            if (member instanceof FunctionDecl fd && fd.body() != null
+                    && !fd.isConstructor() && !fd.isDestructor() && !fd.isStatic()
+                    && fd.params().size() >= 2
+                    && fd.name().startsWith("operator")) {
+                indent(sb, depth + 1);
+                sb.append("friend ");
+                emitFunctionDecl(sb, fd, 0);
+                continue;
+            }
             emitTopLevelItem(sb, member, depth + 1);
         }
         indent(sb, depth);
@@ -172,13 +222,36 @@ final class CodeGen {
      */
     private static String renderTypeAndName(TypeRef type, String name) {
         if (type instanceof FunctionPointerType fpt) {
+            boolean isConst = name.endsWith("__const__");
+            if (isConst) name = name.substring(0, name.length() - 9);
+            String dimSuffix = "";
+            int dimIdx = name.indexOf("[");
+            if (dimIdx >= 0) { dimSuffix = name.substring(dimIdx); name = name.substring(0, dimIdx); }
+            int colonIdx = name.indexOf("::");
+            String classPrefix = "";
+            String ptrChar = "*";
+            String bareNamePart = name;
+            if (colonIdx >= 0) {
+                classPrefix = name.substring(0, colonIdx + 2);
+                String rest = name.substring(colonIdx + 2);
+                if (rest.startsWith("&")) { ptrChar = "&"; bareNamePart = rest.substring(1); }
+                else if (rest.startsWith("*")) { ptrChar = "*"; bareNamePart = rest.substring(1); }
+                else { bareNamePart = rest; }
+            } else if (name.startsWith("&")) { ptrChar = "&"; bareNamePart = name.substring(1); }
+              else if (name.startsWith("*")) { ptrChar = "*"; bareNamePart = name.substring(1); }
             StringBuilder sb = new StringBuilder(renderTypeRef(fpt.returnType()));
-            sb.append(" (*").append(name).append(")(");
-            for (int i = 0; i < fpt.paramTypes().size(); i++) {
-                if (i > 0) sb.append(", ");
-                sb.append(renderTypeRef(fpt.paramTypes().get(i)));
+            sb.append(" (").append(classPrefix).append(ptrChar).append(bareNamePart);
+            if (!dimSuffix.isEmpty()) {
+                sb.append(")").append(dimSuffix);
+            } else {
+                sb.append(")(");
+                for (int i = 0; i < fpt.paramTypes().size(); i++) {
+                    if (i > 0) sb.append(", ");
+                    sb.append(renderTypeRef(fpt.paramTypes().get(i)));
+                }
+                sb.append(")");
+                if (isConst) sb.append(" const");
             }
-            sb.append(")");
             return sb.toString();
         }
         return renderTypeRef(type) + " " + name;
@@ -186,10 +259,18 @@ final class CodeGen {
 
     private static void emitVariableDecl(StringBuilder sb, VariableDecl vd, int depth) {
         indent(sb, depth);
-        if (vd.isStatic()) sb.append("static ");
-        if (vd.isConst() && !(vd.type() instanceof NamedType nt && nt.isConst())) {
-            sb.append("const ");
+        if (!vd.templateParams().isEmpty()) {
+            sb.append("template<");
+            for (int i = 0; i < vd.templateParams().size(); i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(vd.templateParams().get(i));
+            }
+            sb.append(">\n");
+            indent(sb, depth);
         }
+        if (vd.isStatic()) sb.append("static ");
+        // Only emit const here if the type itself doesn't already carry it
+        if (vd.isConst() && !(vd.type() instanceof NamedType nt && nt.isConst())) sb.append("const ");
         sb.append(renderTypeAndName(vd.type(), vd.name()));
         emitArrayDims(sb, vd.arrayDims());
         emitDeclaratorTail(sb, vd.type(), vd.name(), vd.initializer(), true);
@@ -245,19 +326,27 @@ final class CodeGen {
      * by an automated check, and a real test for it was added after.
      */
     /**
-     * Standard-library container/wrapper types with a real
-     * initializer_list constructor, meaning brace-init and paren-init
-     * are NOT interchangeable -- they have genuinely different
-     * SEMANTICS. Found as a real bug via a real user-reported sketch
-     * (Wolfram.pde): "std::vector<int> nextgen(cells.size(), 0);" was
-     * being unconditionally brace-wrapped into
-     * "std::vector<int> nextgen{cells.size(), 0};" -- confirmed via g++
-     * that these produce different .size() results (5 vs 2 for
-     * "(5, 0)" vs "{5, 0}"). The most-vexing-parse protection this
-     * brace-wrapping exists for only matters for actual user-defined
-     * class types; a template instantiation like "std::vector<int>" was
-     * never at risk of that ambiguity (confirmed via g++: no competing
-     * function-declaration interpretation exists for it).
+     * Standard-library (and closely related) container/wrapper types that
+     * have a real initializer_list constructor, meaning brace-init and
+     * paren-init are NOT interchangeable syntax for the same call -- they
+     * have genuinely different SEMANTICS. Found as a real bug via a real
+     * user-reported sketch (Wolfram.pde): "std::vector<int> nextgen(cells.size(), 0);"
+     * (constructor form: cells.size() elements, each 0) was being
+     * unconditionally brace-wrapped by emitDeclaratorTail's most-vexing-
+     * parse protection into "std::vector<int> nextgen{cells.size(), 0};"
+     * (initializer-list form: a 2-element vector containing the VALUES
+     * cells.size() and 0) -- confirmed directly via g++ that these produce
+     * different .size() results (5 vs 2 for "(5, 0)" vs "{5, 0}").
+     *
+     * The most-vexing-parse protection this brace-wrapping exists for
+     * only matters for actual USER-DEFINED class types being constructed
+     * with a bare-type-name-shaped argument (the original confirmed case,
+     * "Eye e1(Bar());") -- a template instantiation like
+     * "std::vector<int>" was never at risk of that specific ambiguity in
+     * the first place (confirmed directly via g++: "std::vector<int> v(5, 0);"
+     * has no competing function-declaration interpretation to be
+     * disambiguated from). For these types, paren-init is both safe and
+     * semantically correct, so brace-wrapping must be skipped.
      */
     private static final java.util.Set<String> INITIALIZER_LIST_AMBIGUOUS_TYPES = java.util.Set.of(
         // C++ stdlib types (original set -- see comment above for full rationale)
@@ -277,28 +366,55 @@ final class CodeGen {
         // and paren-init are NOT interchangeable:
         //   IntList hist(256)  -> 256-element zeroed list  (correct)
         //   IntList hist{256}  -> 1-element list, hist[0]==256  (WRONG)
-        // Found via Histogram.pde crash: "IntList index 206 out of bounds for length 1"
+        // Found via Histogram.pde: "malloc(): unaligned tcache chunk detected"
+        // then "IntList index 206 out of bounds for length 1" after adding
+        // bounds-checks -- the sketch writes hist[bright]++ where bright can
+        // be anywhere in [0,255], but hist was silently constructed as length 1.
         "IntList", "FloatList", "StringList", "ArrayList", "Array",
+        // color has both color(float r,float g,float b) and color(int gray) --
+        // brace-init "color c{r,g,b}" with int r,g,b narrows int->float.
+        // Keep as paren-init so the int 3/4-arg overloads (added to Processing.h/cpp)
+        // resolve cleanly without narrowing warnings.
         "color"
     );
 
-    /** Convenience overload for statement-scope (local variable) declarations. */
     private static void emitDeclaratorTail(StringBuilder sb, TypeRef declaratorType, String declaratorName, Expr initializer) {
         emitDeclaratorTail(sb, declaratorType, declaratorName, initializer, false);
     }
 
     /**
      * Emits the initializer portion of a variable declaration.
-     * atMemberOrGlobalScope=true for VariableDecl (class members and globals),
-     * false for DeclStatement (local variables inside function bodies).
-     * At member/global scope, paren-init is always a function declaration in C++.
-     * "Array<PVector> coords(0)" at member scope = "coords(int)" not a variable.
-     * Fix: use copy-init "= Type(args)" which is unambiguous at all scopes.
+     *
+     * atMemberOrGlobalScope: true for VariableDecl (class members and
+     * namespace-scope globals), false for DeclStatement (local variables
+     * inside function bodies).
+     *
+     * The distinction matters because C++ parses "Type name(args)" differently
+     * depending on scope:
+     *   - Inside a function body: always a constructor call. Brace-rewrite
+     *     ("name{args}") is used as the most-vexing-parse guard for non-
+     *     ambiguous types; paren-init is preserved for INITIALIZER_LIST_AMBIGUOUS_TYPES.
+     *   - At member or namespace scope: ALWAYS parsed as a function declaration.
+     *     "Array<PVector> coords(0)" at member scope is "coords(int)" not a
+     *     variable. Fix: use copy-init "= Type(args)" which is unambiguous
+     *     at all scopes.
      */
     private static void emitDeclaratorTail(StringBuilder sb, TypeRef declaratorType, String declaratorName, Expr initializer, boolean atMemberOrGlobalScope) {
         if (initializer == null) return;
         if (initializer instanceof CallExpr ce && ce.callee() instanceof Identifier id
             && id.name().equals(declaratorName)) {
+            // If the original source used brace-init ("arr2{ 1, 2, 3 }"), preserve it.
+            // At member/global scope: "Type name{args}" is valid and correct.
+            // At statement scope: already handled correctly by the brace-init path below.
+            if (ce.isBraceInit()) {
+                sb.append('{');
+                for (int i = 0; i < ce.args().size(); i++) {
+                    if (i > 0) sb.append(", ");
+                    sb.append(renderExpr(ce.args().get(i)));
+                }
+                sb.append('}');
+                return;
+            }
             if (atMemberOrGlobalScope) {
                 sb.append(" = ").append(renderTypeRef(declaratorType)).append('(');
                 for (int i = 0; i < ce.args().size(); i++) {
@@ -325,6 +441,20 @@ final class CodeGen {
             sb.append(')');
             return;
         }
+        // If initializer is "new Foo(args)" but declared type is a value (not pointer),
+        // strip "new" and emit as constructor call -- the clean fix for Java's
+        // "ArrayList<T> x = new ArrayList<T>()" idiom in CppMode.
+        if (initializer instanceof NewExpr ne
+                && declaratorType instanceof NamedType nt
+                && nt.pointerDepth() == 0 && !nt.isReference()) {
+            sb.append(" = ").append(renderTypeRef(ne.type())).append("(");
+            for (int i = 0; i < ne.args().size(); i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(renderExpr(ne.args().get(i)));
+            }
+            sb.append(")");
+            return;
+        }
         sb.append(" = ").append(renderExpr(initializer));
     }
 
@@ -339,11 +469,12 @@ final class CodeGen {
             sb.append("template<");
             for (int i = 0; i < fd.templateParams().size(); i++) {
                 if (i > 0) sb.append(", ");
-                sb.append("typename ").append(fd.templateParams().get(i));
+                sb.append(fd.templateParams().get(i)); // full text, not just name
             }
             sb.append(">\n");
             indent(sb, depth);
         }
+        if (fd.isConstexpr()) sb.append("constexpr ");
         if (fd.isStatic()) sb.append("static ");
         if (fd.isVirtual()) sb.append("virtual ");
 
@@ -354,6 +485,12 @@ final class CodeGen {
             emitParamList(sb, fd.params());
             sb.append(')');
         } else {
+            // Cast operators ("operator int()", "operator float()") have no
+            // separate return type in C++; the cast target IS the name. When
+            // parseTypeRef consumed "operator" as a bare identifier (NamedType
+            // with baseName "operator") and parseFunctionOrVariableName then
+            // consumed "operator int" as the full name, suppress the spurious
+            // "operator" prefix so we don't render "operator operator int()".
             boolean isCastOp = fd.name().startsWith("operator ")
                 && fd.returnType() instanceof NamedType nt
                 && nt.baseName().equals("operator")
@@ -385,18 +522,26 @@ final class CodeGen {
 
         if (fd.body() == null) {
             if (fd.isPureVirtual()) sb.append(" = 0");
+            else if (fd.isConst() && fd.name().contains("<=>") 
+                    && fd.returnType() instanceof NamedType nt && nt.baseName().equals("auto")) {
+                sb.append(" = default"); // auto operator<=> = default
+            }
             sb.append(";\n");
             return;
         }
         sb.append(" ");
         emitBlock(sb, fd.body(), depth);
-        sb.append('\n');
+        sb.append("\n");
     }
 
     private static void emitParamList(StringBuilder sb, List<Param> params) {
         for (int i = 0; i < params.size(); i++) {
             if (i > 0) sb.append(", ");
             Param p = params.get(i);
+            if (p.name() != null && p.name().equals("...")) {
+                sb.append("..."); // C-style variadic
+                continue;
+            }
             if (!p.innerArrayDims().isEmpty()) {
                 TypeRef base = p.type();
                 if (base instanceof NamedType nt && nt.pointerDepth() > 0) {
@@ -408,9 +553,35 @@ final class CodeGen {
                     sb.append("[").append(dim > 0 ? dim : "").append("]");
                 }
             } else if (p.name() != null && !p.name().isEmpty()) {
-                sb.append(renderTypeAndName(p.type(), p.name()));
+                if (p.isVariadic()) {
+                    // "Args... args" -- ellipsis between type and name
+                    sb.append(renderTypeRef(p.type())).append("... ").append(p.name());
+                } else {
+                    String pname = p.name();
+                    String retType = renderTypeRef(p.type());
+                    // Ref/ptr-to-array param: "&arr[10]" or "*arr[10]" -> "int (&arr)[10]"
+                    if ((pname.startsWith("&") || pname.startsWith("*")) && pname.contains("[")) {
+                        boolean isRef = pname.startsWith("&");
+                        int bracketIdx = pname.indexOf("[");
+                        String bname = pname.substring(1, bracketIdx);
+                        String dims = pname.substring(bracketIdx);
+                        sb.append(retType).append(" (").append(isRef ? "&" : "*").append(bname).append(")").append(dims);
+                    // Member fn ptr param: "Widget::*mp(int)__const__" -> "int (Widget::*mp)(int) const"
+                    } else if (pname.contains("::*") && pname.contains("(")) {
+                        int parenIdx = pname.indexOf("(");
+                        String mpPart = pname.substring(0, parenIdx); // "Widget::*mp"
+                        String sigPart = pname.substring(parenIdx);   // "(int)__const__" or "(int)"
+                        boolean isConst = sigPart.endsWith("__const__");
+                        if (isConst) sigPart = sigPart.substring(0, sigPart.length() - 9);
+                        sb.append(retType).append(" (").append(mpPart).append(")").append(sigPart);
+                        if (isConst) sb.append(" const");
+                    } else {
+                        sb.append(renderTypeAndName(p.type(), p.name()));
+                    }
+                }
             } else {
                 sb.append(renderTypeRef(p.type()));
+                if (p.isVariadic()) sb.append("...");
             }
             if (p.defaultValue() != null) sb.append(" = ").append(renderExpr(p.defaultValue()));
         }
@@ -434,13 +605,12 @@ final class CodeGen {
         if (s instanceof Block b) {
             indent(sb, depth);
             emitBlock(sb, b, depth);
-            sb.append('\n');
+            sb.append("\n");
         } else if (s instanceof DeclStatement ds) {
             indent(sb, depth);
             if (ds.isStatic()) sb.append("static ");
-            if (ds.isConst() && !(ds.type() instanceof NamedType nt && nt.isConst())) {
-                sb.append("const ");
-            }
+            // Only emit const here if the type itself doesn't already carry it
+            if (ds.isConst() && !(ds.type() instanceof NamedType nt2 && nt2.isConst())) sb.append("const ");
             sb.append(renderTypeAndName(ds.type(), ds.name()));
             emitArrayDims(sb, ds.arrayDims());
             emitDeclaratorTail(sb, ds.type(), ds.name(), ds.initializer());
@@ -458,7 +628,7 @@ final class CodeGen {
             indent(sb, depth);
             sb.append("while (").append(renderExpr(w.condition())).append(") ");
             emitStmtInline(sb, w.body(), depth);
-            sb.append('\n');
+            sb.append("\n");
         } else if (s instanceof DoWhileStatement dw) {
             indent(sb, depth);
             sb.append("do ");
@@ -500,7 +670,9 @@ final class CodeGen {
 
     private static void emitIfStmt(StringBuilder sb, IfStatement s, int depth, boolean withLeadingIndent) {
         if (withLeadingIndent) indent(sb, depth);
-        sb.append("if (").append(renderExpr(s.condition())).append(") ");
+        sb.append("if ");
+        if (s.isConstexpr()) sb.append("constexpr ");
+        sb.append("(").append(renderExpr(s.condition())).append(") ");
         emitStmtInline(sb, s.thenBranch(), depth);
         if (s.elseBranch() != null) {
             if (s.thenBranch() instanceof Block) sb.append(" ");
@@ -515,23 +687,37 @@ final class CodeGen {
                 emitIfStmt(sb, elseIf, depth, false);
             } else {
                 emitStmtInline(sb, s.elseBranch(), depth);
-                sb.append('\n');
+                sb.append("\n");
             }
             return;
         }
-        sb.append('\n');
+        sb.append("\n");
     }
 
     private static void emitForStmt(StringBuilder sb, ForStatement s, int depth) {
         indent(sb, depth);
         sb.append("for (");
         if (s.init() instanceof DeclStatement ds) {
-            if (ds.isConst() && !(ds.type() instanceof NamedType nt && nt.isConst())) {
-                sb.append("const ");
-            }
+            if (ds.isConst() && !(ds.type() instanceof NamedType nt && nt.isConst())) sb.append("const ");
             sb.append(renderTypeAndName(ds.type(), ds.name()));
             emitArrayDims(sb, ds.arrayDims());
             emitDeclaratorTail(sb, ds.type(), ds.name(), ds.initializer());
+        } else if (s.init() instanceof Block blk) {
+            // Multi-declarator for-init: "int i=0, j=10" wrapped in Block
+            boolean firstDecl = true;
+            for (Statement stmt : blk.statements()) {
+                if (stmt instanceof DeclStatement ds2) {
+                    if (firstDecl) {
+                        if (ds2.isConst() && !(ds2.type() instanceof NamedType nt2 && nt2.isConst())) sb.append("const ");
+                        sb.append(renderTypeAndName(ds2.type(), ds2.name()));
+                        firstDecl = false;
+                    } else {
+                        sb.append(", ").append(ds2.name());
+                    }
+                    emitArrayDims(sb, ds2.arrayDims());
+                    emitDeclaratorTail(sb, ds2.type(), ds2.name(), ds2.initializer());
+                }
+            }
         } else if (s.init() instanceof ExprStatement es) {
             sb.append(renderExpr(es.expr()));
         }
@@ -541,7 +727,7 @@ final class CodeGen {
         if (s.update() != null) sb.append(renderExpr(s.update()));
         sb.append(") ");
         emitStmtInline(sb, s.body(), depth);
-        sb.append('\n');
+        sb.append("\n");
     }
 
     private static void emitRangeForStmt(StringBuilder sb, RangeForStatement s, int depth) {
@@ -551,7 +737,7 @@ final class CodeGen {
         sb.append(' ').append(s.declName())
           .append(" : ").append(renderExpr(s.iterableExpr())).append(") ");
         emitStmtInline(sb, s.body(), depth);
-        sb.append('\n');
+        sb.append("\n");
     }
 
     private static void emitSwitchStmt(StringBuilder sb, SwitchStatement s, int depth) {
@@ -576,7 +762,7 @@ final class CodeGen {
         indent(sb, depth);
         sb.append("try ");
         emitBlock(sb, s.tryBlock(), depth);
-        sb.append('\n');
+        sb.append("\n");
         for (CatchClause c : s.catchClauses()) {
             indent(sb, depth);
             sb.append("catch (");
@@ -588,7 +774,7 @@ final class CodeGen {
             }
             sb.append(") ");
             if (c.body() != null) emitBlock(sb, c.body(), depth);
-            sb.append('\n');
+            sb.append("\n");
         }
     }
 
@@ -599,6 +785,10 @@ final class CodeGen {
     public static String renderTypeRef(TypeRef t) {
         if (t == null) return "void"; // constructors/destructors carry no returnType
         if (t instanceof NamedType nt) {
+            // decltype(...) placeholder (legacy): fall back to "auto".
+            if (nt.baseName().equals("decltype(...)")) return "auto";
+            // Preserved decltype expressions: emit verbatim
+            if (nt.baseName().startsWith("decltype(")) return nt.baseName();
             StringBuilder sb = new StringBuilder();
             if (nt.isConst()) sb.append("const ");
             sb.append(nt.baseName());
@@ -611,7 +801,8 @@ final class CodeGen {
                 sb.append('>');
             }
             sb.append("*".repeat(nt.pointerDepth()));
-            if (nt.isReference()) sb.append('&');
+            if (nt.isRvalueRef()) sb.append("&&");
+            else if (nt.isReference()) sb.append('&');
             return sb.toString();
         }
         if (t instanceof FunctionPointerType fpt) {
@@ -655,27 +846,52 @@ final class CodeGen {
             return sb.append('}').toString();
         }
         if (e instanceof BinaryExpr b) {
+            // Comma fold: BinaryExpr(",", expr, "...") -- rendered as "(expr, ...)"
+            // Must check BEFORE the general fold detection since rightIsDots would also fire.
+            if (b.op().equals(",") && b.right() instanceof Identifier rd && rd.name().equals("...")) {
+                return "(" + renderExpr(b.left()) + ", ...)";
+            }
+            // Fold expression detection -- fold expressions REQUIRE outer parens in C++.
+            boolean rightIsDots = b.right() instanceof Identifier rid && rid.name().equals("...");
+            boolean leftIsDots = b.left() instanceof Identifier lid && lid.name().equals("...");
+            // Binary fold "init op ... op pack": BinaryExpr(op2, BinaryExpr(op1, init, ...), pack)
+            boolean isBinaryFold = b.left() instanceof BinaryExpr lb
+                && lb.right() instanceof Identifier lid2 && lid2.name().equals("...");
+            if (isBinaryFold) {
+                // Render as "(init op ... op pack)" -- flat, not nested
+                BinaryExpr inner = (BinaryExpr) b.left();
+                return "(" + renderExpr(inner.left()) + " " + inner.op() + " ... " + b.op() + " " + renderExpr(b.right()) + ")";
+            }
+            if (rightIsDots || leftIsDots) {
+                String leftRendered = renderExpr(b.left());
+                return "(" + leftRendered + " " + b.op() + " " + renderExpr(b.right()) + ")";
+            }
+
             String leftRendered = renderExpr(b.left());
             // A bare string literal on the LEFT of a "+" is genuinely
             // ambiguous in real C++ when the right operand isn't itself
             // a std::string/char: a raw string literal is `const char*`,
-            // and pointer arithmetic (always preferred over a user-
-            // defined overload requiring an implicit conversion)
-            // silently wins over the engine's intended "Java-style
-            // string + number concatenation" operator+ overloads.
-            // Confirmed real via a direct g++ test on
-            // Characters_Strings.pde's actual
-            // "The String is " + words.length() + " characters long":
-            // the first "+" produces a const char* (pointer arithmetic),
-            // not a std::string, so the SUBSEQUENT "+ moreText" then
-            // fails to compile. Fix: wrap the leftmost string literal in
-            // std::string(...) whenever it's the direct left operand of
-            // a "+" -- confirmed via direct g++ tests this is
-            // UNCONDITIONALLY safe (doesn't change behavior for any case
-            // that already worked: literal + std::string, literal +
-            // char, int + literal all compile identically wrapped or
-            // unwrapped), so no type inference is needed to decide when
-            // to apply it.
+            // and pointer arithmetic (a built-in operator, always
+            // preferred over a user-defined overload requiring an
+            // implicit conversion) silently wins over the engine's
+            // intended "Java-style string + number concatenation"
+            // operator+ overloads (see Processing.h's own comment to
+            // that effect). Confirmed real via a direct g++ test:
+            // `"a" + 5` produces a `const char*` (pointer arithmetic),
+            // not a std::string, so a SUBSEQUENT "+ moreText" then fails
+            // to compile with "invalid operands... to binary operator+"
+            // -- exactly the shape of Characters_Strings.pde's real
+            // `"The String is " + words.length() + " characters long"`.
+            //
+            // Fix: wrap the leftmost string literal in `std::string(...)`
+            // whenever it's the direct left operand of a "+". Confirmed
+            // via direct g++ tests that this is UNCONDITIONALLY safe --
+            // it does not change behavior for any case that already
+            // worked (literal + std::string, literal + char, int +
+            // literal all compile identically wrapped or unwrapped) --
+            // so no type inference is needed to decide when to apply it;
+            // applying it whenever the shape matches is always correct,
+            // not just correct for the cases tested.
             if (b.op().equals("+") && b.left() instanceof Literal lit && lit.kind() == Literal.Kind.STRING) {
                 leftRendered = "std::string(" + leftRendered + ")";
             }
@@ -725,13 +941,23 @@ final class CodeGen {
         }
         if (e instanceof LambdaExpr l) {
             StringBuilder sb = new StringBuilder("[");
+            boolean _first = true;
             for (int i = 0; i < l.captures().size(); i++) {
-                if (i > 0) sb.append(", ");
                 Capture cap = l.captures().get(i);
+                if (cap.name().startsWith("__tmpl__<")) continue;
+                if (!_first) sb.append(", ");
+                _first = false;
                 if (cap.byRef()) sb.append('&');
                 sb.append(cap.name());
             }
-            sb.append("](");
+            sb.append("]");
+            for (Capture cap : l.captures()) {
+                if (cap.name().startsWith("__tmpl__<")) {
+                    sb.append("<").append(cap.name(), 9, cap.name().length() - 1).append(">");
+                    break;
+                }
+            }
+            sb.append("(");
             for (int i = 0; i < l.params().size(); i++) {
                 if (i > 0) sb.append(", ");
                 Param p = l.params().get(i);

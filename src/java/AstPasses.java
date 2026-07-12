@@ -80,6 +80,19 @@ final class ClassHoister {
             }
         }
 
+        // Deduplicate: drop empty forward declarations when a full definition exists.
+        java.util.Map<String, TypeDef> best = new java.util.LinkedHashMap<>();
+        for (TypeDef td : classBlocks) {
+            String name = td.name();
+            TypeDef existing = best.get(name);
+            if (existing == null) {
+                best.put(name, td);
+            } else if (!td.members().isEmpty() && existing.members().isEmpty()) {
+                best.put(name, td); // full definition beats forward declaration
+            }
+        }
+        classBlocks = new ArrayList<>(best.values());
+
         boolean changed = true;
         for (int pass = 0; pass < classBlocks.size() * 2 && changed; pass++) {
             changed = false;
@@ -293,6 +306,35 @@ final class NameUsageScanner {
         return new Finder(name, true).visit(root);
     }
 
+    public static boolean containsBareFunctionCall(Node root) {
+        return new BareFunctionCallFinder().visit(root);
+    }
+
+    private static final class BareFunctionCallFinder {
+        boolean visit(Node n) {
+            if (n == null) return false;
+            if (n instanceof CallExpr c) {
+                if (c.callee() instanceof Identifier) return true;
+                for (var arg : c.args()) if (visit(arg)) return true;
+                return visit(c.callee());
+            }
+            if (n instanceof Block b) { for (var s : b.statements()) if (visit(s)) return true; }
+            if (n instanceof ExprStatement es) return visit(es.expr());
+            if (n instanceof ReturnStatement rs) return visit(rs.value());
+            if (n instanceof IfStatement ifs) return visit(ifs.condition()) || visit(ifs.thenBranch()) || visit(ifs.elseBranch());
+            if (n instanceof WhileStatement ws) return visit(ws.condition()) || visit(ws.body());
+            if (n instanceof ForStatement fs) return visit(fs.init()) || visit(fs.condition()) || visit(fs.update()) || visit(fs.body());
+            if (n instanceof DeclStatement ds) return visit(ds.initializer());
+            if (n instanceof BinaryExpr b) return visit(b.left()) || visit(b.right());
+            if (n instanceof UnaryExpr u) return visit(u.operand());
+            if (n instanceof AssignExpr ae) return visit(ae.target()) || visit(ae.value());
+            if (n instanceof MemberAccessExpr m) return visit(m.target());
+            if (n instanceof TernaryExpr t) return visit(t.condition()) || visit(t.thenExpr()) || visit(t.elseExpr());
+            if (n instanceof FunctionDecl fd) return visit(fd.body());
+            return false;
+        }
+    }
+
     private static final class Finder {
         final String name;
         final boolean callOnly;
@@ -471,11 +513,28 @@ final class PSketchInjector {
         if (!hasAnyMethod(td)) {
             return new Result(td, false);
         }
+        // Only inject _PSketch if the class actually uses Processing API.
+        // Classes that only use operators and member access (like Vec3) are
+        // pure data types -- injecting _PSketch breaks aggregate initialization.
+        if (!usesBareFunctionCalls(td)) {
+            return new Result(td, false);
+        }
         List<String> newBases = new ArrayList<>(td.baseClasses());
-        newBases.add("virtual _PSketch"); // codegen renders "public " prefix; see CodeGen notes if/when wired in
+        newBases.add("virtual _PSketch");
         TypeDef injected = new TypeDef(td.kind(), td.name(), td.templateParams(), newBases, td.members(),
             td.line(), td.col(), td.leadingComments());
         return new Result(injected, true);
+    }
+
+    private static boolean usesBareFunctionCalls(TypeDef td) {
+        for (TopLevelItem member : td.members()) {
+            if (member instanceof FunctionDecl fd && fd.body() != null) {
+                if (NameUsageScanner.containsBareFunctionCall(fd)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -539,7 +598,7 @@ final class ForwardDeclGenerator {
                 fd.returnType(), fd.name(), fd.templateParams(), fd.params(),
                 fd.initializerList(), null /* body -- this is what makes it a forward decl */,
                 fd.isConstructor(), fd.isDestructor(), fd.isVirtual(), fd.isOverride(),
-                fd.isConst(), fd.isStatic(), false /* isPureVirtual -- never applies to a hoisted free function */,
+                fd.isConst(), fd.isConstexpr(), fd.isStatic(), false /* isPureVirtual -- never applies to a hoisted free function */,
                 fd.line(), fd.col(), List.of() /* no comments on the forward decl */
             ));
         }

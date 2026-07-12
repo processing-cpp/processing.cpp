@@ -58,10 +58,17 @@ record VariableDecl(
     Expr initializer,
     boolean isConst,
     boolean isStatic,
+    List<String> templateParams,
     int line,
     int col,
     List<CppLexerToken> leadingComments
 ) implements TopLevelItem {
+    VariableDecl(TypeRef type, String name, List<Expr> arrayDims,
+            Expr initializer, boolean isConst, boolean isStatic,
+            int line, int col, List<CppLexerToken> leadingComments) {
+        this(type, name, arrayDims, initializer, isConst, isStatic,
+             List.of(), line, col, leadingComments);
+    }
 }
 
 
@@ -109,6 +116,7 @@ record FunctionDecl(
     boolean isVirtual,
     boolean isOverride,
     boolean isConst,
+    boolean isConstexpr,
     boolean isStatic,
     boolean isPureVirtual,      // "= 0" specifier -- distinct from body==null (an ordinary forward
                                  // declaration also has a null body but should NOT render "= 0")

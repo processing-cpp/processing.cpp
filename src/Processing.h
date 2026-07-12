@@ -59,6 +59,7 @@
 #include <fstream>
 #include <regex>
 #include <cstdlib>
+#include <climits>
 #include <cstdarg>
 #include <ctime>
 #include <chrono>
@@ -486,11 +487,14 @@ void tint(const PColor& c);
 // IMAGE FILTER CONSTANTS
 // =============================================================================
 
-static constexpr int GRAY        = 1;
-static constexpr int INVERT      = 2;
-static constexpr int THRESHOLD   = 3;
-static constexpr int BLUR_FILTER = 4;
+static constexpr int THRESHOLD   = 1;
+static constexpr int GRAY        = 2;
+static constexpr int OPAQUE      = 3;
+static constexpr int INVERT      = 4;
 static constexpr int POSTERIZE   = 5;
+static constexpr int BLUR        = 6;
+static constexpr int ERODE       = 7;
+static constexpr int DILATE      = 8;
 
 // =============================================================================
 // PIMAGE  --  Pixel buffer backed by an OpenGL texture
@@ -533,13 +537,70 @@ public:
 
     void resize(int w, int h) { width=w; height=h; pixels.assign(w*h, 0xFF000000); dirty=true; }
 
-    // Apply an image filter to all pixels
+    // Apply an image filter to all pixels. Mirrors Java's filter(int kind)
+    // -- fills in the same per-mode defaults Java uses when no level is
+    // given (THRESHOLD: 0.5, BLUR: radius 1; everything else ignores the
+    // level entirely). POSTERIZE has no documented Java default for the
+    // no-level call; 4 is a reasonable stand-in, not a spec'd value.
     void filter(int mode) {
-        for (auto& p : pixels) {
-            int r=(p>>16)&0xFF, g=(p>>8)&0xFF, b=p&0xFF, a=(p>>24)&0xFF;
-            if      (mode == GRAY)      { int gr=(r+g+b)/3; p=(a<<24)|(gr<<16)|(gr<<8)|gr; }
-            else if (mode == INVERT)    { p=(a<<24)|((255-r)<<16)|((255-g)<<8)|(255-b); }
-            else if (mode == THRESHOLD) { int gr=(r+g+b)/3; int t=gr>127?255:0; p=(a<<24)|(t<<16)|(t<<8)|t; }
+        switch (mode) {
+            case THRESHOLD: filter(mode, 0.5f); return;
+            case POSTERIZE: filter(mode, 4.0f); return;
+            case BLUR:      filter(mode, 1.0f); return;
+            default:        filter(mode, 0.0f); return; // GRAY/OPAQUE/INVERT/ERODE/DILATE take no level
+        }
+    }
+
+    // Mirrors Java's filter(int kind, float param).
+    void filter(int mode, float param) {
+        // Luminance conversion (matches the weighting Processing itself
+        // uses for GRAY/THRESHOLD, credited in its docs to toxi) --
+        // closer to real Processing than a flat (r+g+b)/3 average.
+        auto luminance = [](int r, int g, int b) {
+            int v = (int)(0.299f*r + 0.587f*g + 0.114f*b);
+            return v<0 ? 0 : (v>255 ? 255 : v);
+        };
+
+        if (mode == GRAY) {
+            for (auto& p : pixels) {
+                int r=(p>>16)&0xFF, g=(p>>8)&0xFF, b=p&0xFF, a=(p>>24)&0xFF;
+                int gr = luminance(r,g,b);
+                p = ((unsigned)a<<24)|((unsigned)gr<<16)|((unsigned)gr<<8)|(unsigned)gr;
+            }
+        } else if (mode == INVERT) {
+            for (auto& p : pixels) {
+                int r=(p>>16)&0xFF, g=(p>>8)&0xFF, b=p&0xFF, a=(p>>24)&0xFF;
+                p = ((unsigned)a<<24)|((unsigned)(255-r)<<16)|((unsigned)(255-g)<<8)|(unsigned)(255-b);
+            }
+        } else if (mode == THRESHOLD) {
+            int t = (int)(param * 255.0f);
+            for (auto& p : pixels) {
+                int r=(p>>16)&0xFF, g=(p>>8)&0xFF, b=p&0xFF, a=(p>>24)&0xFF;
+                int v = luminance(r,g,b) > t ? 255 : 0;
+                p = ((unsigned)a<<24)|((unsigned)v<<16)|((unsigned)v<<8)|(unsigned)v;
+            }
+        } else if (mode == OPAQUE) {
+            for (auto& p : pixels) p |= 0xFF000000u;
+        } else if (mode == POSTERIZE) {
+            int steps = (int)param;
+            if (steps < 2) steps = 2;
+            if (steps > 255) steps = 255;
+            auto quantize = [steps](int c) {
+                int lvl = (c * steps) / 256;
+                int out = lvl * 255 / (steps - 1);
+                return out<0 ? 0 : (out>255 ? 255 : out);
+            };
+            for (auto& p : pixels) {
+                int r=(p>>16)&0xFF, g=(p>>8)&0xFF, b=p&0xFF, a=(p>>24)&0xFF;
+                r=quantize(r); g=quantize(g); b=quantize(b);
+                p = ((unsigned)a<<24)|((unsigned)r<<16)|((unsigned)g<<8)|(unsigned)b;
+            }
+        } else if (mode == BLUR) {
+            applyBoxBlurApprox(param > 0 ? param : 1.0f);
+        } else if (mode == ERODE) {
+            applyMorphology(false);
+        } else if (mode == DILATE) {
+            applyMorphology(true);
         }
         dirty = true;
     }
@@ -553,6 +614,18 @@ public:
         return out;
     }
 
+    // Duplicate the whole image into a new, independent PImage -- mirrors
+    // Java's PImage.copy() (equivalent to Java's now-deprecated no-arg
+    // get(), itself defined as get(0,0,width,height)). Returned via the
+    // move constructor below (NRVO, or implicit move-on-return for a
+    // named local going out of scope) -- the deleted copy constructor
+    // just above is never invoked here.
+    PImage copy() const {
+        PImage out(width, height);
+        out.pixels = pixels;
+        return out;
+    }
+
     // Copy from another image with scaling
     void copy(const PImage& src, int sx, int sy, int sw, int sh, int dx, int dy, int dw, int dh) {
         for (int iy=0; iy<dh; iy++)
@@ -563,6 +636,81 @@ public:
             }
         dirty = true;
     }
+
+private:
+    // 3 passes of separable box blur closely approximates a true Gaussian
+    // blur (a well-known equivalence) -- this is NOT a port of Processing's
+    // own specific stack-blur implementation (credited to Mario Klingemann
+    // in Java's docs), so results won't be bit-identical to real Processing,
+    // but filter(BLUR) / filter(BLUR, level) match Java's API and produce
+    // the same kind of visual softening, scaling with level the same way.
+    void applyBoxBlurApprox(float radiusParam) {
+        int r = (int)(radiusParam + 0.5f);
+        if (r < 1) r = 1;
+        for (int pass = 0; pass < 3; pass++) {
+            boxBlurPass(true, r);
+            boxBlurPass(false, r);
+        }
+    }
+
+    void boxBlurPass(bool horizontal, int r) {
+        std::vector<unsigned int> out(pixels.size());
+        int w = width, h = height;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                long sa=0, sr=0, sg=0, sb=0; int count=0;
+                for (int k = -r; k <= r; k++) {
+                    int sx = horizontal ? x+k : x;
+                    int sy = horizontal ? y   : y+k;
+                    if (sx < 0) sx = 0;
+                    if (sx >= w) sx = w-1;
+                    if (sy < 0) sy = 0;
+                    if (sy >= h) sy = h-1;
+                    unsigned int c = pixels[sy*w+sx];
+                    sa += (c>>24)&0xFF; sr += (c>>16)&0xFF; sg += (c>>8)&0xFF; sb += c&0xFF;
+                    count++;
+                }
+                unsigned int a=(unsigned)(sa/count), rr=(unsigned)(sr/count),
+                             g=(unsigned)(sg/count), b=(unsigned)(sb/count);
+                out[y*w+x] = (a<<24)|(rr<<16)|(g<<8)|b;
+            }
+        }
+        pixels = std::move(out);
+    }
+
+    // ERODE (shrink light areas) / DILATE (grow light areas): replaces each
+    // pixel with the min- (erode) or max- (dilate) luminance color among
+    // itself and its 4-connected neighbors, using 77/151/28-weighted
+    // luminance (the standard 0.299/0.587/0.114 coefficients scaled to
+    // 256), matching the structure of real Processing's own dilate()/
+    // erode() implementation. Edge pixels clamp to themselves for any
+    // missing neighbor rather than wrapping or reading out of bounds.
+    void applyMorphology(bool isDilate) {
+        std::vector<unsigned int> out(pixels.size());
+        auto lum = [](unsigned int c) {
+            int r=(c>>16)&0xFF, g=(c>>8)&0xFF, b=c&0xFF;
+            return 77*r + 151*g + 28*b;
+        };
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int idx = y*width + x;
+                unsigned int best = pixels[idx];
+                int bestLum = lum(best);
+                const int nx[4] = {x-1, x+1, x,   x};
+                const int ny[4] = {y,   y,   y-1, y+1};
+                for (int k = 0; k < 4; k++) {
+                    if (nx[k]<0 || nx[k]>=width || ny[k]<0 || ny[k]>=height) continue;
+                    unsigned int c = pixels[ny[k]*width + nx[k]];
+                    int l = lum(c);
+                    if (isDilate ? (l > bestLum) : (l < bestLum)) { best = c; bestLum = l; }
+                }
+                out[idx] = best;
+            }
+        }
+        pixels = std::move(out);
+    }
+
+public:
 
     // Apply alpha mask from another grayscale image
     void mask(const PImage& m) {
@@ -1067,13 +1215,16 @@ struct color {
     //     in direct-init context.
     color(int r, int g, int b);
     color(int r, int g, int b, int a);
-    // Use explicit cast: color(0,153,204,(int)a) or color(0.f,153.f,204.f,a)
     color(float gray);
     color(float gray, float a);
     color(float r, float g, float b);
     color(float r, float g, float b, float a);
-
-    explicit operator unsigned int() const { return value; }
+    // Mixed numeric args: any combination of int/float
+    template<typename R, typename G, typename B>
+    color(R r, G g, B b) : color((float)r, (float)g, (float)b) {}
+    template<typename R, typename G, typename B, typename A>
+    color(R r, G g, B b, A a) : color((float)r, (float)g, (float)b, (float)a) {}
+        explicit operator unsigned int() const { return value; }
     unsigned int toInt() const { return value; }
     // In Processing Java, color IS int. Allow implicit color<->int conversion
     // so sketches can write: int c = color(255); int c = lerpColor(a,b,t);
@@ -1113,6 +1264,16 @@ template<typename T> inline void printArray(const std::vector<T>& a) {
 
 inline std::string str(int v)   { return std::to_string(v); }
 inline std::string str(float v) { return std::to_string(v); }
+// double overload -- without this, any expression that promotes to double
+// (e.g. a literal like 180.0 or 3.14159 anywhere in the expression, or a
+// <cmath> function like atan2()/sqrt() that returns double) makes str(...)
+// ambiguous: double doesn't exactly match int/float/bool/char, and more
+// than one of those is an equally-good implicit conversion target, so
+// overload resolution can't pick one. std::to_string(double) uses the
+// same default 6-decimal-place formatting as std::to_string(float), so
+// this doesn't introduce any visible precision/formatting mismatch with
+// str(float).
+inline std::string str(double v) { return std::to_string(v); }
 inline std::string str(bool v)  { return v ? "true" : "false"; }
 inline std::string str(char v)  { return std::string(1, v); }
 // char16_t overload -- matches Java's actual "char" type for key/keyTyped
@@ -1152,19 +1313,111 @@ inline std::string join(const std::vector<std::string>& v, const std::string& se
     return o;
 }
 
-// Number formatting
-inline std::string nf(float v, int digits)             { std::ostringstream ss; ss.precision(digits); ss<<std::fixed<<v; return ss.str(); }
-inline std::string nf(int v, int minDigits)            { std::ostringstream ss; ss<<std::setw(minDigits)<<std::setfill('0')<<v; return ss.str(); }
-inline std::string nf(float v, int left, int right)    {
-    std::ostringstream ss; ss<<std::fixed<<std::setprecision(right)<<v;
+// Number formatting -- mirrors Processing (Java)'s nf()/nfc()/nfp()/nfs() family,
+// including the int[]/float[] array overloads. Sign is always kept outside any
+// zero-padding (Processing pads the magnitude, not the raw formatted string).
+
+// -- nf() ---------------------------------------------------------------
+inline std::string nf(int v) { return std::to_string(v); }
+inline std::string nf(int v, int minDigits) {
+    bool neg = v < 0;
+    long mag = neg ? -static_cast<long>(v) : static_cast<long>(v);
+    std::string s = std::to_string(mag);
+    while ((int)s.size() < minDigits) s = "0" + s;
+    return neg ? ("-" + s) : s;
+}
+inline std::string nf(float v, int digits) { std::ostringstream ss; ss.precision(digits); ss<<std::fixed<<v; return ss.str(); } // non-standard convenience overload (kept for back-compat)
+inline std::string nf(float v, int left, int right) {
+    bool neg = v < 0;
+    float mag = neg ? -v : v;
+    std::ostringstream ss; ss<<std::fixed<<std::setprecision(right)<<mag;
     std::string s=ss.str(); size_t dot=s.find('.');
     size_t intLen=(dot==std::string::npos)?s.size():dot;
     while((int)intLen<left){s="0"+s;intLen++;}
-    return s;
+    return neg ? ("-" + s) : s;
 }
-inline std::string nfc(float v, int digits)  { std::ostringstream ss; ss.precision(digits); ss<<std::fixed<<v; std::string s=ss.str(); int dot=(int)s.find('.'); if(dot<0)dot=(int)s.size(); for(int i=dot-3;i>0;i-=3)s.insert(i,","); return s; }
-inline std::string nfp(float v, int digits)  { return (v>=0?"+":"") + nf(v,digits); }
-inline std::string nfs(float v, int digits)  { return (v>=0?" ":"") + nf(v,digits); }
+inline std::vector<std::string> nf(const std::vector<int>& nums) {
+    std::vector<std::string> out; out.reserve(nums.size());
+    for (int n : nums) out.push_back(nf(n));
+    return out;
+}
+inline std::vector<std::string> nf(const std::vector<int>& nums, int digits) {
+    std::vector<std::string> out; out.reserve(nums.size());
+    for (int n : nums) out.push_back(nf(n, digits));
+    return out;
+}
+inline std::vector<std::string> nf(const std::vector<float>& nums, int left, int right) {
+    std::vector<std::string> out; out.reserve(nums.size());
+    for (float n : nums) out.push_back(nf(n, left, right));
+    return out;
+}
+
+// -- nfc() : comma-grouped ------------------------------------------------
+inline std::string nfc(int v) {
+    bool neg = v < 0;
+    long mag = neg ? -static_cast<long>(v) : static_cast<long>(v);
+    std::string s = std::to_string(mag);
+    for (int i = (int)s.size() - 3; i > 0; i -= 3) s.insert(i, ",");
+    return neg ? ("-" + s) : s;
+}
+inline std::string nfc(float v, int right) {
+    bool neg = v < 0;
+    float mag = neg ? -v : v;
+    std::ostringstream ss; ss.precision(right); ss<<std::fixed<<mag;
+    std::string s=ss.str(); int dot=(int)s.find('.'); if(dot<0)dot=(int)s.size();
+    for(int i=dot-3;i>0;i-=3)s.insert(i,",");
+    return neg ? ("-" + s) : s;
+}
+inline std::vector<std::string> nfc(const std::vector<int>& nums) {
+    std::vector<std::string> out; out.reserve(nums.size());
+    for (int n : nums) out.push_back(nfc(n));
+    return out;
+}
+inline std::vector<std::string> nfc(const std::vector<float>& nums, int right) {
+    std::vector<std::string> out; out.reserve(nums.size());
+    for (float n : nums) out.push_back(nfc(n, right));
+    return out;
+}
+
+// -- nfp() : '+' prefix for non-negative ----------------------------------
+inline std::string nfp(int v)                       { return (v>=0?"+":"") + nf(v); }
+inline std::string nfp(int v, int digits)            { return (v>=0?"+":"") + nf(v,digits); }
+inline std::string nfp(float v, int left, int right) { return (v>=0?"+":"") + nf(v,left,right); }
+inline std::vector<std::string> nfp(const std::vector<int>& nums) {
+    std::vector<std::string> out; out.reserve(nums.size());
+    for (int n : nums) out.push_back(nfp(n));
+    return out;
+}
+inline std::vector<std::string> nfp(const std::vector<int>& nums, int digits) {
+    std::vector<std::string> out; out.reserve(nums.size());
+    for (int n : nums) out.push_back(nfp(n, digits));
+    return out;
+}
+inline std::vector<std::string> nfp(const std::vector<float>& nums, int left, int right) {
+    std::vector<std::string> out; out.reserve(nums.size());
+    for (float n : nums) out.push_back(nfp(n, left, right));
+    return out;
+}
+
+// -- nfs() : ' ' prefix for non-negative (aligns with '-' of negatives) ---
+inline std::string nfs(int v)                       { return (v>=0?" ":"") + nf(v); }
+inline std::string nfs(int v, int digits)            { return (v>=0?" ":"") + nf(v,digits); }
+inline std::string nfs(float v, int left, int right) { return (v>=0?" ":"") + nf(v,left,right); }
+inline std::vector<std::string> nfs(const std::vector<int>& nums) {
+    std::vector<std::string> out; out.reserve(nums.size());
+    for (int n : nums) out.push_back(nfs(n));
+    return out;
+}
+inline std::vector<std::string> nfs(const std::vector<int>& nums, int digits) {
+    std::vector<std::string> out; out.reserve(nums.size());
+    for (int n : nums) out.push_back(nfs(n, digits));
+    return out;
+}
+inline std::vector<std::string> nfs(const std::vector<float>& nums, int left, int right) {
+    std::vector<std::string> out; out.reserve(nums.size());
+    for (float n : nums) out.push_back(nfs(n, left, right));
+    return out;
+}
 inline std::string hex(int v)                { std::ostringstream ss; ss<<std::uppercase<<std::hex<<v; return ss.str(); }
 inline std::string hex(int v, int digits)    { std::ostringstream ss; ss<<std::uppercase<<std::hex<<std::setw(digits)<<std::setfill('0')<<v; return ss.str(); }
 inline std::string binary(int v)             { std::string s; for(int i=31;i>=0;i--) s+=((v>>i)&1)?'1':'0'; return s; }
@@ -1982,7 +2235,19 @@ public:
             int j=rand()%(i+1); std::swap(data[i],data[j]);
         }
     }
-    int& operator[](int i)        { return data[i]; }
+    // Bounds-checked access -- matches Java's ArrayIndexOutOfBoundsException
+    // semantics (a clean, catchable error) rather than C++'s usual
+    // undefined-behavior-on-out-of-range for operator[]. Without this, an
+    // out-of-range index silently corrupts the heap instead of failing
+    // loudly at the actual bad access -- the corruption then surfaces
+    // later, at an unrelated allocation, as a cryptic allocator error.
+    int& operator[](int i) {
+        if (i < 0 || i >= (int)data.size())
+            throw std::out_of_range(
+                "IntList index " + std::to_string(i) +
+                " out of bounds for length " + std::to_string(data.size()));
+        return data[(size_t)i];
+    }
     auto begin() { return data.begin(); }
     auto end()   { return data.end(); }
 
@@ -2119,7 +2384,14 @@ public:
             int j=rand()%(i+1); std::swap(data[i],data[j]);
         }
     }
-    float& operator[](int i)      { return data[i]; }
+    // Bounds-checked access -- see IntList::operator[] for rationale.
+    float& operator[](int i) {
+        if (i < 0 || i >= (int)data.size())
+            throw std::out_of_range(
+                "FloatList index " + std::to_string(i) +
+                " out of bounds for length " + std::to_string(data.size()));
+        return data[(size_t)i];
+    }
     auto begin() { return data.begin(); }
     auto end()   { return data.end(); }
 
@@ -2232,7 +2504,14 @@ public:
     bool        hasValue(const std::string& v) const { return std::find(data.begin(),data.end(),v)!=data.end(); }
     void        remove(int i)                   { data.erase(data.begin()+i); }
     void        clear()                         { data.clear(); }
-    std::string& operator[](int i)              { return data[i]; }
+    // Bounds-checked access -- see IntList::operator[] for rationale.
+    std::string& operator[](int i) {
+        if (i < 0 || i >= (int)data.size())
+            throw std::out_of_range(
+                "StringList index " + std::to_string(i) +
+                " out of bounds for length " + std::to_string(data.size()));
+        return data[(size_t)i];
+    }
 
     // ===== Java/Processing API additions (apply_java_additions.py) =====
     explicit StringList(int length) : data((size_t)std::max(0, length)) {}
@@ -2373,6 +2652,7 @@ template<typename T>
 class Array {
     std::vector<T> data;
 public:
+    Array() {}
     explicit Array(int size) : data(size > 0 ? (size_t)size : 0, T()) {}
     Array(int size, const T& fillValue) : data(size > 0 ? (size_t)size : 0, fillValue) {}
 
@@ -2552,7 +2832,14 @@ public:
     bool  contains(const T& v)  const{ return std::find(data.begin(),data.end(),v)!=data.end(); }
     void  remove(int i)              { data.erase(data.begin()+i); }
     void  clear()                    { data.clear(); }
-    T&    operator[](int i)          { return data[i]; }
+    // Bounds-checked access -- see IntList::operator[] for rationale.
+    T&    operator[](int i) {
+        if (i < 0 || i >= (int)data.size())
+            throw std::out_of_range(
+                "ArrayList index " + std::to_string(i) +
+                " out of bounds for length " + std::to_string(data.size()));
+        return data[(size_t)i];
+    }
     auto  begin() { return data.begin(); }
     auto  end()   { return data.end(); }
 
@@ -2614,7 +2901,9 @@ public:
     std::vector<T*> data;
     ArrayList() = default;
     void  add(T* v)                  { data.push_back(v); }
+    void  add(T  v)                  { data.push_back(new T(std::move(v))); }  // accept by value, heap-allocate
     void  add(int i, T* v)            { data.insert(data.begin()+i, v); }
+    void  add(int i, T  v)            { data.insert(data.begin()+i, new T(std::move(v))); }
     void  set(int i, T* v)            { data[i]=v; }
     T*    get(int i)             const{ return data[i]; }
     int   size()                 const{ return (int)data.size(); }
@@ -2622,7 +2911,14 @@ public:
     bool  contains(T* v)         const{ return std::find(data.begin(),data.end(),v)!=data.end(); }
     void  remove(int i)               { data.erase(data.begin()+i); }
     void  clear()                     { data.clear(); }
-    T*&   operator[](int i)           { return data[i]; }
+    // Bounds-checked access -- see IntList::operator[] for rationale.
+    T*&   operator[](int i) {
+        if (i < 0 || i >= (int)data.size())
+            throw std::out_of_range(
+                "ArrayList index " + std::to_string(i) +
+                " out of bounds for length " + std::to_string(data.size()));
+        return data[(size_t)i];
+    }
     auto  begin() { return data.begin(); }
     auto  end()   { return data.end(); }
 
@@ -3254,11 +3550,9 @@ struct PApplet {
     bool  _backgroundCalledThisFrame = false; // set true if background() was called this frame
 
     int   frameCount = 1;
-    float currentFrameRate = 60.0f;
     float _frameRate = 60.0f;
-    float deltaTime = 0.0f;
     bool  looping = true;
-    float measuredFrameRate = 0.0f;
+
 
     float fillR = 1, fillG = 1, fillB = 1, fillA = 1;
     float strokeR = 0, strokeG = 0, strokeB = 0, strokeA = 1;
@@ -3325,7 +3619,6 @@ struct PApplet {
     void size(int w, int h, int renderer);
     void fullScreen();
     void frameRate(int fps);
-    void vsync(bool on); // vsync(true)=cap to display refresh, vsync(false)=uncapped
     void noLoop();
     void loop();
     void redraw();
@@ -3758,6 +4051,7 @@ struct PApplet {
     // ── String helpers ───────────────────────────────────────────────────────
     static std::string str(int v)   { return std::to_string(v); }
     static std::string str(float v) { return std::to_string(v); }
+    static std::string str(double v) { return std::to_string(v); }
     static std::string str(bool v)  { return v?"true":"false"; }
     static std::string str(char v)  { return std::string(1,v); }
     static std::string str(char16_t v)  { return std::string(1,(char)v); }
@@ -3765,8 +4059,29 @@ struct PApplet {
     static std::vector<std::string> splitTokens(const std::string& s, const std::string& d);
     static std::string join(const std::vector<std::string>& v, const std::string& sep);
     static std::string trim(const std::string& s);
+    static std::string nf(int v);
+    static std::string nf(int v, int digits);
     static std::string nf(float v, int digits);
-    static std::string nf(int v, int d);
+    static std::string nf(float v, int left, int right);
+    static std::vector<std::string> nf(const std::vector<int>& nums);
+    static std::vector<std::string> nf(const std::vector<int>& nums, int digits);
+    static std::vector<std::string> nf(const std::vector<float>& nums, int left, int right);
+    static std::string nfc(int v);
+    static std::string nfc(float v, int right);
+    static std::vector<std::string> nfc(const std::vector<int>& nums);
+    static std::vector<std::string> nfc(const std::vector<float>& nums, int right);
+    static std::string nfp(int v);
+    static std::string nfp(int v, int digits);
+    static std::string nfp(float v, int left, int right);
+    static std::vector<std::string> nfp(const std::vector<int>& nums);
+    static std::vector<std::string> nfp(const std::vector<int>& nums, int digits);
+    static std::vector<std::string> nfp(const std::vector<float>& nums, int left, int right);
+    static std::string nfs(int v);
+    static std::string nfs(int v, int digits);
+    static std::string nfs(float v, int left, int right);
+    static std::vector<std::string> nfs(const std::vector<int>& nums);
+    static std::vector<std::string> nfs(const std::vector<int>& nums, int digits);
+    static std::vector<std::string> nfs(const std::vector<float>& nums, int left, int right);
     static std::string hex(int v);
     static std::string binary(int v);
     static int   toInt(const std::string& s)     { try{return std::stoi(s);}catch(...){return 0;} }

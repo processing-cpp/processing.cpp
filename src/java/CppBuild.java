@@ -37,6 +37,17 @@ public class CppBuild {
       "rand", "time", "exit", "abs", "min", "max", "log", "exp", "pow"
   };
 
+  // Processing.h defines these class/struct names in namespace Processing.
+  // If the user also defines them, we skip the user's version to avoid
+  // "redefinition" errors -- the engine's definition takes precedence.
+  private static final java.util.Set<String> RESERVED_TYPES = java.util.Set.of(
+      "Array", "ArrayList", "IntList", "FloatList", "StringList",
+      "PVector", "PImage", "PGraphics", "PShape", "PFont", "PShader",
+      "Table", "TableRow", "XML", "JSONValue", "color",
+      "IntDict", "FloatDict", "StringDict",
+      "BufferedReader", "PrintWriter"
+  );
+
   public CppBuild(Sketch sketch, CppMode mode) {
     this.sketch     = sketch;
     this.mode       = mode;
@@ -55,7 +66,7 @@ public class CppBuild {
       try { java.awt.Desktop.getDesktop().browse(new java.net.URI(url)); }
       catch (Exception ignored) {}
     }
-    listener.statusError("g++ not found — see dialog for install instructions");
+    listener.statusError("g++ not found â see dialog for install instructions");
     throw new Exception("g++ not found");
   }
 
@@ -267,7 +278,7 @@ public class CppBuild {
         try { java.awt.Desktop.getDesktop().browse(new java.net.URI("https://www.msys2.org")); }
         catch (Exception ignored) {}
       }
-      listener.statusError("g++ not found — install MSYS2 to use C++ Mode");
+      listener.statusError("g++ not found â install MSYS2 to use C++ Mode");
       throw new Exception("g++ not found");
     } else {
       try { if (Runtime.getRuntime().exec(new String[]{"g++","--version"}).waitFor()==0) return; }
@@ -358,7 +369,7 @@ public class CppBuild {
           try { java.awt.Desktop.getDesktop().browse(new java.net.URI("https://gcc.gnu.org/install/")); }
           catch (Exception ignored) {}
         }
-        listener.statusError("g++ not found — install with your package manager");
+        listener.statusError("g++ not found â install with your package manager");
         throw new Exception("g++ not found");
       }
     }
@@ -426,7 +437,7 @@ public class CppBuild {
         javax.swing.SwingUtilities.invokeLater(() ->
           ((CppEditor) listener).highlightErrorLine(el));
       }
-      listener.statusError("Build failed — see console for errors.");
+      listener.statusError("Build failed â see console for errors.");
       throw new Exception(fullOutput.toString());
     }
 
@@ -466,7 +477,7 @@ public class CppBuild {
     }
   }
 
-  // ── Windows ────────────────────────────────────────────────────────────────
+  // ââ Windows ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   private boolean windowsLibsNowPresent(java.util.List<String> searchDirs, String[] required) {
     outer:
     for (String dll : required) {
@@ -556,18 +567,18 @@ public class CppBuild {
               }
             }
           }
-          listener.statusNotice("Libraries installed — you can now run your sketch.");
+          listener.statusNotice("Libraries installed â you can now run your sketch.");
           javax.swing.JOptionPane.showMessageDialog(null,
             "GLFW and GLEW installed successfully!\nYou can now run your sketch.",
             "Done", javax.swing.JOptionPane.INFORMATION_MESSAGE);
         } else {
-          listener.statusError("Installation failed — try manually in MSYS2 MinGW 64-bit terminal.");
+          listener.statusError("Installation failed â try manually in MSYS2 MinGW 64-bit terminal.");
         }
       } catch (Exception e) { listener.statusError("Install error: " + e.getMessage()); }
     }).start();
   }
 
-  // ── macOS ──────────────────────────────────────────────────────────────────
+  // ââ macOS ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   private void checkMacLibs(RunnerListener listener) throws Exception {
     // Check for glfw and glew via pkg-config or known Homebrew paths
     boolean glfwOk = new File("/opt/homebrew/lib/libglfw.dylib").exists()
@@ -625,18 +636,18 @@ public class CppBuild {
           String line; while ((line = br.readLine()) != null) System.out.println(line);
         }
         if (p.waitFor() == 0) {
-          listener.statusNotice("Libraries installed — you can now run your sketch.");
+          listener.statusNotice("Libraries installed â you can now run your sketch.");
           javax.swing.JOptionPane.showMessageDialog(null,
             "GLFW and GLEW installed successfully!\nYou can now run your sketch.",
             "Done", javax.swing.JOptionPane.INFORMATION_MESSAGE);
         } else {
-          listener.statusError("Installation failed — try: brew install glfw glew");
+          listener.statusError("Installation failed â try: brew install glfw glew");
         }
       } catch (Exception e) { listener.statusError("Install error: " + e.getMessage()); }
     }).start();
   }
 
-  // ── Linux ──────────────────────────────────────────────────────────────────
+  // ââ Linux ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   private void checkLinuxLibs(RunnerListener listener) throws Exception {
     boolean glfwOk = new File("/usr/lib/libglfw.so").exists()
                   || new File("/usr/lib/x86_64-linux-gnu/libglfw.so").exists()
@@ -762,7 +773,7 @@ public class CppBuild {
           }
           p.waitFor();
         }
-        listener.statusNotice("Installer launched — restart Processing when done.");
+        listener.statusNotice("Installer launched â restart Processing when done.");
         javax.swing.JOptionPane.showMessageDialog(null,
           "<html><b>Installer launched!</b><br><br>"
           + "When it says <b>Installation complete!</b>:<br>"
@@ -917,6 +928,31 @@ public class CppBuild {
     AlreadyReportedException(String message) { super(message); }
   }
 
+  private static String stripRawStringLiterals(String code) {
+    StringBuilder out = new StringBuilder();
+    int i = 0;
+    while (i < code.length()) {
+      if (i + 1 < code.length() && code.charAt(i) == 'R' && code.charAt(i+1) == '"') {
+        int j = i + 2;
+        StringBuilder delim = new StringBuilder();
+        while (j < code.length() && code.charAt(j) != '(' && code.charAt(j) != '"') {
+          delim.append(code.charAt(j++));
+        }
+        if (j < code.length() && code.charAt(j) == '(') {
+          String closer = ")" + delim.toString() + "\"";
+          int end = code.indexOf(closer, j + 1);
+          if (end >= 0) {
+            out.append("\"<raw>\"");
+            i = end + closer.length();
+            continue;
+          }
+        }
+      }
+      out.append(code.charAt(i++));
+    }
+    return out.toString();
+  }
+
   private CompilationUnit parseOrReportError(String code, RunnerListener listener) {
     try {
       return Parser.parse(code);
@@ -989,6 +1025,9 @@ public class CppBuild {
     code = removeUserIncludes(code);
     warnReservedNames(code, listener);
     checkForUnsupportedJavaArraySyntax(code, listener);
+    checkForArrayListGetValueCopy(code, listener);
+    code = stripRawStringLiterals(code);
+    code = code.replaceAll("(?<=[0-9a-fA-FxXbB])'(?=[0-9a-fA-F])", "");
     code = javaToC(code);
     code = stripNamespaceProcessing(code);
     code = preprocessMacros(code);
@@ -997,6 +1036,10 @@ public class CppBuild {
     boolean hasDraw  = code.contains("void draw(");
 
     StringBuilder out = new StringBuilder();
+    // preNs collects content that goes BEFORE namespace Processing --
+    // specifically user #include directives which must be in global scope
+    // (GCC 16+ headers use unqualified names that don't resolve in ::Processing)
+    StringBuilder preNs = new StringBuilder();
     out.append("#include \"Processing.h\"\n");
     out.append("using std::vector; using std::string; using std::wstring;\n");
     out.append("using std::pair; using std::make_pair; using std::tuple;\n");
@@ -1009,6 +1052,7 @@ public class CppBuild {
     out.append("using std::cout; using std::cerr; using std::endl;\n");
     out.append("using std::ifstream; using std::ofstream; using std::stringstream;\n");
 
+    out.append(preNs); // user #include directives hoisted to global scope
     out.append("namespace Processing {\n");
     out.append("#include \"Processing_api.h\"\n");
     out.append("struct _PSketch {\n");
@@ -1024,7 +1068,6 @@ public class CppBuild {
     out.append("  struct _K   { operator char()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->key          : 0;     } } key;\n");
     out.append("  struct _KC  { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->keyCode      : 0;     } } keyCode;\n");
     out.append("  struct _MB  { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseButton  : 0;     } } mouseButton;\n");
-    out.append("  struct _DT  { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->deltaTime    : 0.f;   } } deltaTime;\n");
     out.append("  struct _FR  { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_frameRate   : 0.f;   } } _frameRate;\n");
     out.append("  struct _MDX { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseDX      : 0.f;   } } mouseDX;\n");
     out.append("  struct _MDY { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseDY      : 0.f;   } } mouseDY;\n");
@@ -1037,7 +1080,7 @@ public class CppBuild {
     headerLineCount = 0;
 
     if (!hasSetup && !hasDraw) {
-      // ── Static sketch (no setup/draw) ───────────────────────────────────
+      // ââ Static sketch (no setup/draw) âââââââââââââââââââââââââââââââââââ
       // Parse the whole thing as a CompilationUnit; the parser itself
       // already produces a TopLevelStatement wrapper for bare statements
       // at file scope (see Parser/TopLevelStatement's design notes --
@@ -1065,7 +1108,21 @@ public class CppBuild {
       StringBuilder settings = new StringBuilder();
       StringBuilder body = new StringBuilder();
       for (TopLevelItem item : classResult.rest) {
+        if (item instanceof PreprocessorLine pl && pl.rawText().startsWith("#include")) {
+          preNs.append(CodeGen.generateNode(item, 0)); // hoist before namespace
+          continue;
+        }
         if (item instanceof PreprocessorLine || item instanceof NamespaceDecl || item instanceof UsingNamespaceDecl) {
+          fileScopeOnly.append(CodeGen.generateNode(item, 0));
+          continue;
+        }
+        // Template declarations, free functions, and ALL variables must be at
+        // file scope in static sketches -- main() cannot access Sketch members.
+        boolean isAnyFn = item instanceof FunctionDecl;
+        boolean isAnyVar = item instanceof VariableDecl;
+        boolean isTemplateTd = item instanceof TypeDef td
+            && (!td.templateParams().isEmpty() || td.name().contains("<"));
+        if (isAnyFn || isAnyVar || isTemplateTd) {
           fileScopeOnly.append(CodeGen.generateNode(item, 0));
           continue;
         }
@@ -1077,10 +1134,12 @@ public class CppBuild {
           body.append(rendered);
         }
       }
-      out.append(fileScopeOnly);
+      // Emit template/class definitions BEFORE file-scope variables and using aliases.
       for (TypeDef td : finalClasses) {
+        if (RESERVED_TYPES.contains(td.name())) continue; // engine already defines this
         out.append(CodeGen.generateNode(td, 0));
       }
+      out.append(fileScopeOnly);
       out.append("struct Sketch : public PApplet {\n");
       out.append("    void setup() override {\n");
       out.append(settings);
@@ -1091,7 +1150,7 @@ public class CppBuild {
       out.append("    void draw() override {}\n");
       out.append("};\n");
     } else {
-      // ── Normal sketch (has setup/draw) ───────────────────────────────────
+      // ââ Normal sketch (has setup/draw) âââââââââââââââââââââââââââââââââââ
       CompilationUnit cu = parseOrReportError(code, listener);
 
       // Step 1: enum extraction (before anything else touches the list) --
@@ -1131,9 +1190,42 @@ public class CppBuild {
       // could in principle reference something from one of these
       // includes too -- "before the Sketch struct" alone isn't a strong
       // enough guarantee; "before everything else generated" is.
-      List<TopLevelItem> sketchMembers = new ArrayList<>();
+      // Hoist "auto" variables to namespace scope -- auto on non-static members is invalid.
+      List<TopLevelItem> autoHoisted = new ArrayList<>();
+      List<TopLevelItem> filteredRest = new ArrayList<>();
       for (TopLevelItem item : depResult.rest) {
-        if (item instanceof PreprocessorLine || item instanceof NamespaceDecl || item instanceof UsingNamespaceDecl) {
+        if (item instanceof VariableDecl vd
+                && vd.type() instanceof NamedType nt
+                && (nt.baseName().equals("auto") || nt.baseName().startsWith("std::function"))) {
+          autoHoisted.add(item);
+        } else if (item instanceof FunctionDecl fd
+                && fd.name().startsWith("operator")
+                && fd.params().size() >= 2) {
+          // Free binary operator: must be at namespace scope, not struct member
+          autoHoisted.add(item);
+        } else if (item instanceof FunctionDecl fdce && fdce.isConstexpr()) {
+          // constexpr functions must be at namespace scope for static_assert to use them
+          autoHoisted.add(item);
+        } else {
+          filteredRest.add(item);
+        }
+      }
+      // Replace depResult.rest with filtered version
+      List<TopLevelItem> effectiveRest = filteredRest;
+      List<TopLevelItem> sketchMembers = new ArrayList<>();
+      List<TopLevelItem> deferredAliases = new ArrayList<>();
+      for (TopLevelItem item : effectiveRest) {
+        if (item instanceof PreprocessorLine pl && pl.rawText().startsWith("#include")) {
+          preNs.append(CodeGen.generateNode(item, 0)); // hoist before namespace
+        } else if (item instanceof PreprocessorLine pl2) {
+          // Defer "using X = ..." type aliases (including template aliases) until after struct definitions
+          String rt = pl2.rawText().trim();
+          if ((rt.startsWith("using ") || rt.contains(" using ")) && !rt.contains("using namespace") && rt.contains("=")) {
+            deferredAliases.add(item);
+          } else {
+            out.append(CodeGen.generateNode(item, 0));
+          }
+        } else if (item instanceof NamespaceDecl || item instanceof UsingNamespaceDecl) {
           out.append(CodeGen.generateNode(item, 0));
         } else {
           sketchMembers.add(item);
@@ -1145,11 +1237,33 @@ public class CppBuild {
       // arrays, hoisted classes, hoisted functions, then struct Sketch
       // wrapping everything left in sketchMembers (depResult.rest minus
       // the file-scope-only items already emitted above).
-      for (FunctionDecl fd : forwardDecls) out.append(CodeGen.generateNode(fd, 0));
       for (var e : enumResult.enums) out.append(CodeGen.generateNode(e, 0));
+      for (FunctionDecl fd : forwardDecls) out.append(CodeGen.generateNode(fd, 0));
       for (var v : arrayResult.hoistedSizingConstants) out.append(CodeGen.generateNode(v, 0));
-      for (TypeDef td : finalClasses) out.append(CodeGen.generateNode(td, 0));
-      for (var v : depResult.hoistedVariables) out.append(CodeGen.generateNode(v, 0));
+      // Forward-declare every hoisted class before any definitions -- handles
+      // cross-references between classes (e.g. Liquid::contains(Mover*) when
+      // Liquid is emitted before Mover). Template classes can't be forward-declared
+      // this way, but user template classes are rare enough that this is fine.
+      for (TypeDef td : finalClasses) {
+        if (RESERVED_TYPES.contains(td.name())) continue; // engine already defines this
+        if (td.templateParams().isEmpty() && !td.name().contains("<")) {
+          out.append(td.kind()).append(' ').append(td.name()).append(";\n");
+        }
+      }
+      for (TypeDef td : finalClasses) {
+        if (RESERVED_TYPES.contains(td.name())) continue; // engine already defines this
+        out.append(CodeGen.generateNode(td, 0));
+      }
+      // Emit deferred "using X = ..." type aliases after struct definitions
+      for (TopLevelItem alias : deferredAliases) out.append(CodeGen.generateNode(alias, 0));
+      // Emit auto-hoisted variables at namespace scope
+      for (TopLevelItem av : autoHoisted) out.append(CodeGen.generateNode(av, 0));
+      // Skip auto-hoisted variables from hoistedVariables to avoid redefinition
+      java.util.Set<String> autoHoistedNames = new java.util.HashSet<>();
+      for (TopLevelItem av : autoHoisted) if (av instanceof VariableDecl avd) autoHoistedNames.add(avd.name());
+      for (var v : depResult.hoistedVariables) {
+        if (!autoHoistedNames.contains(v.name())) out.append(CodeGen.generateNode(v, 0));
+      }
       for (var v : arrayResult.hoistedArrays) out.append(CodeGen.generateNode(v, 0));
       for (FunctionDecl fd : depResult.hoistedFunctions) out.append(CodeGen.generateNode(fd, 0));
       // constexprScope (the NOT-PORTED half -- see EnumScopeExtractor's
@@ -1160,6 +1274,30 @@ public class CppBuild {
       // Sketch member below, which is a behavior difference from the
       // original ONLY for a construct with zero confirmed real-sketch
       // usage (see EnumScopeExtractor's javadoc for the corpus check).
+
+      // Hoist template-related items that cannot legally be Sketch members.
+      // Type specializations (TypeName<int> etc.) must be at file scope.
+      // VariableDecl with templated types (Constant<42> c1) must also be hoisted.
+      // Variable templates (constexpr T pi = T(3.14)) can't be struct members.
+      {
+        List<TopLevelItem> templateScopeItems = new ArrayList<>();
+        List<TopLevelItem> remaining = new ArrayList<>();
+        for (TopLevelItem item : sketchMembers) {
+          boolean isTypeSpec = item instanceof TypeDef td && td.name().contains("<");
+          boolean isTemplatedVar = item instanceof VariableDecl vd
+              && !vd.templateParams().isEmpty();
+          boolean isTemplateInstVar = item instanceof VariableDecl vd2
+              && vd2.type() instanceof processing.mode.cpp.NamedType nt
+              && !nt.templateArgs().isEmpty();
+          if (isTypeSpec || isTemplatedVar || isTemplateInstVar) {
+            templateScopeItems.add(item);
+          } else {
+            remaining.add(item);
+          }
+        }
+        for (TopLevelItem item : templateScopeItems) out.append(CodeGen.generateNode(item, 0));
+        sketchMembers = remaining;
+      }
 
       // Strip user-written forward declarations from sketchMembers when
       // a bodied definition of the same function also exists. Inside a
@@ -1695,7 +1833,7 @@ public class CppBuild {
   // Variable declarations at top level become struct fields.
   /**
    * Remove _PSketch injection from pure data structs (structs with only fields, no methods).
-   * A struct is "pure data" if it has no method bodies — detected by absence of
+   * A struct is "pure data" if it has no method bodies â detected by absence of
    * return-type method signatures inside the struct body.
    */
   private String removePSketchFromDataStructs(String code) {
@@ -1719,7 +1857,7 @@ public class CppBuild {
       }
       String body = code.substring(braceOpen + 1, j - 1);
       // Check if body has any method signatures (return type + name + '(')
-      // A method has: word whitespace word '(' — e.g. "void update(" or "float distTo("
+      // A method has: word whitespace word '(' â e.g. "void update(" or "float distTo("
       boolean hasMethod = body.matches("(?s).*\\b(void|int|float|bool|double|color|auto|std::\\w+)\\s+\\w+\\s*\\(.*")
                          && !body.contains("constexpr"); // skip constexpr structs
       result.append(code, i, lineStart);
@@ -1727,7 +1865,7 @@ public class CppBuild {
         // Keep _PSketch injection
         result.append(code, lineStart, j);
       } else {
-        // Remove _PSketch — revert to plain struct/class name {
+        // Remove _PSketch â revert to plain struct/class name {
         result.append(beforeBrace).append(" {").append(body).append("}");
       }
       i = j;
@@ -1760,7 +1898,7 @@ public class CppBuild {
           if (bodyContent.isEmpty()) {
             indented = "    " + m.group(1) + "override {}";
           } else {
-            // Single-line function with body — expand to multi-line
+            // Single-line function with body â expand to multi-line
             indented = "    " + m.group(1) + "override {\n        " + bodyContent + "\n    }";
           }
           break;
@@ -1881,7 +2019,7 @@ public class CppBuild {
     for (String name : RESERVED) {
       if (java.util.regex.Pattern.compile("\\b" + name + "\\s*=", java.util.regex.Pattern.MULTILINE).matcher(code).find())
         listener.statusNotice("[WARN] '" + name +
-          "' is a C stdlib name — consider renaming your variable.");
+          "' is a C stdlib name â consider renaming your variable.");
     }
   }
 
@@ -2111,6 +2249,67 @@ public class CppBuild {
   // console text area), a short message to listener.statusError() (the
   // volatile status bar), and a thrown RuntimeException to stop the build
   // -- callers of this method don't need to change.
+  private String getWebsiteBaseUrl() {
+    try {
+      java.io.File configFile = new java.io.File(mode.getRuntimeDir().getParentFile(), "config/cppmode.properties");
+      if (configFile.exists()) {
+        java.util.Properties props = new java.util.Properties();
+        try (java.io.InputStream in = new java.io.FileInputStream(configFile)) { props.load(in); }
+        String url = props.getProperty("website.base.url", "").trim();
+        if (!url.isEmpty()) return url;
+      }
+    } catch (Exception e) {}
+    return "https://processing-cpp.github.io";
+  }
+
+  // [E0005] ArrayList<T>.get() value-copy detection.
+  // Detects: "TypeName var = expr.get(...);" where TypeName is not a pointer.
+  // ArrayList<UserType> stores T* internally so .get() returns T*, not T.
+  private void checkForArrayListGetValueCopy(String code, RunnerListener listener) {
+    List<CppLexerToken> tokens;
+    try {
+      tokens = new CppLexer(code).tokenize();
+    } catch (Exception e) { return; }
+    for (int i = 0; i + 4 < tokens.size(); i++) {
+      CppLexerToken t0 = tokens.get(i);
+      CppLexerToken t1 = tokens.get(i + 1);
+      CppLexerToken t2 = tokens.get(i + 2);
+      // Skip known value-returning types: String (StringList.get returns string by value)
+      java.util.Set<String> valueTypes = java.util.Set.of("String", "string");
+      if (t0.type() == CppLexerTokenType.IDENTIFIER
+          && !valueTypes.contains(t0.text())
+          && t1.type() == CppLexerTokenType.IDENTIFIER
+          && t2.isOp("=")) {
+        int j = i + 3; int depth = 0; boolean foundGet = false;
+        while (j < tokens.size()) {
+          CppLexerToken tj = tokens.get(j);
+          if (tj.isPunct(";") && depth == 0) break;
+          if (tj.isPunct("(") || tj.isPunct("{")) depth++;
+          if (tj.isPunct(")") || tj.isPunct("}")) { if (--depth < 0) break; }
+          if (tj.isPunct(".") && j + 2 < tokens.size()
+              && tokens.get(j + 1).text().equals("get")
+              && tokens.get(j + 2).isPunct("(")) { foundGet = true; break; }
+          j++;
+        }
+        if (foundGet) {
+          int line = t0.line();
+          String url = getWebsiteBaseUrl() + "/error/E0005.html";
+          String msg =
+            "\n[E0005] ArrayList<T>.get() returns T* (pointer), not T by value.\n" +
+            "  Line " + line + ": \"" + t0.text() + " " + t1.text() + " = ...get(...);\"\n" +
+            "  ArrayList<UserType> stores objects as pointers internally.\n" +
+            "  Fix: declare a pointer variable:\n" +
+            "    " + t0.text() + "* " + t1.text() + " = list.get(i);\n" +
+            "  Then use -> instead of .:\n" +
+            "    " + t1.text() + "->field;  " + t1.text() + "->method();\n" +
+            "  Reference: " + url + "\n";
+          System.err.println(msg);
+          listener.statusError("E0005: ArrayList.get() returns pointer -- see console. " + url);
+          throw new AlreadyReportedException("E0005: ArrayList value-copy -- see console.");
+        }
+      }
+    }
+  }
   private void checkForUnsupportedJavaArraySyntax(String code, RunnerListener listener) {
     try {
       CppJavaArrayCheck.check(code);
@@ -2121,11 +2320,45 @@ public class CppBuild {
     }
   }
 
+  /**
+   * Expands Java's diamond operator in common patterns:
+   *   "ArrayList<T> x = new ArrayList<>();"  ->  "ArrayList<T> x = new ArrayList<T>();"
+   * Scans line by line; extracts the LHS template args and inserts them into <> on RHS.
+   */
+  private String expandDiamondOperator(String code) {
+    // "ArrayList<Particle> x = new ArrayList<>();" -> "ArrayList<Particle> x = ArrayList<Particle>();"
+    // Pattern: TypeName<Args> varName = new TypeName<>()
+    java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+        "(\\w+)(<[^<>]+>)(\\s+\\w+\\s*=\\s*)new\\s+\\w+<>\\s*\\(");
+    java.util.regex.Matcher m = p.matcher(code);
+    StringBuffer sb = new StringBuffer();
+    while (m.find()) {
+      // Replace "new TypeName<>(" with "TypeName<Args>("
+      String replacement = m.group(1) + m.group(2) + m.group(3) + m.group(1) + m.group(2) + "(";
+      m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(replacement));
+    }
+    m.appendTail(sb);
+    // Simpler line-by-line approach for the common case
+    String result = sb.toString();
+    // Replace any remaining "new TypeName<>()" with "new TypeName()" as fallback
+    result = result.replaceAll("new (\\w+)<>\\(", "new $1(");
+    return result;
+  }
+
   private String javaToC(String code) {
+    // Expand diamond operator: "ArrayList<T> x = new ArrayList<>()" -> "new ArrayList<T>()"
+    // Scan for pattern: TypeName<Args> varName = new TypeName<>();
+    code = expandDiamondOperator(code);
+    // Strip "new" from value-type assignments: "ArrayList<T> x = new ArrayList<T>()"
+    // Pattern: TypeName<...> varName = new TypeName<...>( -> TypeName<...> varName = TypeName<...>(
+    // Also handles non-template: "MyClass x = new MyClass(" -> "MyClass x = MyClass("
+    code = code.replaceAll(
+        "((?:\\w+(?:<[^;=]*>)?)\\s+\\w+\\s*=\\s*)new\\s+(\\w+(?:<[^;=]*>)?\\s*\\()",
+        "$1$2");
     // Run color type propagation first
     code = fixColorTypes(code);
 
-    // ── 1. Whole-word keyword replacements (skip string/char literals) ───────
+    // ââ 1. Whole-word keyword replacements (skip string/char literals) âââââââ
     String[][] words = {
       { "boolean",   "bool"        },
       // Integer/Float/Double/Long/Byte/Character are intentionally NOT
@@ -2159,27 +2392,27 @@ public class CppBuild {
     // Note: only when not preceded by a word char to avoid replacing e.g. "loadPixels"
     // We keep .add() as push_back only for vector types - risky so skip for now
 
-    // ── 2. Java cast syntax: float(x) → (float)(x) ──────────────────────────
-    // Java cast syntax: float(x) → (float)(x)
+    // ââ 2. Java cast syntax: float(x) â (float)(x) ââââââââââââââââââââââââââ
+    // Java cast syntax: float(x) â (float)(x)
     // Exclude when inside template args (preceded by < or ,) to avoid
     // mangling std::function<bool(...)> into std::function<(bool)(...)>
     for (String t : new String[]{ "float","int","double","long","char","bool" })
       code = code.replaceAll("(?<![\\w<,\\s])(" + t + ")\\(", "($1)(");
 
-    // ── 3. Hex color literals: #RRGGBB → color(0xFFRRGGBB) ──────────────────
+    // ââ 3. Hex color literals: #RRGGBB â color(0xFFRRGGBB) ââââââââââââââââââ
     code = code.replaceAll("#([0-9A-Fa-f]{8})", "color(0x$1)");
     code = code.replaceAll("#([0-9A-Fa-f]{6})", "color(0xFF$1)");
 
-    // ── 4. String concatenation: "literal" + x → std::string("literal") + x ─
+    // ââ 4. String concatenation: "literal" + x â std::string("literal") + x â
     code = code.replaceAll("(\"[^\"]*\")\\s*\\+", "std::string($1) +");
 
-    // ── 5. .charAt(i) → [i] ──────────────────────────────────────────────────
+    // ââ 5. .charAt(i) â [i] ââââââââââââââââââââââââââââââââââââââââââââââââââ
     code = code.replaceAll("\\.charAt\\((\\w+)\\)", "[$1]");
 
-    // ── 6. .equals("...") → == "..." ─────────────────────────────────────────
+    // ââ 6. .equals("...") â == "..." âââââââââââââââââââââââââââââââââââââââââ
     code = code.replaceAll("\\.equals\\(([^)]*)\\)", " == $1");
 
-    // ── 6b. Wrap .length()/.size() in std::to_string() whenever they appear
+    // ââ 6b. Wrap .length()/.size() in std::to_string() whenever they appear
     // in a string concatenation context (adjacent to + operator).
     // Run multiple passes to catch all patterns.
     for (int _pass = 0; _pass < 3; _pass++) {
@@ -2189,7 +2422,7 @@ public class CppBuild {
       code = code.replaceAll("(\\w+)\\.size\\(\\)\\s*\\+",   "std::to_string($1.size()) +");
     }
 
-    // ── 7. float % int → (int)(float) % int (modulo on floats invalid in C++) ─
+    // ââ 7. float % int â (int)(float) % int (modulo on floats invalid in C++) â
     // BUG FIX, found by tracing a real compile failure (Sequential.pde,
     // a real example sketch) all the way through every stage of the
     // pipeline: the original regex, "\(([^)]*\.[^)]*)\)\s*%\s*(\w+)",
@@ -2223,7 +2456,7 @@ public class CppBuild {
     // or qualified call and was never specific to floats at all.
     code = code.replaceAll("\\(([^)]*\\d+\\.\\d+f?[^)]*|[^)]*\\.\\d+f?[^)]*)\\)\\s*%\\s*(\\w+)", "(int)($1) % $2");
 
-    // ── 8. Windows reserved: far/near → farVal/nearVal (Windows only) ────────
+    // ââ 8. Windows reserved: far/near â farVal/nearVal (Windows only) ââââââââ
     if (System.getProperty("os.name").toLowerCase().contains("win")) {
       code = code.replaceAll("\\bfar\\b",  "farVal");
       code = code.replaceAll("\\bnear\\b", "nearVal");
@@ -2231,12 +2464,12 @@ public class CppBuild {
 
     // (color type fixing handled by fixColorTypes() before javaToC())
 
-    // ── 10. color() ambiguity: color(r,g,b,floatAlpha) → cast last arg ───────
+    // ââ 10. color() ambiguity: color(r,g,b,floatAlpha) â cast last arg âââââââ
     code = code.replaceAll(
       "\\bcolor\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*([^)\\d][^)]*)\\)",
       "color($1,$2,$3,(int)($4))");
 
-    // ── 11. API-conflicting variable names: scale/fill/stroke/etc. ───────────
+    // ââ 11. API-conflicting variable names: scale/fill/stroke/etc. âââââââââââ
     // If used as a variable (after a type keyword), rename to avoid shadowing API
     String[] apiConflicts = {
       "scale", "stroke", "background", "translate", "rotate",
@@ -2251,7 +2484,7 @@ public class CppBuild {
       }
     }
 
-    // ── 12. mousePressed / keyPressed as bool variables → _mousePressed / _keyPressed ─
+    // ââ 12. mousePressed / keyPressed as bool variables â _mousePressed / _keyPressed â
     // In Processing Java, 'mousePressed' is both a bool variable (read in draw)
     // and an event callback method name (void mousePressed()).
     // In C++ PApplet they can't share a name: the virtual method keeps the natural
@@ -2262,7 +2495,7 @@ public class CppBuild {
     code = rewriteBoolEventName(code, "mousePressed", "_mousePressed");
     code = rewriteBoolEventName(code, "keyPressed",   "_keyPressed");
 
-    // ── 13. frameRate as a variable read → _frameRate ─────────────────────────────
+    // ââ 13. frameRate as a variable read â _frameRate âââââââââââââââââââââââââââââ
     // In Processing Java, 'frameRate' is both a setter function (frameRate(60))
     // and a readable float variable (if (frameRate < 30)). In C++ PApplet, the
     // method keeps the natural name. Variable reads (not followed by '(') must be
@@ -2345,16 +2578,16 @@ public class CppBuild {
   private List<String> buildCommand(String gpp, File src, File bin, boolean win, boolean mac) {
     List<String> cmd = new ArrayList<>();
     cmd.add(gpp);
-    cmd.add("-std=c++17");
+    cmd.add("-std=c++20");
     cmd.add("-O2");
     // -march=native isn't reliably supported by Apple's clang (which is
-    // what g++/gcc resolve to on macOS via Xcode Command Line Tools) —
+    // what g++/gcc resolve to on macOS via Xcode Command Line Tools) â
     // skip it there rather than risk a build failing on an unsupported flag.
     if (!mac) cmd.add("-march=native");
 
-    // ── Homebrew include/lib paths (macOS only) ─────────────────────────────
+    // ââ Homebrew include/lib paths (macOS only) âââââââââââââââââââââââââââââ
     // Homebrew installs to /opt/homebrew on Apple Silicon and /usr/local on
-    // Intel Macs — neither is guaranteed to be on g++'s default search path,
+    // Intel Macs â neither is guaranteed to be on g++'s default search path,
     // so add both explicitly. Harmless if a path doesn't exist.
     String homebrewPrefix = null;
     if (mac) {
@@ -2365,7 +2598,7 @@ public class CppBuild {
       }
     }
 
-    // ── Cached precompiled objects ──────────────────────────────────────────
+    // ââ Cached precompiled objects ââââââââââââââââââââââââââââââââââââââââââ
     // Processing.cpp takes ~9s to compile. Cache the .o and reuse it.
     try {
     String osName = System.getProperty("os.name","").toLowerCase();
@@ -2388,7 +2621,7 @@ public class CppBuild {
 
     if (needsProcessing) {
       List<String> preCmd = new ArrayList<>();
-      preCmd.add(gpp); preCmd.add("-std=c++17"); preCmd.add("-O2");
+      preCmd.add(gpp); preCmd.add("-std=c++20"); preCmd.add("-O2");
       if (!mac) preCmd.add("-march=native");
       if (homebrewPrefix != null) preCmd.add("-I" + homebrewPrefix + "/include");
       preCmd.add("-I" + runtimeDir.getAbsolutePath());
@@ -2412,7 +2645,7 @@ public class CppBuild {
     }
     if (needsDefaults) {
       List<String> preCmd2 = new ArrayList<>();
-      preCmd2.add(gpp); preCmd2.add("-std=c++17"); preCmd2.add("-O2");
+      preCmd2.add(gpp); preCmd2.add("-std=c++20"); preCmd2.add("-O2");
       if (!mac) preCmd2.add("-march=native");
       if (homebrewPrefix != null) preCmd2.add("-I" + homebrewPrefix + "/include");
       preCmd2.add("-I" + runtimeDir.getAbsolutePath());
@@ -2460,7 +2693,7 @@ public class CppBuild {
         "-lcomdlg32", "-lshell32", "-lole32", "-luuid",
         "-mwindows", "-pthread", "-D_USE_MATH_DEFINES");
     } else if (mac) {
-      // macOS has no separate libGL/libGLU — OpenGL is a system framework,
+      // macOS has no separate libGL/libGLU â OpenGL is a system framework,
       // bundled with Xcode Command Line Tools (no extra install needed).
       // GLFW/GLEW come from Homebrew, so link against its lib directory too.
       if (homebrewPrefix != null) {
@@ -2565,9 +2798,9 @@ public class CppBuild {
     return "g++";
   }
 
-  // ════════════════════════════════════════════════════════════════════════════
+  // ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   // EXPORT APPLICATION SYSTEM
-  // ════════════════════════════════════════════════════════════════════════════
+  // ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
   public enum ExportTarget {
     LINUX_X64   ("linux-x64",    "g++",                        "Linux 64-bit (x86_64)",         false),
@@ -2600,7 +2833,7 @@ public class CppBuild {
     dlg.setLayout(new java.awt.BorderLayout(8,8));
     dlg.getContentPane().setBackground(bg);
 
-    // ── Title ────────────────────────────────────────────────────────────────
+    // ââ Title ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     javax.swing.JLabel title = new javax.swing.JLabel("  Export Application");
     title.setForeground(blue);
     title.setFont(title.getFont().deriveFont(java.awt.Font.BOLD,15f));
@@ -2611,7 +2844,7 @@ public class CppBuild {
     center.setBackground(bg);
     center.setBorder(javax.swing.BorderFactory.createEmptyBorder(0,14,4,14));
 
-    // ── Icon picker ──────────────────────────────────────────────────────────
+    // ââ Icon picker ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     javax.swing.JPanel iconPanel = new javax.swing.JPanel(new java.awt.BorderLayout(6,4));
     iconPanel.setBackground(bg);
     iconPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(4,0,8,0));
@@ -2622,7 +2855,7 @@ public class CppBuild {
     javax.swing.JLabel iconLbl = new javax.swing.JLabel("App Icon (PNG)  ");
     iconLbl.setForeground(blue);
     iconLbl.setFont(iconLbl.getFont().deriveFont(java.awt.Font.BOLD, 12f));
-    javax.swing.JLabel iconHint = new javax.swing.JLabel("optional · 256×256 recommended · leave blank to skip");
+    javax.swing.JLabel iconHint = new javax.swing.JLabel("optional Â· 256Ã256 recommended Â· leave blank to skip");
     iconHint.setForeground(new java.awt.Color(110,115,150));
     iconHint.setFont(iconHint.getFont().deriveFont(10f));
     iconTop.add(iconLbl); iconTop.add(iconHint);
@@ -2711,7 +2944,7 @@ public class CppBuild {
     iconPanel.add(iconBottom, java.awt.BorderLayout.CENTER);
     center.add(iconPanel, java.awt.BorderLayout.NORTH);
 
-    // ── Target checkboxes ────────────────────────────────────────────────────
+    // ââ Target checkboxes ââââââââââââââââââââââââââââââââââââââââââââââââââââ
     javax.swing.JPanel targets = new javax.swing.JPanel();
     targets.setLayout(new javax.swing.BoxLayout(targets, javax.swing.BoxLayout.Y_AXIS));
     targets.setBackground(bg);
@@ -2743,7 +2976,7 @@ public class CppBuild {
       row.add(cb);
       boxes.put(t, cb);
 
-      javax.swing.JLabel statusLbl = new javax.swing.JLabel(ok ? "✓" : "✗ not found");
+      javax.swing.JLabel statusLbl = new javax.swing.JLabel(ok ? "â" : "â not found");
       statusLbl.setForeground(ok ? green : red);
       statusLbl.setFont(statusLbl.getFont().deriveFont(10f));
       row.add(statusLbl);
@@ -2765,12 +2998,12 @@ public class CppBuild {
               if (ok2 && compilerExists(ft)) {
                 fcb.setEnabled(true); fcb.setForeground(blue);
                 fcb.setFont(fcb.getFont().deriveFont(java.awt.Font.PLAIN));
-                fsl.setText("✓ ready"); fsl.setForeground(green);
-                installBtn.setText("✓ Done");
+                fsl.setText("â ready"); fsl.setForeground(green);
+                installBtn.setText("â Done");
                 installBtn.setBackground(new java.awt.Color(40,110,55));
               } else {
                 installBtn.setText("Retry"); installBtn.setEnabled(true);
-                fsl.setText("✗ failed");
+                fsl.setText("â failed");
               }
             });
           }).start();
@@ -2793,7 +3026,7 @@ public class CppBuild {
     center.add(scroll, java.awt.BorderLayout.CENTER);
     dlg.add(center, java.awt.BorderLayout.CENTER);
 
-    // ── Buttons ──────────────────────────────────────────────────────────────
+    // ââ Buttons ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     javax.swing.JPanel btnRow = new javax.swing.JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT,10,10));
     btnRow.setBackground(bg);
     javax.swing.JButton cancel = new javax.swing.JButton("Cancel");
@@ -2875,8 +3108,8 @@ public class CppBuild {
               "<html><b>Linux export not available on Windows.</b><br><br>" +
               "C++ must be compiled natively for each platform.<br><br>" +
               "To build Linux exports:<br>" +
-              "&nbsp;&nbsp;• Open this sketch on a Linux machine<br>" +
-              "&nbsp;&nbsp;• Use File → Export Application there<br><br>" +
+              "&nbsp;&nbsp;â¢ Open this sketch on a Linux machine<br>" +
+              "&nbsp;&nbsp;â¢ Use File â Export Application there<br><br>" +
               "The exported Linux AppImage will run on any Linux distro.</html>",
               "Linux Export", javax.swing.JOptionPane.INFORMATION_MESSAGE);
             return false;
@@ -3038,7 +3271,7 @@ public class CppBuild {
     } else {
       cmd.add(t.compiler);
     }
-    cmd.add("-std=c++17"); cmd.add("-O2");
+    cmd.add("-std=c++20"); cmd.add("-O2");
     for (File s : sources) cmd.add(s.getAbsolutePath());
     // Use pre-built cached .o if available for this target
     String exportCacheDir = t.isWindows ? "cache/windows-x64"
@@ -3641,7 +3874,7 @@ public class CppBuild {
   }
 
 
-  // ── Musl cross-compiler toolchains (pre-built, no system install needed) ──
+  // ââ Musl cross-compiler toolchains (pre-built, no system install needed) ââ
 
   private static final String MUSL_BASE = "https://musl.cc/";
 

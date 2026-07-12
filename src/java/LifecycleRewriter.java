@@ -1,6 +1,7 @@
 package processing.mode.cpp;
 
-
+import processing.mode.cpp.NamedType;
+import processing.mode.cpp.TypeRef;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -49,7 +50,7 @@ import java.util.Set;
  * pointer field already has some other default" from "this pointer field
  * has none." This port mirrors that distinction exactly.
  */
-final class LifecycleRewriter {
+public final class LifecycleRewriter {
     private LifecycleRewriter() {}
 
     /**
@@ -95,7 +96,7 @@ final class LifecycleRewriter {
             return new FunctionDecl(
                 fd.returnType(), fd.name(), fd.templateParams(), fd.params(), fd.initializerList(),
                 newBody, fd.isConstructor(), fd.isDestructor(), fd.isVirtual(),
-                fd.isOverride() || shouldOverride, fd.isConst(), fd.isStatic(), fd.isPureVirtual(),
+                fd.isOverride() || shouldOverride, fd.isConst(), fd.isConstexpr(), fd.isStatic(), fd.isPureVirtual(),
                 fd.line(), fd.col(), fd.leadingComments()
             );
         }
@@ -123,7 +124,7 @@ final class LifecycleRewriter {
             return new FunctionDecl(
                 fd.returnType(), fd.name(), fd.templateParams(), fd.params(), fd.initializerList(),
                 newBody, fd.isConstructor(), fd.isDestructor(), fd.isVirtual(),
-                fd.isOverride(), fd.isConst(), fd.isStatic(), fd.isPureVirtual(),
+                fd.isOverride(), fd.isConst(), fd.isConstexpr(), fd.isStatic(), fd.isPureVirtual(),
                 fd.line(), fd.col(), fd.leadingComments()
             );
         }
@@ -179,7 +180,7 @@ final class LifecycleRewriter {
         if (s instanceof IfStatement ifs) {
             Statement newThen = defaultPointerFieldsInStatement(ifs.thenBranch());
             Statement newElse = ifs.elseBranch() != null ? defaultPointerFieldsInStatement(ifs.elseBranch()) : null;
-            return new IfStatement(ifs.condition(), newThen, newElse, ifs.line(), ifs.col(), ifs.leadingComments());
+            return new IfStatement(ifs.condition(), newThen, newElse, ifs.isConstexpr(), ifs.line(), ifs.col(), ifs.leadingComments());
         }
         if (s instanceof ForStatement f) {
             Statement newInit = f.init() instanceof DeclStatement ds ? defaultPointerFieldsInDeclStatement(ds) : f.init();
