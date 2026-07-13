@@ -379,6 +379,7 @@ record LambdaExpr(
     List<Capture> captures,
     List<Param> params,
     TypeRef returnType,
+    boolean isMutable,
     Block body,
     int line,
     int col,

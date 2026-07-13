@@ -1231,6 +1231,9 @@ public class CppBuild {
           boolean isDeductionGuide = rt.contains("->") && rt.contains("(") && !rt.startsWith("#");
           if (isTypeAlias || isDeductionGuide) {
             deferredAliases.add(item);
+          } else if (rt.startsWith("template ") && !rt.startsWith("template<") && !rt.startsWith("template <")) {
+            // Explicit template instantiation: must be outside namespace Processing
+            preNs.append(CodeGen.generateNode(item, 0));
           } else {
             out.append(CodeGen.generateNode(item, 0));
           }
@@ -1331,8 +1334,19 @@ public class CppBuild {
         && definedFunctions.contains(fd.name() + "/" + fd.params().size())
       );
 
-      out.append("struct Sketch : public PApplet {\n");
+      // Hoist TopLevelStatements (structured bindings, explicit instantiations) to namespace scope
+      List<TopLevelItem> nsHoisted = new ArrayList<>();
+      List<TopLevelItem> realMembers = new ArrayList<>();
       for (TopLevelItem item : sketchMembers) {
+        if (item instanceof TopLevelStatement) {
+          nsHoisted.add(item);
+        } else {
+          realMembers.add(item);
+        }
+      }
+      for (TopLevelItem item : nsHoisted) out.append(CodeGen.generateNode(item, 0));
+      out.append("struct Sketch : public PApplet {\n");
+      for (TopLevelItem item : realMembers) {
         out.append(CodeGen.generateNode(item, 1));
       }
       out.append("};\n");

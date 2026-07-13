@@ -979,6 +979,7 @@ public final class CodeGen {
                 if (p.name() != null) sb.append(' ').append(p.name());
             }
             sb.append(")");
+            if (l.isMutable()) sb.append(" mutable");
             if (l.returnType() != null) sb.append(" -> ").append(renderTypeRef(l.returnType()));
             sb.append(" ");
             StringBuilder bodySb = new StringBuilder();

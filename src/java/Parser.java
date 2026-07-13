@@ -922,9 +922,9 @@ public final class Parser {
             int save = pos;
             advance();
             if (checkKeyword("default")) {
-                advance(); // = default
+                advance(); isDefault = true;
             } else if (checkKeyword("delete")) {
-                advance(); // = delete
+                advance(); isDelete = true;
             } else if (checkLiteralZero()) {
                 advance();
                 isPureVirtual = true;
@@ -2274,12 +2274,14 @@ public final class Parser {
         expectPunct("(");
         List<Expr> args = new ArrayList<>();
         if (!checkPunct(")")) {
-            args.add(parseExpr());
-            matchPunct("..."); // pack expansion: "f(args...)"
+            Expr a0 = parseExpr();
+            if (matchPunct("...")) a0 = new PostfixExpr("...", a0, a0.line(), a0.col(), List.of());
+            args.add(a0);
             while (matchPunct(",")) {
                 if (checkPunct(")")) break;
-                args.add(parseExpr());
-                matchPunct("..."); // pack expansion
+                Expr ai = parseExpr();
+                if (matchPunct("...")) ai = new PostfixExpr("...", ai, ai.line(), ai.col(), List.of());
+                args.add(ai);
             }
         }
         expectPunct(")");
@@ -2671,7 +2673,7 @@ public final class Parser {
         }
 
         // mutable, noexcept, attributes
-        matchKeyword("mutable");
+        boolean isMutable = matchKeyword("mutable");
         if (checkKeyword("noexcept")) { advance(); if(checkPunct("(")){advance();int _d=1;while(!isAtEnd()&&_d>0){if(checkPunct("("))_d++;else if(checkPunct(")"))_d--;advance();}} }
         consumeAttributes();
 
@@ -2681,7 +2683,7 @@ public final class Parser {
         }
 
         Block body = parseBlock();
-        return new LambdaExpr(captures, params, returnType, body, start.line(), start.col(), List.of());
+        return new LambdaExpr(captures, params, returnType, isMutable, body, start.line(), start.col(), List.of());
     }
 
     private Capture parseCapture() {
@@ -2749,7 +2751,7 @@ public final class Parser {
         }
 
         TypeRef type = parseTypeRef();
-        matchPunct("..."); // pack expansion after type: "Rest... rest"
+        boolean isTypePackExpansion = matchPunct("..."); // pack expansion after type: "Rest... rest"
 
         // Member pointer parameter: "int Widget::* dp" or "int (Widget::* mp)(int) const"
         if (check(CppLexerTokenType.IDENTIFIER) && pos + 1 < tokens.size()
@@ -2825,7 +2827,7 @@ public final class Parser {
         }
 
         // Variadic pack expansion after the type: "Args... args" or "Ts&&... ts"
-        boolean isVariadic = false;
+        boolean isVariadic = isTypePackExpansion;
         if (checkPunct("...")) { advance(); isVariadic = true; }
 
         String name;
@@ -2936,11 +2938,19 @@ public final class Parser {
                     || tokens.get(pos + 1).isPunct("{"))) {
             TypeDef td = parseTypeDef(leadingComments, List.of());
             matchPunct(";");
-            // If a variable declaration follows, parse it
+            // Emit struct as verbatim text via CodeGen
+            String structCode = processing.mode.cpp.CodeGen.generateNode(td, 0).stripTrailing();
+            ExprStatement structStmt = new ExprStatement(
+                new Identifier(structCode, td.line(), td.col(), List.of()),
+                td.line(), td.col(), leadingComments);
+            // If a variable declaration follows, parse it too
             if (looksLikeDeclaration()) {
-                return new java.util.ArrayList<>(parseDeclStatementsDesugared(List.of()));
+                List<Statement> result = new java.util.ArrayList<>();
+                result.add(structStmt);
+                result.addAll(parseDeclStatementsDesugared(List.of()));
+                return result;
             }
-            return List.of(new ExprStatement(new Identifier("", td.line(), td.col(), List.of()), td.line(), td.col(), leadingComments));
+            return List.of(structStmt);
         }
         if (looksLikeDeclaration()) {
             return new ArrayList<Statement>(parseDeclStatementsDesugared(leadingComments));
