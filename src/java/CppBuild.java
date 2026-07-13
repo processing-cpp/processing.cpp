@@ -1226,7 +1226,10 @@ public class CppBuild {
         } else if (item instanceof PreprocessorLine pl2) {
           // Defer "using X = ..." type aliases (including template aliases) until after struct definitions
           String rt = pl2.rawText().trim();
-          if ((rt.startsWith("using ") || rt.contains(" using ")) && !rt.contains("using namespace") && rt.contains("=")) {
+          // Defer "using X = ..." type aliases and deduction guides after struct definitions
+          boolean isTypeAlias = (rt.startsWith("using ") || rt.contains(" using ")) && !rt.contains("using namespace") && rt.contains("=");
+          boolean isDeductionGuide = rt.contains("->") && rt.contains("(") && !rt.startsWith("#");
+          if (isTypeAlias || isDeductionGuide) {
             deferredAliases.add(item);
           } else {
             out.append(CodeGen.generateNode(item, 0));

@@ -207,6 +207,7 @@ record EnumDecl(
 
 record NamespaceDecl(
     String name,
+    boolean isInline,
     List<TopLevelItem> items,
     int line,
     int col,

@@ -346,7 +346,7 @@ public final class Parser {
         if (checkKeyword("enum")) {
             return List.of(parseEnumDecl(leadingComments));
         }
-        if (checkKeyword("namespace")) {
+        if (checkKeyword("namespace") || (checkKeyword("inline") && pos + 1 < tokens.size() && tokens.get(pos + 1).isKeyword("namespace"))) {
             return List.of(parseNamespaceDecl(leadingComments));
         }
         // typedef -- emit verbatim as-is (covers function-pointer typedefs, etc.)
@@ -428,6 +428,25 @@ public final class Parser {
         }
         if (checkOp("~") || (checkKeyword("virtual") && tokens.get(pos + 1).isOp("~"))) {
             return List.of(parseFunctionOrConstructorOrDestructor(leadingComments, templateParams));
+        }
+
+        // Deduction guide: "Wrapper(const char*) -> Wrapper<std::string>;"
+        if (check(CppLexerTokenType.IDENTIFIER) && pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("(")) {
+            int scan = pos + 2; int depth = 1;
+            while (scan < tokens.size() && depth > 0) {
+                if (tokens.get(scan).isPunct("(")) depth++;
+                else if (tokens.get(scan).isPunct(")")) depth--;
+                scan++;
+            }
+            if (scan < tokens.size() && tokens.get(scan).isPunct("->")) {
+                int startPos = pos;
+                while (!isAtEnd() && !checkPunct(";")) advance();
+                matchPunct(";");
+                StringBuilder raw = new StringBuilder();
+                for (int i = startPos; i < pos; i++) { if (i > startPos) raw.append(" "); raw.append(tokens.get(i).text()); }
+                raw.append(";");
+                return List.of(new PreprocessorLine(raw.toString(), tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
+            }
         }
 
         return parseFunctionOrVariable(leadingComments, templateParams, true);
@@ -778,6 +797,15 @@ public final class Parser {
         if (checkKeyword("enum")) {
             return List.of(parseEnumDecl(leadingComments));
         }
+        // using X = Type; inside a struct/class body -- consume verbatim
+        if (checkKeyword("using") && !tokens.get(pos + 1).isKeyword("namespace")) {
+            int startPos = pos;
+            { int _d=0; while(!isAtEnd()){if(checkPunct("{"))_d++;else if(checkPunct("}")){if(_d==0){advance();break;}_d--;}else if(checkPunct(";")&&_d==0)break;advance();} matchPunct(";"); }
+            StringBuilder raw = new StringBuilder();
+            for (int i = startPos; i < pos - 1; i++) { if (i > startPos) raw.append(" "); raw.append(tokens.get(i).text()); }
+            raw.append(";");
+            return List.of(new PreprocessorLine(raw.toString(), tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
+        }
         // Destructor dispatch: "~Name() {...}" or "virtual ~Name() {...}" --
         // must look one token past an optional leading "virtual", since that
         // keyword (confirmed common on destructors, e.g. "virtual ~LSystem()")
@@ -830,8 +858,7 @@ public final class Parser {
             }
         }
 
-        // Consume trailing qualifiers: noexcept, noexcept(expr), override, final
-        // These can appear after the param list in any order before "= 0" or body.
+        // Consume trailing qualifiers: noexcept, noexcept(expr), override, final, requires
         while (true) {
             if (checkKeyword("noexcept")) {
                 advance();
@@ -840,6 +867,10 @@ public final class Parser {
                 advance();
             } else if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("final")) {
                 advance();
+            } else if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("requires")) {
+                advance();
+                if (checkPunct("(")) { advance(); int d=1; while(!isAtEnd()&&d>0){if(checkPunct("("))d++;else if(checkPunct(")"))d--;advance();} }
+                else { while (!isAtEnd() && !checkPunct("{") && !checkPunct(";") && !checkOp("=")) { if (checkOp("<")) { advance(); int d=1; while(!isAtEnd()&&d>0){if(checkOp("<"))d++;else if(checkOp(">"))d--;advance();} } else advance(); } }
             } else break;
         }
 
@@ -875,7 +906,8 @@ public final class Parser {
     }
 
     private FunctionDecl.ConstructorInit parseConstructorInitEntry() {
-        String memberName = expectIdentifier().text();
+        // Base class names can be qualified: "std::runtime_error(msg)"
+        String memberName = parseQualifiedTypeName();
         expectPunct("(");
         List<Expr> args = new ArrayList<>();
         if (!checkPunct(")")) {
@@ -972,8 +1004,9 @@ public final class Parser {
             boolean isOverride = false;
             boolean isMethodConst = false;
             // trailing const/override may appear in either order
-            for (int i = 0; i < 2; i++) {
+            for (int i = 0; i < 3; i++) {
                 if (matchKeyword("const")) { isMethodConst = true; continue; }
+                if (matchKeyword("volatile")) { continue; } // const volatile method
                 if (matchKeyword("override")) { isOverride = true; continue; }
             }
             // Trailing return type: "auto f() -> ReturnType"
@@ -984,7 +1017,7 @@ public final class Parser {
                 trailingReturnType = parseTypeRef();
             }
             TypeRef effectiveReturnType = (trailingReturnType != null) ? trailingReturnType : type;
-            // Consume trailing qualifiers: noexcept, noexcept(expr), override, final
+            // Consume trailing qualifiers: noexcept, noexcept(expr), override, final, requires
             while (true) {
                 if (checkKeyword("noexcept")) {
                     advance();
@@ -993,6 +1026,16 @@ public final class Parser {
                     isOverride = true; advance();
                 } else if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("final")) {
                     advance();
+                } else if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("requires")) {
+                    // trailing requires clause: "requires expr" -- consume to { or ;
+                    advance();
+                    if (checkPunct("(")) { advance(); int d=1; while(!isAtEnd()&&d>0){if(checkPunct("("))d++;else if(checkPunct(")"))d--;advance();} }
+                    else { // bare expression like "requires std::is_arithmetic_v<T>"
+                        while (!isAtEnd() && !checkPunct("{") && !checkPunct(";") && !checkOp("=")) {
+                            if (checkOp("<")) { advance(); int d=1; while(!isAtEnd()&&d>0){if(checkOp("<"))d++;else if(checkOp(">"))d--;advance();} }
+                            else advance();
+                        }
+                    }
                 } else break;
             }
             // Pure-virtual specifier ("= 0") or = default / = delete
@@ -1153,7 +1196,10 @@ public final class Parser {
             }
             if (checkKeyword("new") || checkKeyword("delete")) {
                 CppLexerToken kw = advance();
-                return opKw.text() + " " + kw.text();
+                String opName = opKw.text() + " " + kw.text();
+                // operator new[] / operator delete[]
+                if (checkPunct("[")) { advance(); expectPunct("]"); opName += "[]"; }
+                return opName;
             }
             // Cast operator: "operator int", "operator float", "operator bool", etc.
             // ONLY fire for actual C++ primitive type keywords, not arbitrary
@@ -1351,7 +1397,9 @@ public final class Parser {
     }
 
     private NamespaceDecl parseNamespaceDecl(List<CppLexerToken> leadingComments) {
-        CppLexerToken start = expectKeyword("namespace");
+        CppLexerToken start = peek();
+        boolean isInlineNs = matchKeyword("inline"); // "inline namespace"
+        expectKeyword("namespace");
         StringBuilder nameBuilder = new StringBuilder(expectIdentifier().text());
         while (checkPunct("::")) { advance(); nameBuilder.append("::").append(expectIdentifier().text()); }
         String name = nameBuilder.toString();
@@ -1364,7 +1412,7 @@ public final class Parser {
             items.addAll(parseTopLevelItem(comments));
         }
         expectPunct("}");
-        return new NamespaceDecl(name, items, start.line(), start.col(), leadingComments);
+        return new NamespaceDecl(name, isInlineNs, items, start.line(), start.col(), leadingComments);
     }
 
     private UsingNamespaceDecl parseUsingNamespaceDecl(List<CppLexerToken> leadingComments) {
@@ -1545,7 +1593,14 @@ public final class Parser {
                 depth--; advance();
             }
             else if (checkOp(">>")) {
-                if (depth <= 1) break;
+                if (depth == 1) {
+                    // Split ">>" into two ">" -- first closes inner template,
+                    // second will close outer template param list
+                    splitTrailingShiftIntoTwoCloseAngles();
+                    depth--; advance(); // consume first ">"
+                    break; // second ">" left for outer list
+                }
+                if (depth == 0) break;
                 depth -= 2; advance();
             }
             else if (depth == 0 && checkPunct(",")) break;
@@ -2021,6 +2076,14 @@ public final class Parser {
 
     private Expr parseNew() {
         CppLexerToken start = expectKeyword("new");
+        // Placement new: "new (buf) Type(args)" -- consume placement args first
+        if (checkPunct("(")) {
+            advance(); int _pd=1;
+            while (!isAtEnd() && _pd > 0) {
+                if (checkPunct("(")) _pd++; else if (checkPunct(")")) _pd--;
+                advance();
+            }
+        }
         TypeRef type = parseTypeRef();
         if (matchPunct("[")) {
             Expr sizeExpr = parseExpr();
@@ -2074,7 +2137,14 @@ public final class Parser {
                     expr = new BinaryExpr(isArrow ? "->*" : ".*", expr, rhs, t.line(), t.col(), List.of());
                     continue;
                 }
-                String member = expectIdentifierOrKeywordName();
+                // Explicit destructor call: "p->~PoolObj()"
+                String member;
+                if (checkOp("~")) {
+                    advance(); // consume ~
+                    member = "~" + expectIdentifier().text();
+                } else {
+                    member = expectIdentifierOrKeywordName();
+                }
                 // Sibling fix to the std::vector<int>(...) bug found via
                 // RealHeaderStressTest: a member name can ALSO be
                 // followed by explicit template arguments before the
@@ -2138,8 +2208,11 @@ public final class Parser {
         List<Expr> args = new ArrayList<>();
         if (!checkPunct(")")) {
             args.add(parseExpr());
+            matchPunct("..."); // pack expansion: "f(args...)"
             while (matchPunct(",")) {
+                if (checkPunct(")")) break;
                 args.add(parseExpr());
+                matchPunct("..."); // pack expansion
             }
         }
         expectPunct(")");
@@ -2218,6 +2291,19 @@ public final class Parser {
         }
         if (checkPunct("{")) {
             return parseInitializerList();
+        }
+        // Global scope resolution: "::operator new(...)" or "::SomeFunc()"
+        if (checkPunct("::")) {
+            advance(); // consume ::
+            // Parse what follows as an identifier/operator name
+            if (checkKeyword("operator")) {
+                String opName = "::" + parseFunctionOrVariableName();
+                return new Identifier(opName, t.line(), t.col(), List.of());
+            }
+            if (check(CppLexerTokenType.IDENTIFIER)) {
+                String name = advance().text();
+                return new Identifier("::" + name, t.line(), t.col(), List.of());
+            }
         }
         // Wide/unicode string prefix: L"..." u"..." U"..." u8"..."
         if (t.type() == CppLexerTokenType.IDENTIFIER
@@ -2588,6 +2674,7 @@ public final class Parser {
         }
 
         TypeRef type = parseTypeRef();
+        matchPunct("..."); // pack expansion after type: "Rest... rest"
 
         // Member pointer parameter: "int Widget::* dp" or "int (Widget::* mp)(int) const"
         if (check(CppLexerTokenType.IDENTIFIER) && pos + 1 < tokens.size()
@@ -2767,6 +2854,19 @@ public final class Parser {
      */
     private List<Statement> parseStatementOrMultiDecl(List<CppLexerToken> leadingComments) {
         if (isStructuredBindingStart()) return List.of(parseStructuredBinding(leadingComments));
+        // Local struct/class definition: "struct Point { float x, y; }; Point p{...}"
+        if ((checkKeyword("struct") || checkKeyword("class"))
+                && pos + 1 < tokens.size()
+                && (tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
+                    || tokens.get(pos + 1).isPunct("{"))) {
+            TypeDef td = parseTypeDef(leadingComments, List.of());
+            matchPunct(";");
+            // If a variable declaration follows, parse it
+            if (looksLikeDeclaration()) {
+                return new java.util.ArrayList<>(parseDeclStatementsDesugared(List.of()));
+            }
+            return List.of(new ExprStatement(new Identifier("", td.line(), td.col(), List.of()), td.line(), td.col(), leadingComments));
+        }
         if (looksLikeDeclaration()) {
             return new ArrayList<Statement>(parseDeclStatementsDesugared(leadingComments));
         }
@@ -2811,6 +2911,25 @@ public final class Parser {
             if (!raw.toString().endsWith(";")) raw.append(";");
             CppLexerToken t0 = tokens.get(startPos);
             return new ExprStatement(new Identifier(raw.toString(), t0.line(), t0.col(), List.of()), t0.line(), t0.col(), leadingComments);
+        }
+        // throw statement: "throw expr;" or bare "throw;"
+        if (checkKeyword("throw")) {
+            CppLexerToken t0 = advance();
+            if (checkPunct(";")) { advance(); return new ReturnStatement(null, t0.line(), t0.col(), leadingComments); }
+            Expr val = parseExpr();
+            expectPunct(";");
+            // Encode as ReturnStatement with a UnaryExpr("throw", val) -- CodeGen emits via renderExpr
+            return new ExprStatement(new UnaryExpr("throw ", val, t0.line(), t0.col(), List.of()), t0.line(), t0.col(), leadingComments);
+        }
+
+        // Local struct/class definition inside a function body
+        if ((checkKeyword("struct") || checkKeyword("class"))
+                && pos + 1 < tokens.size()
+                && (tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
+                    || tokens.get(pos + 1).isPunct("{"))) {
+            TypeDef td = parseTypeDef(leadingComments, List.of());
+            matchPunct(";");
+            return new ExprStatement(new Identifier("", td.line(), td.col(), List.of()), td.line(), td.col(), leadingComments);
         }
         if (checkKeyword("if")) return parseIf(leadingComments);
         if (checkKeyword("for")) return parseForOrRangeFor(leadingComments);
@@ -3150,7 +3269,13 @@ public final class Parser {
             if (checkKeyword("static")) advance();
             if (checkKeyword("volatile")) advance();
             if (checkKeyword("const")) advance();
-            if (checkKeyword("volatile")) advance(); // volatile after const
+            if (checkKeyword("volatile")) advance(); // vol
+            // alignas specifier: "alignas(T) type name"
+            if (checkKeyword("alignas") && pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("(")) {
+                advance(); advance(); int _ad=1;
+                while (!isAtEnd() && _ad > 0) { if (checkPunct("(")) _ad++; else if (checkPunct(")")) _ad--; advance(); }
+            }
+            // volatile after const
             if (checkKeyword("constexpr")) advance();
             if (checkKeyword("inline")) advance();
             if (checkKeyword("static")) advance(); // tolerate either order
@@ -3200,6 +3325,11 @@ public final class Parser {
         // statement, then "int" showed up where a ";" was expected).
         // Tolerate either order ("static const" or "const static"),
         // mirroring the top-level path's own tolerance.
+        // alignas specifier: "alignas(T) type name"
+        if (checkKeyword("alignas") && pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("(")) {
+            advance(); advance(); int _ad=1;
+            while (!isAtEnd() && _ad > 0) { if (checkPunct("(")) _ad++; else if (checkPunct(")")) _ad--; advance(); }
+        }
         boolean isStatic = matchKeyword("static");
         matchKeyword("volatile"); // consume volatile qualifier at statement scope
         boolean isConst = matchKeyword("const");

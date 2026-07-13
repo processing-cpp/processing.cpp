@@ -147,6 +147,7 @@ public final class CodeGen {
 
     private static void emitNamespaceDecl(StringBuilder sb, NamespaceDecl nd, int depth) {
         indent(sb, depth);
+        if (nd.isInline()) sb.append("inline ");
         sb.append("namespace ").append(nd.name()).append(" {\n");
         for (TopLevelItem item : nd.items()) {
             emitTopLevelItem(sb, item, depth + 1);
