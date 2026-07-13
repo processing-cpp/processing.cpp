@@ -739,7 +739,9 @@ public final class Parser {
             sb.append('>');
             name = sb.toString();
         }
-        return isVirtualBase ? "virtual " + name : name;
+        boolean isPackExpansion = matchPunct("..."); // pack expansion in base class list: "Bases..."
+        String suffix = isPackExpansion ? "..." : "";
+        return isVirtualBase ? "virtual " + name + suffix : name + suffix;
     }
 
     /**
@@ -852,9 +854,13 @@ public final class Parser {
 
         List<FunctionDecl.ConstructorInit> initList = new ArrayList<>();
         if (!isDestructor && matchPunct(":")) {
-            initList.add(parseConstructorInitEntry());
+            FunctionDecl.ConstructorInit ci1 = parseConstructorInitEntry();
+            if (matchPunct("...")) ci1 = new FunctionDecl.ConstructorInit(ci1.memberName() + "...", ci1.args());
+            initList.add(ci1);
             while (matchPunct(",")) {
-                initList.add(parseConstructorInitEntry());
+                FunctionDecl.ConstructorInit ci = parseConstructorInitEntry();
+                if (matchPunct("...")) ci = new FunctionDecl.ConstructorInit(ci.memberName() + "...", ci.args());
+                initList.add(ci);
             }
         }
 
@@ -969,6 +975,7 @@ public final class Parser {
         matchKeyword("volatile"); // consume volatile qualifier
         boolean isConst = matchKeyword("const");
         boolean isConstexprFn = matchKeyword("constexpr"); if (isConstexprFn) isConst = true;
+        if (!isVirtual) isVirtual = matchKeyword("virtual"); // constexpr virtual
         if (!isStatic) isStatic = matchKeyword("static");
         if (!isConst) isConst = matchKeyword("const");
         matchKeyword("volatile"); // volatile may appear after const
@@ -1053,6 +1060,7 @@ public final class Parser {
             }
             // Constructor initializer list: ": mem(val), mem2(val2)"
             if (matchPunct(":") && !checkPunct(":")) {
+                System.err.println("[INITV] consuming init list, next=" + peek().text());
                 // consume initializer list entries until { or ;
                 int _d = 0;
                 while (!isAtEnd()) {
@@ -1726,6 +1734,20 @@ public final class Parser {
         TypeRef maybeReturnType = parseTypeRef();
         if (checkPunct("(")) {
             return parseFunctionSignatureTail(maybeReturnType);
+        }
+        // NTTP arithmetic expression: "N-1", "N*2", "N+1" etc.
+        // After parsing the base type/value, consume arithmetic ops and operands
+        if (maybeReturnType instanceof NamedType nt && !nt.baseName().equals("void")) {
+            StringBuilder expr = new StringBuilder(nt.baseName());
+            while (!isAtEnd() && (checkOp("+") || checkOp("-") || checkOp("*") || checkOp("/") || checkOp("%"))) {
+                expr.append(advance().text());
+                if (!isAtEnd() && (check(CppLexerTokenType.INT_LITERAL) || check(CppLexerTokenType.IDENTIFIER))) {
+                    expr.append(advance().text());
+                }
+            }
+            if (expr.length() > nt.baseName().length()) {
+                return new NamedType(expr.toString(), List.of(), 0, false, false);
+            }
         }
         return maybeReturnType;
     }
@@ -2548,6 +2570,14 @@ public final class Parser {
         if (checkPunct("{")) {
             return parseInitializerList(); // anonymous nested brace-init
         }
+        // Designated initializer: ".field = expr" (C++20)
+        if (checkPunct(".") && pos + 1 < tokens.size()
+                && tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
+                && pos + 2 < tokens.size() && tokens.get(pos + 2).isOp("=")) {
+            advance(); // consume "."
+            advance(); // consume field name
+            advance(); // consume "="
+        }
         Expr e = parseExpr();
         matchPunct("..."); // pack expansion in brace-init: "{args...}"
         return e;
@@ -2953,8 +2983,7 @@ public final class Parser {
 
     private Statement parseIf(List<CppLexerToken> leadingComments) {
         CppLexerToken start = expectKeyword("if");
-        matchKeyword("constexpr"); // C++17 if constexpr
-        boolean isConstexpr = matchKeyword("constexpr");
+        boolean isConstexpr = matchKeyword("constexpr"); // C++17 if constexpr
         expectPunct("(");
         // C++17 if-init-statement: if (init; cond) -- collect init decls,
         // wrap the IfStatement in a Block so the init vars are in scope.

@@ -512,12 +512,17 @@ public final class CodeGen {
             for (int i = 0; i < fd.initializerList().size(); i++) {
                 if (i > 0) sb.append(", ");
                 FunctionDecl.ConstructorInit e = fd.initializerList().get(i);
-                sb.append(e.memberName()).append('(');
+                // Pack expansion: "Bases()..." stored as memberName="Bases..."
+                String mname = e.memberName();
+                boolean isPack = mname.endsWith("...");
+                if (isPack) mname = mname.substring(0, mname.length() - 3);
+                sb.append(mname).append('(');
                 for (int j = 0; j < e.args().size(); j++) {
                     if (j > 0) sb.append(", ");
                     sb.append(renderExpr(e.args().get(j)));
                 }
                 sb.append(')');
+                if (isPack) sb.append("...");
             }
         }
 
