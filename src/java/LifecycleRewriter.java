@@ -96,7 +96,7 @@ public final class LifecycleRewriter {
             return new FunctionDecl(
                 fd.returnType(), fd.name(), fd.templateParams(), fd.params(), fd.initializerList(),
                 newBody, fd.isConstructor(), fd.isDestructor(), fd.isVirtual(),
-                fd.isOverride() || shouldOverride, fd.isConst(), fd.isConstexpr(), fd.isStatic(), fd.isPureVirtual(),
+                fd.isOverride() || shouldOverride, fd.isConst(), fd.isConstexpr(), fd.isStatic(), fd.isPureVirtual(), fd.isDefault(), fd.isDelete(),
                 fd.line(), fd.col(), fd.leadingComments()
             );
         }
@@ -124,7 +124,7 @@ public final class LifecycleRewriter {
             return new FunctionDecl(
                 fd.returnType(), fd.name(), fd.templateParams(), fd.params(), fd.initializerList(),
                 newBody, fd.isConstructor(), fd.isDestructor(), fd.isVirtual(),
-                fd.isOverride(), fd.isConst(), fd.isConstexpr(), fd.isStatic(), fd.isPureVirtual(),
+                fd.isOverride(), fd.isConst(), fd.isConstexpr(), fd.isStatic(), fd.isPureVirtual(), fd.isDefault(), fd.isDelete(),
                 fd.line(), fd.col(), fd.leadingComments()
             );
         }

@@ -29,7 +29,7 @@ public final class CppLexer {
     private static final Set<String> KEYWORDS = Set.of(
         "alignas", "alignof", "and", "and_eq", "asm", "auto", "bitand", "bitor",
         "bool", "break", "case", "catch", "char", "char16_t", "char32_t", "class",
-        "compl", "const", "constexpr", "const_cast", "continue", "decltype",
+        "compl", "const", "consteval", "constinit", "constexpr", "const_cast", "continue", "decltype",
         "default", "delete", "do", "double", "dynamic_cast", "else", "enum",
         "explicit", "export", "extern", "false", "float", "for", "friend", "goto",
         "if", "inline", "int", "long", "mutable", "namespace", "new", "noexcept",

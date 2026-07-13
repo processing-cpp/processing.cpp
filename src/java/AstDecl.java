@@ -118,8 +118,9 @@ record FunctionDecl(
     boolean isConst,
     boolean isConstexpr,
     boolean isStatic,
-    boolean isPureVirtual,      // "= 0" specifier -- distinct from body==null (an ordinary forward
-                                 // declaration also has a null body but should NOT render "= 0")
+    boolean isPureVirtual,      // "= 0" specifier
+    boolean isDefault,          // "= default"
+    boolean isDelete,           // "= delete"
     int line,
     int col,
     List<CppLexerToken> leadingComments

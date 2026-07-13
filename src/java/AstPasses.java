@@ -655,7 +655,7 @@ final class ForwardDeclGenerator {
                 fd.returnType(), fd.name(), fd.templateParams(), fd.params(),
                 fd.initializerList(), null /* body -- this is what makes it a forward decl */,
                 fd.isConstructor(), fd.isDestructor(), fd.isVirtual(), fd.isOverride(),
-                fd.isConst(), fd.isConstexpr(), fd.isStatic(), false /* isPureVirtual -- never applies to a hoisted free function */,
+                fd.isConst(), fd.isConstexpr(), fd.isStatic(), false /* isPureVirtual */, false /* isDefault */, false /* isDelete */,
                 fd.line(), fd.col(), List.of() /* no comments on the forward decl */
             ));
         }

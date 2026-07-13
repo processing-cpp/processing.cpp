@@ -74,8 +74,9 @@ public final class Parser {
     }
 
     private CppLexerToken peek() {
-        skipCommentsAt();
-        return tokens.get(pos);
+        int p = pos;
+        while (p < tokens.size() && (tokens.get(p).type() == CppLexerTokenType.LINE_COMMENT || tokens.get(p).type() == CppLexerTokenType.BLOCK_COMMENT)) p++;
+        return p < tokens.size() ? tokens.get(p) : tokens.get(tokens.size() - 1);
     }
 
     private CppLexerToken peek(int ahead) {
@@ -276,7 +277,17 @@ public final class Parser {
         }
 
         List<String> templateParams = List.of();
-        if (checkKeyword("template")) {
+        if (matchKeyword("template")) {
+            // Explicit template instantiation: "template class Foo<int>;" (no < after template)
+            if (!checkOp("<")) {
+                int startPos = pos - 1;
+                while (!isAtEnd() && !checkPunct(";")) advance();
+                matchPunct(";");
+                StringBuilder raw = new StringBuilder();
+                for (int i = startPos; i < pos - 1; i++) { if (i > startPos) raw.append(" "); raw.append(tokens.get(i).text()); }
+                raw.append(";");
+                return List.of(new PreprocessorLine(raw.toString(), tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
+            }
             templateParams = parseTemplateParamList();
             consumeLeadingComments();
 
@@ -430,6 +441,11 @@ public final class Parser {
             return List.of(parseFunctionOrConstructorOrDestructor(leadingComments, templateParams));
         }
 
+        // Global structured binding: "auto [a, b] = expr;"
+        if (isStructuredBindingStart()) {
+            Statement sb2 = parseStructuredBinding(leadingComments);
+            return List.of(new TopLevelStatement(sb2, sb2.line(), sb2.col(), leadingComments));
+        }
         // Deduction guide: "Wrapper(const char*) -> Wrapper<std::string>;"
         if (check(CppLexerTokenType.IDENTIFIER) && pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("(")) {
             int scan = pos + 2; int depth = 1;
@@ -454,7 +470,8 @@ public final class Parser {
 
     /** "template<typename T, typename U, ...>" -- returns just the param names. */
     private List<String> parseTemplateParamList() {
-        expectKeyword("template");
+        // "template" already consumed by the caller; just consume "<...>"
+        if (checkKeyword("template")) advance(); // in case called with template still present
         expectOp("<");
         List<String> params = new ArrayList<>();
         // template<> is a valid explicit full specialization marker -- emit as empty list
@@ -558,6 +575,20 @@ public final class Parser {
             return "<template-template>";
         }
 
+        // --- concept-constrained type parameter: "Numeric T" ---
+        if (check(CppLexerTokenType.IDENTIFIER) && pos + 1 < tokens.size()
+                && tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
+                && pos + 2 < tokens.size()
+                && (tokens.get(pos + 2).isOp(">") || tokens.get(pos + 2).isOp(">>")
+                    || tokens.get(pos + 2).isPunct(",")
+                    || tokens.get(pos + 2).isPunct("...")
+                    || tokens.get(pos + 2).isOp("="))) {
+            advance();
+            if (checkPunct("...")) advance();
+            String name = advance().text();
+            if (matchOp("=")) parseTemplateDefaultValue();
+            return name;
+        }
         // --- typename / class type parameter ---
         if (checkKeyword("typename") || checkKeyword("class")) {
             advance(); // consume typename/class
@@ -886,7 +917,7 @@ public final class Parser {
         // using "virtual void draw() = 0;" on an abstract base class --
         // confirmed real, ordinary OOP, not exotic. Must be checked
         // BEFORE the body/";" check below, since "= 0;" replaces both.
-        boolean isPureVirtual = false;
+        boolean isPureVirtual = false, isDefault = false, isDelete = false;
         if (checkOp("=")) {
             int save = pos;
             advance();
@@ -903,11 +934,11 @@ public final class Parser {
         }
 
         Block body = checkPunct("{") ? parseBlock() : null;
-        if (body == null && !isPureVirtual) expectPunct(";");
-        else if (isPureVirtual) expectPunct(";");
+        if (body == null && !isPureVirtual && !isDefault && !isDelete) expectPunct(";");
+        else if (isPureVirtual || isDefault || isDelete) expectPunct(";");
 
         return new FunctionDecl(null, name, templateParams, params, initList, body,
-            !isDestructor, isDestructor, isVirtual, isOverride, isConst, false, false, isPureVirtual,
+            !isDestructor, isDestructor, isVirtual, isOverride, isConst, false, false, isPureVirtual, isDefault, isDelete,
             start.line(), start.col(), leadingComments);
     }
 
@@ -974,7 +1005,8 @@ public final class Parser {
         matchKeyword("inline");
         matchKeyword("volatile"); // consume volatile qualifier
         boolean isConst = matchKeyword("const");
-        boolean isConstexprFn = matchKeyword("constexpr"); if (isConstexprFn) isConst = true;
+        boolean isConstexprFn = matchKeyword("constexpr") || matchKeyword("consteval"); if (isConstexprFn) isConst = true;
+        matchKeyword("constinit");
         if (!isVirtual) isVirtual = matchKeyword("virtual"); // constexpr virtual
         if (!isStatic) isStatic = matchKeyword("static");
         if (!isConst) isConst = matchKeyword("const");
@@ -1024,6 +1056,11 @@ public final class Parser {
                 trailingReturnType = parseTypeRef();
             }
             TypeRef effectiveReturnType = (trailingReturnType != null) ? trailingReturnType : type;
+            // Consume __attribute__((...)): GCC attribute syntax before trailing qualifiers
+            if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("__attribute__")) {
+                advance(); // __attribute__
+                if (checkPunct("(")) { advance(); int _ad=1; while(!isAtEnd()&&_ad>0){if(checkPunct("("))_ad++;else if(checkPunct(")"))_ad--;advance();} }
+            }
             // Consume trailing qualifiers: noexcept, noexcept(expr), override, final, requires
             while (true) {
                 if (checkKeyword("noexcept")) {
@@ -1046,14 +1083,16 @@ public final class Parser {
                 } else break;
             }
             // Pure-virtual specifier ("= 0") or = default / = delete
-            boolean isPureVirtual = false;
+            boolean isPureVirtual = false, isDefault = false, isDelete = false;
             if (checkOp("=")) {
                 int save = pos;
                 advance();
                 if (checkLiteralZero()) {
                     advance(); isPureVirtual = true;
-                } else if (checkKeyword("default") || checkKeyword("delete")) {
-                    advance(); // = default or = delete
+                } else if (checkKeyword("default")) {
+                    advance(); isDefault = true;
+                } else if (checkKeyword("delete")) {
+                    advance(); isDelete = true;
                 } else {
                     pos = save;
                 }
@@ -1073,12 +1112,16 @@ public final class Parser {
             Block body = checkPunct("{") ? parseBlock() : null;
             if (body == null) expectPunct(";");
             FunctionDecl fn = new FunctionDecl(effectiveReturnType, name, templateParams, params, List.of(), body,
-                false, false, isVirtual, isOverride, isMethodConst, isConstexprFn, isStatic, isPureVirtual,
+                false, false, isVirtual, isOverride, isMethodConst, isConstexprFn, isStatic, isPureVirtual, isDefault, isDelete,
                 start.line(), start.col(), leadingComments);
             return List.of(fn);
         }
 
         // Variable declaration, possibly multi-declarator.
+        // Bit field: "unsigned int read : 1" -- consume ": N" width specifier
+        if (checkPunct(":") && pos + 1 < tokens.size() && tokens.get(pos + 1).type() == CppLexerTokenType.INT_LITERAL) {
+            advance(); advance(); // consume ":" and bit width
+        }
         List<TopLevelItem> result = new ArrayList<>();
         result.add(parseOneTopLevelDeclarator(type, name, isConst, isStatic, templateParams, start, leadingComments));
         while (matchPunct(",")) {
@@ -1142,6 +1185,8 @@ public final class Parser {
             matchKeyword("volatile");
             matchKeyword("const");
             matchKeyword("constexpr");
+            matchKeyword("consteval");
+            matchKeyword("constinit");
             matchKeyword("inline");
             matchKeyword("static"); // tolerate either order, mirroring the real parse path
 

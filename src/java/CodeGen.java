@@ -496,12 +496,18 @@ public final class CodeGen {
                 && fd.returnType() instanceof NamedType nt
                 && nt.baseName().equals("operator")
                 && nt.pointerDepth() == 0;
-            if (!isCastOp) {
+            // Trailing return type: decltype(...) must use "auto name(params) -> decltype(...)"
+            boolean isTrailing = !isCastOp && fd.returnType() instanceof NamedType ntr2
+                && ntr2.baseName().startsWith("decltype");
+            if (!isCastOp && !isTrailing) {
                 sb.append(renderTypeRef(fd.returnType())).append(' ');
+            } else if (isTrailing) {
+                sb.append("auto ");
             }
             sb.append(fd.name()).append('(');
             emitParamList(sb, fd.params());
             sb.append(')');
+            if (isTrailing) sb.append(" -> ").append(renderTypeRef(fd.returnType()));
         }
 
         if (fd.isConst()) sb.append(" const");
@@ -528,6 +534,8 @@ public final class CodeGen {
 
         if (fd.body() == null) {
             if (fd.isPureVirtual()) sb.append(" = 0");
+            else if (fd.isDefault()) sb.append(" = default");
+            else if (fd.isDelete()) sb.append(" = delete");
             else if (fd.isConst() && fd.name().contains("<=>") 
                     && fd.returnType() instanceof NamedType nt && nt.baseName().equals("auto")) {
                 sb.append(" = default"); // auto operator<=> = default
