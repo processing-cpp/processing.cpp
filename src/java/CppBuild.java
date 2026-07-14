@@ -2899,16 +2899,27 @@ public class CppBuild {
         return code;
       }
 
-      // g++ -E emits "# <line> \"<file>\" <flags>" GNU-style line markers
-      // (or "#line <n> \"<file>\"" depending on version). Strip any line
-      // beginning with "# " followed by a digit, or "#line", since CppBuild's
-      // downstream scanners don't need them and they'd otherwise be mistaken
-      // for ordinary text by the brace/class scanners.
+      // g++ -E emits "# <line> \"<file>\" <flags>" GNU-style line markers.
+      // We keep ONLY lines that originate from the scratch file itself,
+      // filtering out system header expansions (#include <type_traits> etc.)
+      // which would overwhelm the CppMode parser with STL internals.
+      String scratchPath = scratch.getAbsolutePath();
       StringBuilder cleaned = new StringBuilder();
+      boolean inScratchFile = true; // start in sketch file
       for (String line : expanded.split("\n", -1)) {
         String t = line.strip();
-        if (t.startsWith("# ") && t.length() > 2 && Character.isDigit(t.charAt(2))) continue;
+        // GNU line marker: "# N \"filename\" flags"
+        if (t.startsWith("# ") && t.length() > 2 && Character.isDigit(t.charAt(2))) {
+          // Check if this marker is for our scratch file
+          inScratchFile = t.contains(scratchPath) || t.contains("<command-line>") || t.contains("<built-in>");
+          // Also allow returning to scratch file from included user code
+          // but exclude system headers (/usr/include, /usr/lib, etc.)
+          if (t.contains("/usr/") || t.contains("/lib/") || t.contains("c++/")) inScratchFile = false;
+          continue; // never emit line markers themselves
+        }
         if (t.startsWith("#line")) continue;
+        if (t.startsWith("#pragma")) continue; // strip pragmas from system headers
+        if (!inScratchFile) continue; // skip system header content
         cleaned.append(line).append("\n");
       }
       return cleaned.toString();

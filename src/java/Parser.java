@@ -277,6 +277,26 @@ public final class Parser {
         }
 
         List<String> templateParams = List.of();
+        // extern "C" / extern "C++" linkage specification -- consume verbatim
+        if (checkKeyword("extern") && pos + 1 < tokens.size()
+                && tokens.get(pos + 1).type() == CppLexerTokenType.STRING_LITERAL) {
+            advance(); advance(); // consume extern "C++"
+            if (checkPunct("{")) {
+                // extern "C++" { ... } block -- parse contents as top-level items
+                advance(); // consume {
+                List<TopLevelItem> result = new ArrayList<>();
+                while (!isAtEnd() && !checkPunct("}")) {
+                    List<CppLexerToken> innerComments = consumeLeadingComments();
+                    if (checkPunct("}")) break;
+                    result.addAll(parseTopLevelItem(innerComments));
+                }
+                matchPunct("}");
+                return result;
+            } else {
+                // extern "C++" single-declaration
+                return parseTopLevelItem(leadingComments);
+            }
+        }
         if (matchKeyword("template")) {
             // Explicit template instantiation: "template class Foo<int>;" (no < after template)
             if (!checkOp("<")) {
@@ -684,22 +704,33 @@ public final class Parser {
         CppLexerToken start = peek();
         String kind = checkKeyword("class") ? "class" : "struct";
         advance();
+        // alignas specifier: "struct alignas(64) CacheLine"
+        if (checkKeyword("alignas") && pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("(")) {
+            advance(); advance(); int _ad=1;
+            while (!isAtEnd() && _ad > 0) { if (checkPunct("(")) _ad++; else if (checkPunct(")")) _ad--; advance(); }
+        }
+        // Also consume [[attributes]] before the name
+        consumeAttributes();
         String name = expectIdentifier().text();
 
         // Partial or explicit specialization: "template<typename T> struct Foo<T*>"
         // or "template<> struct TypeName<int>" -- capture the specialization arg
         // text and fold it into the name so CodeGen emits "TypeName<int>" correctly.
-        if (checkOp("<") && looksLikeTemplateArgList()) {
+        if (checkOp("<")) {
+            // Specialization args: "Foo<T, N, false>" -- scan to matching > manually
             int argStart = pos;
-            try { parseTemplateArgList(); } catch (ParseException ignored) {}
+            advance(); // consume <
+            int depth = 1;
+            while (!isAtEnd() && depth > 0) {
+                if (checkOp("<")) { depth++; advance(); }
+                else if (checkOp(">")) { depth--; if (depth > 0) advance(); else advance(); }
+                else if (checkOp(">>")) { depth -= 2; splitTrailingShiftIntoTwoCloseAngles(); if (depth > 0) advance(); else advance(); }
+                else advance();
+            }
             int argEnd = pos;
             // Reconstruct the specialization suffix verbatim from tokens
-            StringBuilder spec = new StringBuilder("<");
-            for (int i = argStart + 1; i < argEnd - 1; i++) {
-                if (i > argStart + 1) spec.append(tokens.get(i-1).text().matches("[<>:,(]") ? "" : " ");
-                spec.append(tokens.get(i).text());
-            }
-            spec.append(">");
+            StringBuilder spec = new StringBuilder();
+            for (int i = argStart; i < argEnd; i++) spec.append(tokens.get(i).text());
             name = name + spec.toString();
         }
 
@@ -849,6 +880,34 @@ public final class Parser {
         // Constructor dispatch: identifier matching the enclosing class name,
         // directly followed by '(' with no return type preceding it.
         // Also handle "constexpr ClassName(...)" -- consume constexpr first.
+        // friend declaration: "friend class Foo;" or "friend Box<U> makeBox(U v);"
+        if (checkKeyword("friend")) {
+            int startPos = pos; advance(); // consume friend
+            // Consume to ; skipping over <> and ()
+            int _fd = 0;
+            while (!isAtEnd()) {
+                if (checkPunct("(") || checkOp("<")) { _fd++; advance(); }
+                else if (checkPunct(")") || checkOp(">")) { _fd--; advance(); }
+                else if (checkOp(">>")) { _fd -= 2; advance(); }
+                else if (checkPunct(";") && _fd == 0) { advance(); break; }
+                else if (checkPunct("{") && _fd == 0) {
+                    // friend function with body
+                    int bd = 1; advance();
+                    while (!isAtEnd() && bd > 0) { if (checkPunct("{")) bd++; else if (checkPunct("}")) bd--; advance(); }
+                    break;
+                }
+                else advance();
+            }
+            return List.of(new PreprocessorLine("// friend", tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
+        }
+        // explicit(...): conditional explicit specifier (C++20)
+        if (checkKeyword("explicit") && pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("(")) {
+            advance(); // consume explicit
+            advance(); int _ed=1; // consume (
+            while (!isAtEnd() && _ed > 0) { if (checkPunct("(")) _ed++; else if (checkPunct(")")) _ed--; advance(); }
+        } else {
+            matchKeyword("explicit"); // plain explicit
+        }
         boolean isConstexprCtor = false;
         if (checkKeyword("constexpr") && pos + 1 < tokens.size()
                 && tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
@@ -857,7 +916,9 @@ public final class Parser {
             advance(); // consume constexpr
             isConstexprCtor = true;
         }
-        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals(enclosingClassName) && tokens.get(pos + 1).isPunct("(")) {
+        // Constructor: match enclosingClassName OR just its base name (for specializations like Grid<T,N,false>)
+        String enclosingBase = enclosingClassName.contains("<") ? enclosingClassName.substring(0, enclosingClassName.indexOf("<")) : enclosingClassName;
+        if (check(CppLexerTokenType.IDENTIFIER) && (peek().text().equals(enclosingClassName) || peek().text().equals(enclosingBase)) && tokens.get(pos + 1).isPunct("(")) {
             return List.of(parseFunctionOrConstructorOrDestructor(leadingComments, templateParams));
         }
         return parseFunctionOrVariable(leadingComments, templateParams, false);
@@ -1658,14 +1719,17 @@ public final class Parser {
      */
     private void parseTemplateDefaultValue() {
         int depth = 0;
+        int braceDepth = 0; // track {} so < inside lambdas doesn't affect angle depth
         while (!isAtEnd()) {
+            if (checkPunct("{")) { braceDepth++; advance(); continue; }
+            if (checkPunct("}")) { if (braceDepth > 0) { braceDepth--; advance(); continue; } break; }
             if (checkPunct("(") || checkPunct("[")) { depth++; advance(); }
             else if (checkPunct(")") || checkPunct("]")) {
                 if (depth == 0) break;
                 depth--; advance();
             }
-            else if (checkOp("<")) { depth++; advance(); }
-            else if (checkOp(">")) {
+            else if (checkOp("<") && braceDepth == 0) { depth++; advance(); }
+            else if (checkOp(">") && braceDepth == 0) {
                 if (depth == 0) break;
                 depth--; advance();
             }
@@ -2956,10 +3020,19 @@ public final class Parser {
     private List<Statement> parseStatementOrMultiDecl(List<CppLexerToken> leadingComments) {
         if (isStructuredBindingStart()) return List.of(parseStructuredBinding(leadingComments));
         // Local struct/class definition: "struct Point { float x, y; }; Point p{...}"
+        // Also handle forward decl: "struct LocalFwd;" -- consume and skip
         if ((checkKeyword("struct") || checkKeyword("class"))
                 && pos + 1 < tokens.size()
                 && (tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
                     || tokens.get(pos + 1).isPunct("{"))) {
+            // Forward declaration: "struct Foo;" -- just consume and emit empty
+            if (tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
+                    && pos + 2 < tokens.size() && tokens.get(pos + 2).isPunct(";")) {
+                CppLexerToken sk = peek(); advance(); advance(); advance(); // struct Name ;
+                return List.of(new ExprStatement(
+                    new Identifier("", sk.line(), sk.col(), List.of()),
+                    sk.line(), sk.col(), leadingComments));
+            }
             TypeDef td = parseTypeDef(leadingComments, List.of());
             matchPunct(";");
             // Emit struct as verbatim text via CodeGen
