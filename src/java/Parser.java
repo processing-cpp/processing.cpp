@@ -945,15 +945,20 @@ public final class Parser {
     private FunctionDecl.ConstructorInit parseConstructorInitEntry() {
         // Base class names can be qualified: "std::runtime_error(msg)"
         String memberName = parseQualifiedTypeName();
-        expectPunct("(");
         List<Expr> args = new ArrayList<>();
-        if (!checkPunct(")")) {
-            args.add(parseExpr());
-            while (matchPunct(",")) {
+        if (checkPunct("{")) {
+            // Brace initialization: "m{{1,0},{0,1}}"
+            args.add(parseInitializerList());
+        } else {
+            expectPunct("(");
+            if (!checkPunct(")")) {
                 args.add(parseExpr());
+                while (matchPunct(",")) {
+                    args.add(parseExpr());
+                }
             }
+            expectPunct(")");
         }
-        expectPunct(")");
         return new FunctionDecl.ConstructorInit(memberName, args);
     }
 
@@ -1099,7 +1104,6 @@ public final class Parser {
             }
             // Constructor initializer list: ": mem(val), mem2(val2)"
             if (matchPunct(":") && !checkPunct(":")) {
-                System.err.println("[INITV] consuming init list, next=" + peek().text());
                 // consume initializer list entries until { or ;
                 int _d = 0;
                 while (!isAtEnd()) {
@@ -1121,6 +1125,11 @@ public final class Parser {
         // Bit field: "unsigned int read : 1" -- consume ": N" width specifier
         if (checkPunct(":") && pos + 1 < tokens.size() && tokens.get(pos + 1).type() == CppLexerTokenType.INT_LITERAL) {
             advance(); advance(); // consume ":" and bit width
+        }
+        // GCC __attribute__((...)): may appear after variable name
+        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("__attribute__")) {
+            advance();
+            if (checkPunct("(")) { advance(); int _ad=1; while(!isAtEnd()&&_ad>0){if(checkPunct("("))_ad++;else if(checkPunct(")"))_ad--;advance();} }
         }
         List<TopLevelItem> result = new ArrayList<>();
         result.add(parseOneTopLevelDeclarator(type, name, isConst, isStatic, templateParams, start, leadingComments));
