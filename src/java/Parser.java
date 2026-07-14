@@ -1322,6 +1322,21 @@ public final class Parser {
             advance();
             name += "::" + expectIdentifier().text();
         }
+        // Variable template specialization: "zero<float>" -- consume <args>
+        if (checkOp("<") && looksLikeTemplateArgList()) {
+            StringBuilder sb = new StringBuilder(name);
+            sb.append("<");
+            advance(); // consume <
+            int depth = 1;
+            while (!isAtEnd() && depth > 0) {
+                if (checkOp("<")) { depth++; sb.append(advance().text()); }
+                else if (checkOp(">")) { depth--; if (depth > 0) sb.append(advance().text()); else advance(); }
+                else if (checkOp(">>")) { depth -= 2; splitTrailingShiftIntoTwoCloseAngles(); if (depth > 0) sb.append(advance().text()); else advance(); }
+                else sb.append(advance().text());
+            }
+            sb.append(">");
+            name = sb.toString();
+        }
         return name;
     }
 
