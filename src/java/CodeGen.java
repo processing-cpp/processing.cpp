@@ -193,7 +193,9 @@ public final class CodeGen {
             if (member instanceof FunctionDecl fd && fd.body() != null
                     && !fd.isConstructor() && !fd.isDestructor() && !fd.isStatic()
                     && fd.params().size() >= 2
-                    && fd.name().startsWith("operator")) {
+                    && fd.name().startsWith("operator")
+                    && !fd.name().equals("operator[]")
+                    && !fd.name().equals("operator()")) {
                 indent(sb, depth + 1);
                 sb.append("friend ");
                 emitFunctionDecl(sb, fd, 0);
@@ -560,7 +562,7 @@ public final class CodeGen {
                 TypeRef base = p.type();
                 if (base instanceof NamedType nt && nt.pointerDepth() > 0) {
                     base = new NamedType(nt.baseName(), nt.templateArgs(),
-                        nt.pointerDepth() - 1, nt.isReference(), nt.isConst());
+                        nt.pointerDepth() - 1, nt.isReference(), nt.isConst(), false);
                 }
                 sb.append(renderTypeRef(base)).append(" (*").append(p.name()).append(")");
                 for (int dim : p.innerArrayDims()) {

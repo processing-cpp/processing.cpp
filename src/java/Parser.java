@@ -478,8 +478,9 @@ public final class Parser {
                 int startPos = pos;
                 while (!isAtEnd() && !checkPunct(";")) advance();
                 matchPunct(";");
+                // Reconstruct without spaces, up to but not including the ";" we consumed
                 StringBuilder raw = new StringBuilder();
-                for (int i = startPos; i < pos; i++) { if (i > startPos) raw.append(" "); raw.append(tokens.get(i).text()); }
+                for (int i = startPos; i < pos - 1; i++) { if (i > startPos) raw.append(" "); raw.append(tokens.get(i).text()); }
                 raw.append(";");
                 return List.of(new PreprocessorLine(raw.toString(), tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
             }
@@ -891,22 +892,17 @@ public final class Parser {
         // friend declaration: "friend class Foo;" or "friend Box<U> makeBox(U v);"
         if (checkKeyword("friend")) {
             int startPos = pos; advance(); // consume friend
-            // Consume to ; skipping over <> and ()
-            int _fd = 0;
-            while (!isAtEnd()) {
-                if (checkPunct("(") || checkOp("<")) { _fd++; advance(); }
-                else if (checkPunct(")") || checkOp(">")) { _fd--; advance(); }
-                else if (checkOp(">>")) { _fd -= 2; advance(); }
-                else if (checkPunct(";") && _fd == 0) { advance(); break; }
-                else if (checkPunct("{") && _fd == 0) {
-                    // friend function with body
-                    int bd = 1; advance();
-                    while (!isAtEnd() && bd > 0) { if (checkPunct("{")) bd++; else if (checkPunct("}")) bd--; advance(); }
-                    break;
-                }
-                else advance();
+            // "friend class/struct Foo" -- forward decl, consume verbatim
+            if (checkKeyword("class") || checkKeyword("struct")) {
+                while (!isAtEnd() && !checkPunct(";")) advance();
+                matchPunct(";");
+                return List.of(new PreprocessorLine("// friend class", tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
             }
-            return List.of(new PreprocessorLine("// friend", tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
+            // "friend RetType funcName(...)" or "friend RetType operator...()" -- parse as function
+            // Consume template params if present
+            List<String> friendTemplateParams = List.of();
+            if (matchKeyword("template")) friendTemplateParams = parseTemplateParamList();
+            return parseFunctionOrVariable(leadingComments, friendTemplateParams, false);
         }
         // explicit(...): conditional explicit specifier (C++20)
         if (checkKeyword("explicit") && pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("(")) {
@@ -2293,6 +2289,27 @@ public final class Parser {
                     expr = new Identifier("::" + member,
                         peek().line(), peek().col(), List.of());
                 }
+            // Template args in expression: "AutoParam<42>::value"
+            } else if (checkOp("<") && expr instanceof Identifier eid && looksLikeTemplateArgList()) {
+                int argStart = pos;
+                advance(); // consume <
+                int depth = 1, pd = 0, bd = 0;
+                while (!isAtEnd() && depth > 0) {
+                    if (checkPunct("(") || checkPunct("[")) pd++;
+                    else if (checkPunct(")") || checkPunct("]")) pd--;
+                    else if (checkPunct("{")) bd++;
+                    else if (checkPunct("}")) bd--;
+                    else if (pd == 0 && bd == 0) {
+                        if (checkOp("<")) depth++;
+                        else if (checkOp(">")) { depth--; if (depth == 0) { advance(); break; } }
+                        else if (checkOp(">>")) { depth -= 2; splitTrailingShiftIntoTwoCloseAngles(); if (depth <= 0) { advance(); break; } }
+                    }
+                    if (depth > 0) advance();
+                }
+                StringBuilder targs = new StringBuilder(eid.name()).append("<");
+                for (int i = argStart + 1; i < pos - 1; i++) targs.append(tokens.get(i).text());
+                targs.append(">");
+                expr = new Identifier(targs.toString(), eid.line(), eid.col(), List.of());
             } else if (checkOp("->*")) {
                 // "->*" lexed as a single token
                 CppLexerToken t = advance();
