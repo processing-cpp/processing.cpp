@@ -2594,17 +2594,26 @@ public final class Parser {
      *  used to detect "Base<Derived>" in base class context. Lighter than parseTemplateArgList. */
     private boolean looksLikeTemplateArgList() {
         // Peek ahead to see if we can find a matching '>' without hitting ';' or '{'
+        // Track () and {} depth so { inside decltype(...) doesn't abort
         int save = pos;
         try {
             if (!checkOp("<")) return false;
             advance();
             int depth = 1;
+            int parenDepth = 0;
+            int braceDepth = 0;
             int steps = 0;
-            while (!isAtEnd() && depth > 0 && steps < 80) {
-                if (checkOp("<")) depth++;
-                else if (checkOp(">")) depth--;
-                else if (checkOp(">>")) depth -= 2;
-                else if (checkPunct(";") || checkPunct("{")) return false;
+            while (!isAtEnd() && depth > 0 && steps < 120) {
+                if (checkPunct("(")) parenDepth++;
+                else if (checkPunct(")")) parenDepth--;
+                else if (checkPunct("{")) braceDepth++;
+                else if (checkPunct("}")) braceDepth--;
+                else if (parenDepth == 0 && braceDepth == 0) {
+                    if (checkOp("<")) depth++;
+                    else if (checkOp(">")) depth--;
+                    else if (checkOp(">>")) depth -= 2;
+                    else if (checkPunct(";")) return false;
+                }
                 advance(); steps++;
             }
             return depth <= 0;
