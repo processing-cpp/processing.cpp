@@ -135,6 +135,7 @@ record IfStatement(
     Expr condition,
     Statement thenBranch,
     Statement elseBranch,
+    boolean isConstexpr,
     int line,
     int col,
     List<CppLexerToken> leadingComments

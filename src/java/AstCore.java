@@ -85,11 +85,12 @@ record NamedType(
     List<TypeRef> templateArgs,
     int pointerDepth,
     boolean isReference,
-    boolean isConst
+    boolean isConst,
+    boolean isRvalueRef
 ) implements TypeRef {
 
     public static NamedType simple(String baseName) {
-        return new NamedType(baseName, List.of(), 0, false, false);
+        return new NamedType(baseName, List.of(), 0, false, false, false);
     }
 
     @Override
@@ -184,9 +185,9 @@ record FunctionSignatureType(
  * them on a lambda either).
  */
 
-record Param(TypeRef type, String name, Expr defaultValue, List<Integer> innerArrayDims) {
+record Param(TypeRef type, String name, Expr defaultValue, List<Integer> innerArrayDims, boolean isVariadic) {
     Param(TypeRef type, String name, Expr defaultValue) {
-        this(type, name, defaultValue, List.of());
+        this(type, name, defaultValue, List.of(), false);
     }
 }
 

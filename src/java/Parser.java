@@ -861,6 +861,14 @@ public final class Parser {
         if (checkKeyword("enum")) {
             return List.of(parseEnumDecl(leadingComments));
         }
+        // static_assert inside class body
+        if (checkKeyword("static_assert")) {
+            int startPos = pos; advance();
+            expectPunct("("); int _d=1;
+            while (!isAtEnd() && _d > 0) { if (checkPunct("(")) _d++; else if (checkPunct(")")) _d--; advance(); }
+            matchPunct(";");
+            return List.of(new PreprocessorLine("// static_assert", tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
+        }
         // using X = Type; inside a struct/class body -- consume verbatim
         if (checkKeyword("using") && !tokens.get(pos + 1).isKeyword("namespace")) {
             int startPos = pos;
@@ -1229,7 +1237,7 @@ public final class Parser {
             TypeRef declaratorType = type;
             if (type instanceof NamedType nt) {
                 declaratorType = new NamedType(nt.baseName(), nt.templateArgs(),
-                    extraPointerDepth, extraIsReference, nt.isConst());
+                    extraPointerDepth, extraIsReference, nt.isConst(), false);
             }
             result.add(parseOneTopLevelDeclarator(declaratorType, nextName, isConst, isStatic, List.of(), start, List.of()));
         }
@@ -1372,6 +1380,7 @@ public final class Parser {
         if (check(CppLexerTokenType.KEYWORD) && !checkKeyword("const") && !checkKeyword("override")
                 && !checkKeyword("virtual") && !checkKeyword("static")
                 && !checkKeyword("inline") && !checkKeyword("explicit")
+                && !checkKeyword("operator")
                 && !PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES.contains(peek().text())) {
             CppLexerToken castTok = advance();
             String suffix = "";
@@ -1541,6 +1550,12 @@ public final class Parser {
         StringBuilder nameBuilder = new StringBuilder(expectIdentifier().text());
         while (checkPunct("::")) { advance(); nameBuilder.append("::").append(expectIdentifier().text()); }
         String name = nameBuilder.toString();
+        if (matchOp("=")) {
+            StringBuilder alias = new StringBuilder();
+            while (!isAtEnd() && !checkPunct(";")) { alias.append(peek().text()); advance(); }
+            matchPunct(";");
+            return new NamespaceDecl(name, false, List.of(), start.line(), start.col(), leadingComments);
+        }
         expectPunct("{");
         List<TopLevelItem> items = new ArrayList<>();
         while (!checkPunct("}")) {
@@ -1614,7 +1629,7 @@ public final class Parser {
                 else { dtExpr.append(peek().text()); advance(); }
             }
             dtExpr.append(")");
-            return new NamedType(dtExpr.toString(), List.of(), 0, false, isConst);
+            return new NamedType(dtExpr.toString(), List.of(), 0, false, isConst, false);
         }
 
         String baseName = parseQualifiedTypeName();
@@ -1808,30 +1823,30 @@ public final class Parser {
     private TypeRef parseTemplateArg() {
         if (checkKeyword("true") || checkKeyword("false")) {
             String val = advance().text();
-            return new NamedType(val, List.of(), 0, false, false);
+            return new NamedType(val, List.of(), 0, false, false, false);
         }
         if (check(CppLexerTokenType.INT_LITERAL) || check(CppLexerTokenType.FLOAT_LITERAL)
                 || check(CppLexerTokenType.CHAR_LITERAL)) {
             String val = advance().text();
-            return new NamedType(val, List.of(), 0, false, false);
+            return new NamedType(val, List.of(), 0, false, false, false);
         }
         if (checkOp("-") && pos + 1 < tokens.size() &&
                 (tokens.get(pos + 1).type() == CppLexerTokenType.INT_LITERAL ||
                  tokens.get(pos + 1).type() == CppLexerTokenType.FLOAT_LITERAL)) {
             advance(); String val = "-" + advance().text();
-            return new NamedType(val, List.of(), 0, false, false);
+            return new NamedType(val, List.of(), 0, false, false, false);
         }
         // Address-of non-type template argument: "&Widget::value", "&Class::method"
         if (checkOp("&")) {
             advance(); // consume &
             String name = parseQualifiedTypeName(); // Widget::value
-            return new NamedType("&" + name, List.of(), 0, false, false);
+            return new NamedType("&" + name, List.of(), 0, false, false, false);
         }
         // Logical negation: "!std::is_integral<T>::value" in enable_if<!...>
         if (checkOp("!")) {
             advance(); // consume '!'
             parseTemplateDefaultValue(); // consume the rest of the expression
-            return new NamedType("!...", List.of(), 0, false, false);
+            return new NamedType("!...", List.of(), 0, false, false, false);
         }
         // decltype as template argument: "Pair<decltype(x), decltype(z)>"
         // Must be handled before parseTypeRef() which would consume "decltype" as a type.
@@ -1846,13 +1861,13 @@ public final class Parser {
                 else { dt.append(peek().text()); advance(); }
             }
             dt.append(")");
-            return new NamedType(dt.toString(), List.of(), 0, false, false);
+            return new NamedType(dt.toString(), List.of(), 0, false, false, false);
         }
         // Pack expansion "..." trailing a type: "Ts..." in template args
         // Also handles standalone "..." as a variadic marker
         if (checkPunct("...")) {
             advance();
-            return new NamedType("...", List.of(), 0, false, false);
+            return new NamedType("...", List.of(), 0, false, false, false);
         }
         // sizeof expression: sizeof(T) or sizeof...(Args)
         if (checkKeyword("sizeof")) {
@@ -1862,7 +1877,7 @@ public final class Parser {
                 advance(); int d = 1;
                 while (!isAtEnd() && d > 0) { if (checkPunct("(")) d++; else if (checkPunct(")")) d--; advance(); }
             }
-            return new NamedType("sizeof(...)", List.of(), 0, false, false);
+            return new NamedType("sizeof(...)", List.of(), 0, false, false, false);
         }
         TypeRef maybeReturnType = parseTypeRef();
         if (checkPunct("(")) {
@@ -1879,7 +1894,7 @@ public final class Parser {
                 }
             }
             if (expr.length() > nt.baseName().length()) {
-                return new NamedType(expr.toString(), List.of(), 0, false, false);
+                return new NamedType(expr.toString(), List.of(), 0, false, false, false);
             }
         }
         return maybeReturnType;
@@ -2260,6 +2275,9 @@ public final class Parser {
 
     private Expr parsePostfix() {
         Expr expr = parsePrimary();
+        if (checkPunct("...") && pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("[")) {
+            advance(); // pack indexing: args...[0]
+        }
         while (true) {
             if (checkPunct("::")) {
                 // Static member / scope resolution in expression context:
@@ -2336,6 +2354,7 @@ public final class Parser {
             } else if (checkPunct("[")) {
                 CppLexerToken t = advance();
                 Expr index = parseExpr();
+                while (matchPunct(",")) parseExpr(); // multi-dim subscript C++23
                 expectPunct("]");
                 expr = new IndexExpr(expr, index, t.line(), t.col(), List.of());
             } else if (checkOp("++") || checkOp("--")) {
@@ -2664,7 +2683,7 @@ public final class Parser {
         Expr initializer = parseExpr();
         expectPunct(";");
         String bindingName = "[" + String.join(", ", names) + "]";
-        return new DeclStatement(new NamedType("auto", List.of(), 0, false, false),
+        return new DeclStatement(new NamedType("auto", List.of(), 0, false, false, false),
             bindingName, List.of(), initializer, false, false,
             start.line(), start.col(), leadingComments);
     }
@@ -2771,6 +2790,8 @@ public final class Parser {
 
         // mutable, noexcept, attributes
         boolean isMutable = matchKeyword("mutable");
+        matchKeyword("constexpr");
+        matchKeyword("consteval");
         if (checkKeyword("noexcept")) { advance(); if(checkPunct("(")){advance();int _d=1;while(!isAtEnd()&&_d>0){if(checkPunct("("))_d++;else if(checkPunct(")"))_d--;advance();}} }
         consumeAttributes();
 
@@ -2779,6 +2800,17 @@ public final class Parser {
             returnType = parseTypeRef();
         }
 
+        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("requires")) {
+            advance();
+            int _rd = 0;
+            while (!isAtEnd()) {
+                if (checkPunct("(") || checkOp("<")) _rd++;
+                else if (checkPunct(")") || checkOp(">")) _rd--;
+                else if (checkOp(">>")) _rd -= 2;
+                else if (checkPunct("{") && _rd == 0) break;
+                advance();
+            }
+        }
         Block body = parseBlock();
         return new LambdaExpr(captures, params, returnType, isMutable, body, start.line(), start.col(), List.of());
     }
@@ -2844,9 +2876,10 @@ public final class Parser {
         // C-style variadic: bare "..." as a parameter (e.g. "void f(int, ...)")
         if (checkPunct("...")) {
             advance();
-            return new Param(new NamedType("...", List.of(), 0, false, false), "...", null, List.of(), false);
+            return new Param(new NamedType("...", List.of(), 0, false, false, false), "...", null, List.of(), false);
         }
 
+        if (checkKeyword("this")) advance(); // explicit object param (C++23)
         TypeRef type = parseTypeRef();
         boolean isTypePackExpansion = matchPunct("..."); // pack expansion after type: "Rest... rest"
 
@@ -2974,7 +3007,7 @@ public final class Parser {
             }
             // Represent as a pointer type
             if (type instanceof NamedType nt) {
-                type = new NamedType(nt.baseName(), nt.templateArgs(), nt.pointerDepth() + 1, false, nt.isConst());
+                type = new NamedType(nt.baseName(), nt.templateArgs(), nt.pointerDepth() + 1, false, nt.isConst(), false);
             }
         }
         Expr defaultValue = null;
@@ -2986,7 +3019,7 @@ public final class Parser {
 
     private TypeRef bumpPointerDepth(TypeRef type) {
         if (type instanceof NamedType nt) {
-            return new NamedType(nt.baseName(), nt.templateArgs(), nt.pointerDepth() + 1, nt.isReference(), nt.isConst());
+            return new NamedType(nt.baseName(), nt.templateArgs(), nt.pointerDepth() + 1, nt.isReference(), nt.isConst(), false);
         }
         // Function-pointer/function-signature types can't sensibly gain a
         // C-style array-parameter pointer bump this way; not encountered by
@@ -3127,6 +3160,15 @@ public final class Parser {
         if (checkKeyword("while")) return parseWhile(leadingComments);
         if (checkKeyword("do")) return parseDoWhile(leadingComments);
         if (checkKeyword("switch")) return parseSwitch(leadingComments);
+        if (checkKeyword("using") && pos + 1 < tokens.size() && tokens.get(pos + 1).isKeyword("enum")) {
+            int startPos = pos;
+            while (!isAtEnd() && !checkPunct(";")) advance();
+            matchPunct(";");
+            StringBuilder raw = new StringBuilder();
+            for (int i = startPos; i < pos - 1; i++) { if (i > startPos) raw.append(" "); raw.append(tokens.get(i).text()); }
+            raw.append(";");
+            return new ExprStatement(new Identifier(raw.toString(), tokens.get(startPos).line(), tokens.get(startPos).col(), List.of()), tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments);
+        }
         if (checkKeyword("return")) return parseReturn(leadingComments);
         if (checkKeyword("break")) return parseBreak(leadingComments);
         if (checkKeyword("continue")) return parseContinue(leadingComments);
@@ -3145,6 +3187,16 @@ public final class Parser {
     private Statement parseIf(List<CppLexerToken> leadingComments) {
         CppLexerToken start = expectKeyword("if");
         boolean isConstexpr = matchKeyword("constexpr"); // C++17 if constexpr
+        if (checkKeyword("consteval") || (checkOp("!") && pos + 1 < tokens.size() && tokens.get(pos+1).isKeyword("consteval"))) {
+            if (checkOp("!")) advance();
+            advance(); // consume consteval
+            Statement thenBr = parseStatement(consumeLeadingComments());
+            Statement elseBr = null;
+            consumeLeadingComments();
+            if (checkKeyword("else")) { advance(); elseBr = parseStatement(consumeLeadingComments()); }
+            return new IfStatement(new Identifier("true", start.line(), start.col(), List.of()),
+                thenBr, elseBr, false, start.line(), start.col(), leadingComments);
+        }
         expectPunct("(");
         // C++17 if-init-statement: if (init; cond) -- collect init decls,
         // wrap the IfStatement in a Block so the init vars are in scope.
@@ -3193,14 +3245,14 @@ public final class Parser {
             Expr sbIterable = parseExpr(); expectPunct(")");
             Statement sbBody = parseStatement(consumeLeadingComments());
             String sbName = "[" + String.join(", ", sbNames) + "]";
-            return new RangeForStatement(new NamedType("auto",List.of(),0,false,false), sbName, isRef, sbIterable, sbBody, start.line(), start.col(), leadingComments);
+            return new RangeForStatement(new NamedType("auto",List.of(),0,false,false, false), sbName, isRef, sbIterable, sbBody, start.line(), start.col(), leadingComments);
         }
         if (looksLikeRangeFor()) {
             TypeRef declType = parseTypeRef();
             boolean isReference = false;
             if (declType instanceof NamedType nt && nt.isReference()) {
                 isReference = true;
-                declType = new NamedType(nt.baseName(), nt.templateArgs(), nt.pointerDepth(), false, nt.isConst());
+                declType = new NamedType(nt.baseName(), nt.templateArgs(), nt.pointerDepth(), false, nt.isConst(), false);
             }
             String declName = expectIdentifier().text();
             expectPunct(":");
@@ -3559,7 +3611,7 @@ public final class Parser {
             TypeRef declaratorType = type;
             if (type instanceof NamedType nt) {
                 declaratorType = new NamedType(nt.baseName(), nt.templateArgs(),
-                    extraPointerDepth, extraIsReference, nt.isConst());
+                    extraPointerDepth, extraIsReference, nt.isConst(), false);
             }
             result.add(parseOneDeclarator(declaratorType, isStatic, isConst, start, List.of()));
         }
