@@ -272,8 +272,10 @@ public final class CodeGen {
             indent(sb, depth);
         }
         if (vd.isStatic()) sb.append("static ");
-        // Only emit const here if the type itself doesn't already carry it
-        if (vd.isConst() && !(vd.type() instanceof NamedType nt && nt.isConst())) sb.append("const ");
+        // Static const non-integral members need constexpr in C++
+        if (vd.isConst() && vd.isStatic()) sb.append("constexpr ");
+        // Only emit const here if the type itself doesn't already carry it and not already constexpr
+        else if (vd.isConst() && !(vd.type() instanceof NamedType nt && nt.isConst())) sb.append("const ");
         sb.append(renderTypeAndName(vd.type(), vd.name()));
         emitArrayDims(sb, vd.arrayDims());
         emitDeclaratorTail(sb, vd.type(), vd.name(), vd.initializer(), true);
@@ -447,9 +449,13 @@ public final class CodeGen {
         // If initializer is "new Foo(args)" but declared type is a value (not pointer),
         // strip "new" and emit as constructor call -- the clean fix for Java's
         // "ArrayList<T> x = new ArrayList<T>()" idiom in CppMode.
+        // Only strip when type names match (not pointer aliases like node_ptr)
         if (initializer instanceof NewExpr ne
                 && declaratorType instanceof NamedType nt
-                && nt.pointerDepth() == 0 && !nt.isReference()) {
+                && nt.pointerDepth() == 0 && !nt.isReference()
+                && ne.type() instanceof NamedType nnt
+                && (nnt.baseName().equals(nt.baseName())
+                    || nt.baseName().startsWith(nnt.baseName()))) {
             sb.append(" = ").append(renderTypeRef(ne.type())).append("(");
             for (int i = 0; i < ne.args().size(); i++) {
                 if (i > 0) sb.append(", ");

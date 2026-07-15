@@ -478,8 +478,16 @@ public final class Parser {
                 int startPos = pos;
                 while (!isAtEnd() && !checkPunct(";")) advance();
                 matchPunct(";");
-                // Reconstruct without spaces, up to but not including the ";" we consumed
+                // Reconstruct: include template params prefix if present
                 StringBuilder raw = new StringBuilder();
+                if (!templateParams.isEmpty()) {
+                    raw.append("template<");
+                    for (int i = 0; i < templateParams.size(); i++) {
+                        if (i > 0) raw.append(", ");
+                        raw.append(templateParams.get(i));
+                    }
+                    raw.append("> ");
+                }
                 for (int i = startPos; i < pos - 1; i++) { if (i > startPos) raw.append(" "); raw.append(tokens.get(i).text()); }
                 raw.append(";");
                 return List.of(new PreprocessorLine(raw.toString(), tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
@@ -712,6 +720,7 @@ public final class Parser {
         }
         // Also consume [[attributes]] before the name
         consumeAttributes();
+
         String name = expectIdentifier().text();
 
         // Partial or explicit specialization: "template<typename T> struct Foo<T*>"
@@ -857,6 +866,26 @@ public final class Parser {
             consumeLeadingComments();
         }
         if (checkKeyword("class") || checkKeyword("struct")) {
+            // Anonymous struct: "struct { float x, y; } position;"
+            if (pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("{")) {
+                int anonStart = pos;
+                advance(); // consume struct/class
+                int bd = 0;
+                while (!isAtEnd()) {
+                    if (checkPunct("{")) { bd++; advance(); }
+                    else if (checkPunct("}")) { bd--; advance(); if (bd == 0) break; }
+                    else advance();
+                }
+                // pos is now after }, next is memberName then ;
+                int beforeMember = pos;
+                String memberName = check(CppLexerTokenType.IDENTIFIER) ? advance().text() : "";
+                matchPunct(";");
+                StringBuilder raw = new StringBuilder();
+                for (int i = anonStart; i < beforeMember; i++) { if (i > anonStart) raw.append(" "); raw.append(tokens.get(i).text()); }
+                if (!memberName.isEmpty()) raw.append(" ").append(memberName);
+                raw.append(";");
+                return List.of(new PreprocessorLine(raw.toString(), tokens.get(anonStart).line(), tokens.get(anonStart).col(), leadingComments));
+            }
             return List.of(parseTypeDef(leadingComments, templateParams));
         }
         if (checkKeyword("enum")) {
@@ -1075,7 +1104,8 @@ public final class Parser {
         matchKeyword("inline");
         matchKeyword("volatile"); // consume volatile qualifier
         boolean isConst = matchKeyword("const");
-        boolean isConstexprFn = matchKeyword("constexpr") || matchKeyword("consteval"); if (isConstexprFn) isConst = true;
+        boolean isConstexprFn = matchKeyword("constexpr") || matchKeyword("consteval");
+        if (isConstexprFn && !isConst) isConst = true;
         matchKeyword("constinit");
         if (!isVirtual) isVirtual = matchKeyword("virtual"); // constexpr virtual
         if (!isStatic) isStatic = matchKeyword("static");
@@ -1095,7 +1125,7 @@ public final class Parser {
                 isConst, isStatic, start.line(), start.col(), leadingComments));
         }
 
-        TypeRef type = parseTypeRef(isConst); // pass leading const to mark return type correctly
+        TypeRef type = parseTypeRef(isConstexprFn ? false : isConst); // constexpr should not mark return type as const
         // Constructor: if ( follows the type with no name AND we have leading constexpr/virtual,
         // the type name IS the function name (e.g. "constexpr RGBA(...)")
         String name;
@@ -1605,8 +1635,9 @@ public final class Parser {
         // set; we still MUST consume the token so parseQualifiedTypeName doesn't see
         // "const" as the type name (e.g. "constexpr const char* p" -- constexpr sets
         // leadingConst=true, then "const" must still be consumed before "char").
-        matchKeyword("const");
-        return parseTypeRefAfterConst(leadingConst);
+        // If const is explicitly present, always mark type as const regardless of leadingConst.
+        boolean hasExplicitConst = matchKeyword("const");
+        return parseTypeRefAfterConst(leadingConst || hasExplicitConst);
     }
 
     private TypeRef parseTypeRefAfterConst(boolean isConst) {
@@ -1778,12 +1809,16 @@ public final class Parser {
         expectOp("<");
         List<TypeRef> args = new ArrayList<>();
         if (!checkOp(">")) {
-            args.add(parseTemplateArg());
-            matchPunct("..."); // trailing pack expansion: "Ts..."
+            TypeRef _a0 = parseTemplateArg();
+            if (matchPunct("...") && _a0 instanceof NamedType _nt0)
+                _a0 = new NamedType(_nt0.baseName() + "...", _nt0.templateArgs(), _nt0.pointerDepth(), _nt0.isReference(), _nt0.isConst(), _nt0.isRvalueRef());
+            args.add(_a0);
             while (matchPunct(",")) {
                 if (checkOp(">") || checkOp(">>")) break;
-                args.add(parseTemplateArg());
-                matchPunct("..."); // trailing pack expansion
+                TypeRef _ai = parseTemplateArg();
+                if (matchPunct("...") && _ai instanceof NamedType _nti)
+                    _ai = new NamedType(_nti.baseName() + "...", _nti.templateArgs(), _nti.pointerDepth(), _nti.isReference(), _nti.isConst(), _nti.isRvalueRef());
+                args.add(_ai);
             }
         }
         // Note: ">>"  closing two nested template lists at once (e.g.
@@ -1814,6 +1849,24 @@ public final class Parser {
         CppLexerToken second = new CppLexerToken(CppLexerTokenType.OPERATOR, ">", shift.line(), shift.col() + 1);
         tokens.set(pos, first);
         tokens.add(pos + 1, second);
+    }
+
+    /** Render a NamedType back to its source string including template args. */
+    private static String renderNamedTypeAsString(NamedType nt) {
+        StringBuilder sb = new StringBuilder(nt.baseName());
+        if (!nt.templateArgs().isEmpty()) {
+            sb.append("<");
+            for (int i = 0; i < nt.templateArgs().size(); i++) {
+                if (i > 0) sb.append(", ");
+                TypeRef a = nt.templateArgs().get(i);
+                if (a instanceof NamedType na) sb.append(renderNamedTypeAsString(na));
+                else sb.append(a.toString());
+            }
+            sb.append(">");
+        }
+        if (nt.pointerDepth() > 0) sb.append("*".repeat(nt.pointerDepth()));
+        if (nt.isReference()) sb.append("&");
+        return sb.toString();
     }
 
     private TypeRef parseTemplateArg() {
@@ -1876,6 +1929,32 @@ public final class Parser {
             return new NamedType("sizeof(...)", List.of(), 0, false, false, false);
         }
         TypeRef maybeReturnType = parseTypeRef();
+        // Compound boolean expression in template arg: "is_arithmetic_v<T> && !is_same_v<T,bool>"
+        // The && was consumed as rvalue-ref by parseTypeRef; check if ! or || follows
+        // The && was already consumed by parseTypeRef as rvalue-ref
+        boolean trailingRvalueRef = maybeReturnType instanceof NamedType ntrr && ntrr.isRvalueRef();
+        if (trailingRvalueRef || checkOp("||") || checkOp("!")) {
+            // Strip the falsely-consumed && from the type
+            if (trailingRvalueRef && maybeReturnType instanceof NamedType ntrr2) {
+                maybeReturnType = new NamedType(ntrr2.baseName(), ntrr2.templateArgs(),
+                    ntrr2.pointerDepth(), ntrr2.isReference(), ntrr2.isConst(), false);
+            }
+            StringBuilder expr = new StringBuilder(
+                maybeReturnType instanceof NamedType nt ? renderNamedTypeAsString(nt) : "");
+            if (trailingRvalueRef) expr.append(" && ");
+            while (!isAtEnd()) {
+                if (checkOp("&&")) { expr.append(" && "); advance(); }
+                else if (checkOp("||")) { expr.append(" || "); advance(); }
+                else if (checkOp("!")) { expr.append("!"); advance(); }
+                else if (checkOp(">") || checkOp(">>") || checkPunct(",")) break;
+                else if (checkPunct("(") || check(CppLexerTokenType.IDENTIFIER)
+                        || check(CppLexerTokenType.KEYWORD)) {
+                    TypeRef sub = parseTypeRef();
+                    if (sub instanceof NamedType nts) expr.append(renderNamedTypeAsString(nts));
+                } else break;
+            }
+            return new NamedType(expr.toString(), List.of(), 0, false, false, false);
+        }
         if (checkPunct("(")) {
             return parseFunctionSignatureTail(maybeReturnType);
         }
@@ -2259,9 +2338,13 @@ public final class Parser {
         List<Expr> args = new ArrayList<>();
         if (matchPunct("(")) {
             if (!checkPunct(")")) {
-                args.add(parseExpr());
+                Expr a0 = parseExpr();
+                if (matchPunct("...")) a0 = new PostfixExpr("...", a0, a0.line(), a0.col(), List.of());
+                args.add(a0);
                 while (matchPunct(",")) {
-                    args.add(parseExpr());
+                    Expr ai = parseExpr();
+                    if (matchPunct("...")) ai = new PostfixExpr("...", ai, ai.line(), ai.col(), List.of());
+                    args.add(ai);
                 }
             }
             expectPunct(")");

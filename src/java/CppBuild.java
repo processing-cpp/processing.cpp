@@ -1886,7 +1886,9 @@ public class CppBuild {
       boolean hasMethod = body.matches("(?s).*\\b(void|int|float|bool|double|color|auto|std::\\w+)\\s+\\w+\\s*\\(.*")
                          && !body.contains("constexpr"); // skip constexpr structs
       result.append(code, i, lineStart);
-      if (hasMethod) {
+      // Also remove _PSketch from template classes -- they can't use Processing API
+      boolean isTemplate = lineStart > 0 && code.substring(Math.max(0, lineStart - 200), lineStart).contains("template<");
+      if (hasMethod && !isTemplate) {
         // Keep _PSketch injection
         result.append(code, lineStart, j);
       } else {
@@ -2481,11 +2483,9 @@ public class CppBuild {
     // Scan for pattern: TypeName<Args> varName = new TypeName<>();
     code = expandDiamondOperator(code);
     // Strip "new" from value-type assignments: "ArrayList<T> x = new ArrayList<T>()"
-    // Pattern: TypeName<...> varName = new TypeName<...>( -> TypeName<...> varName = TypeName<...>(
-    // Also handles non-template: "MyClass x = new MyClass(" -> "MyClass x = MyClass("
-    code = code.replaceAll(
-        "((?:\\w+(?:<[^;=]*>)?)\\s+\\w+\\s*=\\s*)new\\s+(\\w+(?:<[^;=]*>)?\\s*\\()",
-        "$1$2");
+    // Only when the declared type and new type have the same base name (Java idiom).
+    // Do NOT strip when types differ (e.g. "node_ptr n = new node_type(val)")
+    code = stripMatchingNew(code);
     // Run color type propagation first
     code = fixColorTypes(code);
 
@@ -2861,6 +2861,29 @@ public class CppBuild {
    * macro-expansion step is a secondary concern -- correctness of the
    * expanded code is the primary goal.
    */
+  /** Strip "new TypeName(" only when TypeName matches the declared variable type. */
+  private static String stripMatchingNew(String code) {
+    // Match: BaseType<...> varName = new SameBase<...>(
+    // Capture group 1: base type name; group 2: full lhs; group 3: new type base
+    java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+        "(\\w+)(?:<[^;={]*>)?\\s+\\w+\\s*=\\s*new\\s+(\\w+)(?:<[^;={]*>)?\\s*\\(");
+    java.util.regex.Matcher m = p.matcher(code);
+    StringBuffer sb = new StringBuffer();
+    while (m.find()) {
+        String declBase = m.group(1);
+        String newBase = m.group(2);
+        if (declBase.equals(newBase)) {
+            // Same base type: strip "new "
+            String replaced = m.group(0).replaceFirst("new\\s+", "");
+            m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(replaced));
+        } else {
+            m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(m.group(0)));
+        }
+    }
+    m.appendTail(sb);
+    return sb.toString();
+  }
+
   private String preprocessMacros(String code) {
     // Fast path: if there's no #define/#ifdef/#undef/#include anywhere,
     // skip invoking an external process entirely.
@@ -2870,8 +2893,20 @@ public class CppBuild {
       return code;
     }
     try {
+      // Strip #include lines before preprocessing -- we only want macro
+      // expansion (#define/#ifdef), not system header inclusion which
+      // causes g++ -E to interleave sketch code with STL internals.
+      StringBuilder noIncludes = new StringBuilder();
+      for (String line : code.split("\n", -1)) {
+        String t = line.strip();
+        if (t.startsWith("#include")) {
+          noIncludes.append("\n"); // preserve line numbers
+        } else {
+          noIncludes.append(line).append("\n");
+        }
+      }
       File scratch = new File(buildDir, "_macro_preprocess_input.cpp");
-      Files.writeString(scratch.toPath(), code);
+      Files.writeString(scratch.toPath(), noIncludes.toString());
 
       boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
       String gpp = findGpp(isWindows);
@@ -2910,11 +2945,14 @@ public class CppBuild {
         String t = line.strip();
         // GNU line marker: "# N \"filename\" flags"
         if (t.startsWith("# ") && t.length() > 2 && Character.isDigit(t.charAt(2))) {
-          // Check if this marker is for our scratch file
-          inScratchFile = t.contains(scratchPath) || t.contains("<command-line>") || t.contains("<built-in>");
-          // Also allow returning to scratch file from included user code
-          // but exclude system headers (/usr/include, /usr/lib, etc.)
-          if (t.contains("/usr/") || t.contains("/lib/") || t.contains("c++/")) inScratchFile = false;
+          // System headers have /usr/, /lib/, or c++/ in path
+          boolean isSystemHeader = t.contains("/usr/") || t.contains("/lib/") || t.contains("c++/");
+          // Scratch file or built-ins
+          boolean isScratch = t.contains(scratchPath) || t.contains("<command-line>") || t.contains("<built-in>") || t.contains("<stdin>");
+          if (isSystemHeader) inScratchFile = false;
+          else if (isScratch) inScratchFile = true;
+          // flag=2 means "returned to file after include" -- always re-enable for scratch
+          else inScratchFile = true; // unknown file -- keep (could be user header)
           continue; // never emit line markers themselves
         }
         if (t.startsWith("#line")) continue;
