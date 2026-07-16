@@ -733,8 +733,14 @@ public final class Parser {
             int depth = 1;
             while (!isAtEnd() && depth > 0) {
                 if (checkOp("<")) { depth++; advance(); }
-                else if (checkOp(">")) { depth--; if (depth > 0) advance(); else advance(); }
-                else if (checkOp(">>")) { depth -= 2; splitTrailingShiftIntoTwoCloseAngles(); if (depth > 0) advance(); else advance(); }
+                else if (checkOp(">")) { depth--; advance(); }
+                else if (checkOp(">>")) {
+                    depth -= 2;
+                    splitTrailingShiftIntoTwoCloseAngles();
+                    advance(); // consume first >
+                    if (depth <= 0) { advance(); break; } // consume second > and exit
+                    advance(); // consume second > when still inside
+                }
                 else advance();
             }
             int argEnd = pos;
@@ -1714,7 +1720,8 @@ public final class Parser {
                 || tokens.get(pos + 1).isOp("*")
                 || tokens.get(pos + 1).isPunct(")")
                 || tokens.get(pos + 1).isPunct(",")
-                || tokens.get(pos + 1).isPunct(">"));
+                || tokens.get(pos + 1).isPunct(">")
+                || tokens.get(pos + 1).isPunct("..."));
         if (isRvalueRef) advance();
 
         return new NamedType(baseName, templateArgs, pointerDepth, isReference, isConst, isRvalueRef);
@@ -2485,6 +2492,16 @@ public final class Parser {
             } else if (checkOp("++") || checkOp("--")) {
                 CppLexerToken t = advance();
                 expr = new PostfixExpr(t.text(), expr, t.line(), t.col(), List.of());
+            } else if (checkPunct("{") && (expr instanceof Identifier || expr instanceof ScopedName)) {
+                // Brace-init after identifier: "std::pair{1, 1.0f}" or "Type{args}"
+                int _bl = expr.line(); int _bc = expr.col();
+                Expr braceInit = parseInitializerList();
+                Identifier _callee = new Identifier(
+                    expr instanceof Identifier _eid ? _eid.name() :
+                    String.join("::", ((ScopedName)expr).parts()),
+                    _bl, _bc, List.of());
+                expr = new CallExpr(_callee, ((InitializerListExpr)braceInit).elements(),
+                    true, _bl, _bc, List.of());
             } else {
                 break;
             }
@@ -3477,7 +3494,16 @@ public final class Parser {
     private Statement parseWhile(List<CppLexerToken> leadingComments) {
         CppLexerToken start = expectKeyword("while");
         expectPunct("(");
-        Expr cond = parseExpr();
+        // C++17 while with condition declaration: "while (auto val = expr)"
+        Expr cond;
+        if (looksLikeDeclaration()) {
+            // Scan to find the = and parse the initializer expression
+            while (!isAtEnd() && !checkOp("=") && !checkPunct(")")) advance();
+            if (matchOp("=")) cond = parseExpr();
+            else cond = new Identifier("true", start.line(), start.col(), List.of());
+        } else {
+            cond = parseExpr();
+        }
         expectPunct(")");
         Statement body = parseStatement(consumeLeadingComments());
         return new WhileStatement(cond, body, start.line(), start.col(), leadingComments);
