@@ -1696,7 +1696,16 @@ public final class Parser {
             matchKeyword("volatile"); // similarly for volatile
         }
         boolean isReference = matchOp("&");
-        boolean isRvalueRef = !isReference && matchOp("&&");
+        // Only consume && as rvalue-ref if followed by a name or * (not = or binary operator context)
+        boolean isRvalueRef = !isReference && checkOp("&&")
+            && pos + 1 < tokens.size()
+            && (tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
+                || tokens.get(pos + 1).type() == CppLexerTokenType.KEYWORD
+                || tokens.get(pos + 1).isOp("*")
+                || tokens.get(pos + 1).isPunct(")")
+                || tokens.get(pos + 1).isPunct(",")
+                || tokens.get(pos + 1).isPunct(">"));
+        if (isRvalueRef) advance();
 
         return new NamedType(baseName, templateArgs, pointerDepth, isReference, isConst, isRvalueRef);
     }
@@ -2672,6 +2681,26 @@ public final class Parser {
                     String rendered = joined + "<" + renderTemplateArgs(templateArgs) + ">";
                     return new Identifier(rendered, t.line(), t.col(), List.of());
                 }
+                // Non-call template use: "std::is_arithmetic_v<T>" (no "(" after ">")
+                if (checkOp("<") && looksLikeTemplateArgList()) {
+                    int argStart = pos; advance(); int _d=1, _pd=0, _bd=0;
+                    while (!isAtEnd() && _d > 0) {
+                        if (checkPunct("(")||checkPunct("[")) _pd++;
+                        else if (checkPunct(")")||checkPunct("]")) _pd--;
+                        else if (checkPunct("{")) _bd++;
+                        else if (checkPunct("}")) _bd--;
+                        else if (_pd==0&&_bd==0) {
+                            if (checkOp("<")) _d++;
+                            else if (checkOp(">")) { _d--; if(_d==0){advance();break;} }
+                            else if (checkOp(">>")) { _d-=2; splitTrailingShiftIntoTwoCloseAngles(); if(_d<=0){advance();break;} }
+                        }
+                        if (_d>0) advance();
+                    }
+                    StringBuilder _tb = new StringBuilder(joined).append("<");
+                    for (int _i=argStart+1; _i<pos-1; _i++) _tb.append(tokens.get(_i).text());
+                    _tb.append(">");
+                    return new Identifier(_tb.toString(), t.line(), t.col(), List.of());
+                }
                 return new ScopedName(parts, t.line(), t.col(), List.of());
             }
             if (checkOp("<") && looksLikeTemplatedConstructionCallee()) {
@@ -3049,8 +3078,11 @@ public final class Parser {
             // Encode dims into name: "&arr[10]" -> CodeGen emits "int (&arr)[10]"
             StringBuilder dimEnc = new StringBuilder();
             while (checkPunct("[")) {
-                advance(); dimEnc.append("[");
-                if (!checkPunct("]")) { dimEnc.append(peek().text()); advance(); }
+                int _ds = pos; advance(); dimEnc.append("[");
+                if (!checkPunct("]")) {
+                    int _de = pos; parseExpr(); // consume dimension expression
+                    for (int _di = _de; _di < pos; _di++) dimEnc.append(tokens.get(_di).text());
+                }
                 expectPunct("]"); dimEnc.append("]");
             }
             return new Param(type, (isRef ? "&" : "*") + pname + dimEnc.toString(), null, List.of(), false);
