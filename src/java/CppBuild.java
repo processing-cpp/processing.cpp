@@ -1228,7 +1228,10 @@ public class CppBuild {
           String rt = pl2.rawText().trim();
           // Defer "using X = ..." type aliases and deduction guides after struct definitions
           boolean isTypeAlias = (rt.startsWith("using ") || rt.contains(" using ")) && !rt.contains("using namespace") && rt.contains("=");
-          boolean isDeductionGuide = rt.contains("->") && rt.contains("(") && !rt.startsWith("#");
+          // Deduction guide: "Name(params) -> Name<params>;" -- NOT concepts with requires { } -> 
+          // Distinguish by checking -> appears before any { (deduction guides have no braces)
+          boolean isDeductionGuide = rt.contains("->") && rt.contains("(") && !rt.startsWith("#")
+              && !rt.contains("concept") && !rt.contains("requires") && (rt.indexOf("{") < 0 || rt.indexOf("->") < rt.indexOf("{"));
           if (isTypeAlias || isDeductionGuide) {
             deferredAliases.add(item);
           } else if (rt.startsWith("template ") && !rt.startsWith("template<") && !rt.startsWith("template <")) {

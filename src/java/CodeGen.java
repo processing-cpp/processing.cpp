@@ -197,8 +197,24 @@ public final class CodeGen {
                     && !fd.name().equals("operator[]")
                     && !fd.name().equals("operator()")) {
                 indent(sb, depth + 1);
+                // Template prefix must come before "friend"
+                // Build a stripped FunctionDecl (no templateParams) to avoid double-emission
+                FunctionDecl fdStripped = fd;
+                if (!fd.templateParams().isEmpty()) {
+                    sb.append("template<");
+                    for (int _i = 0; _i < fd.templateParams().size(); _i++) {
+                        if (_i > 0) sb.append(", ");
+                        sb.append(fd.templateParams().get(_i));
+                    }
+                    sb.append(">\n");
+                    indent(sb, depth + 1);
+                    fdStripped = new FunctionDecl(fd.returnType(), fd.name(), List.of(), fd.params(),
+                        fd.initializerList(), fd.body(), fd.isConstructor(), fd.isDestructor(),
+                        fd.isVirtual(), fd.isOverride(), fd.isConst(), fd.isConstexpr(), fd.isStatic(),
+                        fd.isPureVirtual(), fd.isDefault(), fd.isDelete(), fd.line(), fd.col(), fd.leadingComments());
+                }
                 sb.append("friend ");
-                emitFunctionDecl(sb, fd, 0);
+                emitFunctionDecl(sb, fdStripped, 0);
                 continue;
             }
             emitTopLevelItem(sb, member, depth + 1);
@@ -530,12 +546,19 @@ public final class CodeGen {
                 String mname = e.memberName();
                 boolean isPack = mname.endsWith("...");
                 if (isPack) mname = mname.substring(0, mname.length() - 3);
-                sb.append(mname).append('(');
-                for (int j = 0; j < e.args().size(); j++) {
-                    if (j > 0) sb.append(", ");
-                    sb.append(renderExpr(e.args().get(j)));
+                // Use braces for nested brace-init (arrays, structs): "m{{r0},{r1},{r2}}"
+                boolean usesBraces = e.args().size() == 1 && e.args().get(0) instanceof InitializerListExpr;
+                if (usesBraces) {
+                    // InitializerListExpr already renders with {}, just append directly
+                    sb.append(mname).append(renderExpr(e.args().get(0)));
+                } else {
+                    sb.append(mname).append('(');
+                    for (int j = 0; j < e.args().size(); j++) {
+                        if (j > 0) sb.append(", ");
+                        sb.append(renderExpr(e.args().get(j)));
+                    }
+                    sb.append(')');
                 }
-                sb.append(')');
                 if (isPack) sb.append("...");
             }
         }

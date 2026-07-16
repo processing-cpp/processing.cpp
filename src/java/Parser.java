@@ -928,8 +928,8 @@ public final class Parser {
                 return List.of(new PreprocessorLine("// friend class", tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
             }
             // "friend RetType funcName(...)" or "friend RetType operator...()" -- parse as function
-            // Consume template params if present
-            List<String> friendTemplateParams = List.of();
+            // Consume template params if present; also use outer templateParams if already consumed
+            List<String> friendTemplateParams = templateParams.isEmpty() ? List.of() : templateParams;
             if (matchKeyword("template")) friendTemplateParams = parseTemplateParamList();
             return parseFunctionOrVariable(leadingComments, friendTemplateParams, false);
         }
@@ -952,7 +952,16 @@ public final class Parser {
         // Constructor: match enclosingClassName OR just its base name (for specializations like Grid<T,N,false>)
         String enclosingBase = enclosingClassName.contains("<") ? enclosingClassName.substring(0, enclosingClassName.indexOf("<")) : enclosingClassName;
         if (check(CppLexerTokenType.IDENTIFIER) && (peek().text().equals(enclosingClassName) || peek().text().equals(enclosingBase)) && tokens.get(pos + 1).isPunct("(")) {
-            return List.of(parseFunctionOrConstructorOrDestructor(leadingComments, templateParams));
+            FunctionDecl ctorFd = parseFunctionOrConstructorOrDestructor(leadingComments, templateParams);
+            if (isConstexprCtor && !ctorFd.isConstexpr()) {
+                // constexpr was consumed before dispatch; rebuild FunctionDecl with isConstexpr=true
+                ctorFd = new FunctionDecl(ctorFd.returnType(), ctorFd.name(), ctorFd.templateParams(),
+                    ctorFd.params(), ctorFd.initializerList(), ctorFd.body(),
+                    ctorFd.isConstructor(), ctorFd.isDestructor(), ctorFd.isVirtual(), ctorFd.isOverride(),
+                    ctorFd.isConst(), true, ctorFd.isStatic(), ctorFd.isPureVirtual(), ctorFd.isDefault(), ctorFd.isDelete(),
+                    ctorFd.line(), ctorFd.col(), ctorFd.leadingComments());
+            }
+            return List.of(ctorFd);
         }
         return parseFunctionOrVariable(leadingComments, templateParams, false);
     }
@@ -966,6 +975,7 @@ public final class Parser {
     private FunctionDecl parseFunctionOrConstructorOrDestructor(List<CppLexerToken> leadingComments, List<String> templateParams) {
         CppLexerToken start = peek();
         boolean isVirtual = matchKeyword("virtual");
+        boolean isConstexprCtorMethod = matchKeyword("constexpr") || matchKeyword("consteval");
         boolean isDestructor = matchOp("~");
         String name = expectIdentifier().text();
         if (isDestructor) name = "~" + name;
@@ -1032,7 +1042,7 @@ public final class Parser {
         else if (isPureVirtual || isDefault || isDelete) expectPunct(";");
 
         return new FunctionDecl(null, name, templateParams, params, initList, body,
-            !isDestructor, isDestructor, isVirtual, isOverride, isConst, false, false, isPureVirtual, isDefault, isDelete,
+            !isDestructor, isDestructor, isVirtual, isOverride, isConst, false, isConstexprCtorMethod, isPureVirtual, isDefault, isDelete,
             start.line(), start.col(), leadingComments);
     }
 
@@ -1929,13 +1939,19 @@ public final class Parser {
         }
         // sizeof expression: sizeof(T) or sizeof...(Args)
         if (checkKeyword("sizeof")) {
-            int save = pos; advance();
-            if (checkPunct("...")) advance();
+            int sStart = pos; advance();
+            StringBuilder sof = new StringBuilder("sizeof");
+            if (checkPunct("...")) { sof.append("..."); advance(); }
             if (checkPunct("(")) {
-                advance(); int d = 1;
-                while (!isAtEnd() && d > 0) { if (checkPunct("(")) d++; else if (checkPunct(")")) d--; advance(); }
+                sof.append("("); advance(); int d = 1;
+                while (!isAtEnd() && d > 0) {
+                    if (checkPunct("(")) { d++; sof.append("("); advance(); }
+                    else if (checkPunct(")")) { d--; if (d > 0) sof.append(")"); advance(); }
+                    else { sof.append(peek().text()); advance(); }
+                }
+                sof.append(")");
             }
-            return new NamedType("sizeof(...)", List.of(), 0, false, false, false);
+            return new NamedType(sof.toString(), List.of(), 0, false, false, false);
         }
         TypeRef maybeReturnType = parseTypeRef();
         // Compound boolean expression in template arg: "is_arithmetic_v<T> && !is_same_v<T,bool>"

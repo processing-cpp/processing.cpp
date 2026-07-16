@@ -235,6 +235,16 @@ public final class CppLexer {
             consumeIntSuffix(sb);
             return new CppLexerToken(CppLexerTokenType.INT_LITERAL, sb.toString(), startLine, startCol);
         }
+        // Binary literal: 0b...
+        if (peekChar() == '0' && (peekChar(1) == 'b' || peekChar(1) == 'B')) {
+            sb.append(advanceChar());
+            sb.append(advanceChar());
+            while (pos < len && (peekChar() == '0' || peekChar() == '1' || peekChar() == '_')) {
+                sb.append(advanceChar());
+            }
+            consumeIntSuffix(sb);
+            return new CppLexerToken(CppLexerTokenType.INT_LITERAL, sb.toString(), startLine, startCol);
+        }
 
         boolean isFloat = false;
         while (pos < len && Character.isDigit(peekChar())) {
