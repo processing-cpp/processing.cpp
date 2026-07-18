@@ -40,6 +40,12 @@ public class CppBuild {
   // Processing.h defines these class/struct names in namespace Processing.
   // If the user also defines them, we skip the user's version to avoid
   // "redefinition" errors -- the engine's definition takes precedence.
+  // Processing API names that are dangerous as user variable names (Problem 5.2/6.1)
+  // Processing API names confirmed to cause crashes/errors when used as variable names
+  // Kept minimal to avoid false positives -- only add names with confirmed crash reports
+  private static final java.util.Set<String> PROCESSING_API_NAMES = java.util.Set.of(
+      "color"   // confirmed: Processing::color typedef causes operator++ crash
+  );
   private static final java.util.Set<String> RESERVED_TYPES = java.util.Set.of(
       "Array", "ArrayList", "IntList", "FloatList", "StringList",
       "PVector", "PImage", "PGraphics", "PShape", "PFont", "PShader",
@@ -1023,11 +1029,15 @@ public class CppBuild {
 
     String code = sanitize(raw.toString());
     code = removeUserIncludes(code);
+    // Remove no-op translate(0, 0) and translate(0, 0, 0) calls (Problem 7.2)
+    code = code.replaceAll("\\btranslate\\s*\\(\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*\\)\\s*;", "");
+    code = code.replaceAll("\\btranslate\\s*\\(\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*\\)\\s*;", "");
     warnReservedNames(code, listener);
     checkForUnsupportedJavaArraySyntax(code, listener);
     checkForArrayListGetValueCopy(code, listener);
     checkForArrayListGetDotAccess(code, listener);
     checkForJavaStaticCallSyntax(code, listener);
+    checkForProcessingNameCollisions(code, listener);
     code = stripRawStringLiterals(code);
     code = code.replaceAll("(?<=[0-9a-fA-FxXbB])'(?=[0-9a-fA-F])", "");
     code = javaToC(code);
@@ -2458,6 +2468,32 @@ public class CppBuild {
       throw new AlreadyReportedException("E0006: Java static access syntax -- see console.");
     }
   }
+
+  // [E0007] Variable name collides with Processing API function name
+  private void checkForProcessingNameCollisions(String code, RunnerListener listener) {
+    // Match variable declarations: "type name" or "type name =" at statement start
+    java.util.regex.Pattern varDecl = java.util.regex.Pattern.compile(
+        "\\b(?:int|float|bool|double|char|auto|color|String)\\s+("
+        + String.join("|", PROCESSING_API_NAMES)
+        + ")\\b");
+    java.util.regex.Matcher m = varDecl.matcher(code);
+    while (m.find()) {
+      String name = m.group(1);
+      // Find line number
+      int line = 1;
+      for (int i = 0; i < m.start(); i++) if (code.charAt(i) == '\n') line++;
+      String url = getWebsiteBaseUrl() + "/error/E0007.html";
+      String msg =
+        "\n[E0007] Variable name '" + name + "' shadows the Processing type 'color'.\n"
+        + "  Line " + line + ": this causes type inference errors. Rename to e.g. 'col', 'clr', or 'c2'.\n"
+        + "  Reference: " + url + "\n";
+      System.err.println(msg);
+      listener.statusError("E0007: '" + name + "' shadows Processing API -- see console");
+      throw new AlreadyReportedException("E0007: variable name shadows Processing API");
+    }
+  }
+
+
 
   private void checkForUnsupportedJavaArraySyntax(String code, RunnerListener listener) {
     try {

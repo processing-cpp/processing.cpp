@@ -870,6 +870,13 @@ public final class Parser {
         if (checkKeyword("template")) {
             templateParams = parseTemplateParamList();
             consumeLeadingComments();
+            // Trailing requires clause on template member: "template<T>\n    requires Concept<T>"
+            if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("requires")) {
+                advance(); // consume requires
+                if (checkPunct("(")) { advance(); int _d=1; while(!isAtEnd()&&_d>0){if(checkPunct("("))_d++;else if(checkPunct(")"))_d--;advance();} }
+                else { int _d=0; while(!isAtEnd()){if(checkOp("<"))_d++;else if(checkOp(">")&&_d>0)_d--;else if(_d==0&&(checkPunct("{;")||checkPunct(";")|| checkKeyword("auto")||checkKeyword("void")||checkKeyword("bool")||checkKeyword("int")||checkKeyword("float")||checkKeyword("const")||checkKeyword("inline")||checkKeyword("static")||checkKeyword("virtual")||checkKeyword("constexpr")||checkKeyword("explicit")||checkKeyword("operator")))break;advance();} }
+                consumeLeadingComments();
+            }
         }
         if (checkKeyword("class") || checkKeyword("struct")) {
             // Anonymous struct: "struct { float x, y; } position;"
@@ -1117,13 +1124,10 @@ public final class Parser {
 
         boolean isVirtual = matchKeyword("virtual");
         boolean isStatic = matchKeyword("static");
-        // Java "final" → C++ constexpr (for literals) or const
-        boolean isFinal = check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("final");
-        if (isFinal) advance();
         matchKeyword("inline");
         matchKeyword("volatile"); // consume volatile qualifier
-        boolean isConst = matchKeyword("const") || isFinal;
-        boolean isConstexprFn = matchKeyword("constexpr") || matchKeyword("consteval") || isFinal;
+        boolean isConst = matchKeyword("const");
+        boolean isConstexprFn = matchKeyword("constexpr") || matchKeyword("consteval");
         if (isConstexprFn && !isConst) isConst = true;
         matchKeyword("constinit");
         if (!isVirtual) isVirtual = matchKeyword("virtual"); // constexpr virtual
@@ -2048,8 +2052,17 @@ public final class Parser {
         if (tokens.get(pos + i).type() != CppLexerTokenType.IDENTIFIER) return false;
         i++; // past name
         if (pos + i >= tokens.size()) return false;
-        // Either ) directly, or [N] then )
-        if (tokens.get(pos + i).isPunct(")")) return true;
+        // Either ) directly followed by ( for params, or [N] then )
+        // A bare "(*name)" MUST be followed by "(" (param list) to be a function pointer.
+        // "shader(*noiseShader);" is a call expression, not a fn ptr -- no "(" after ")".
+        if (tokens.get(pos + i).isPunct(")")) {
+            int j = i + 1;
+            if (j >= tokens.size()) return false;
+            // Function pointer: "void (*fp)(int)" -- "(" must follow
+            // Array of fn ptrs: "void (*fp)[N]" -- "[" may follow
+            return tokens.get(pos + j).isPunct("(")
+                || tokens.get(pos + j).isPunct("[");
+        }
         if (tokens.get(pos + i).isPunct("[")) return true; // array of fn ptrs
         return false;
     }
@@ -2789,7 +2802,7 @@ public final class Parser {
             int steps = 0;
             while (!isAtEnd() && depth > 0 && steps < 120) {
                 if (checkPunct("(")) parenDepth++;
-                else if (checkPunct(")")) parenDepth--;
+                else if (checkPunct(")")) { parenDepth--; if (parenDepth < 0) return false; }
                 else if (checkPunct("{")) braceDepth++;
                 else if (checkPunct("}")) braceDepth--;
                 else if (parenDepth == 0 && braceDepth == 0) {
