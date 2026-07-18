@@ -2212,7 +2212,16 @@ public class CppBuild {
     code = sb3.toString();
 
     // Pass 4: replace int varname declarations with color varname for all colorVars
+    // Skip variables declared as loop counters or with explicit int literals
+    // to avoid mistyping loop vars like "for (int c = 0; ...)" as color
+    java.util.regex.Pattern forLoopDecl = java.util.regex.Pattern.compile(
+        "\\bfor\\s*\\(\\s*int\\s+(\\w+)");
+    java.util.Set<String> loopVars = new java.util.HashSet<>();
+    java.util.regex.Matcher lm = forLoopDecl.matcher(code);
+    while (lm.find()) loopVars.add(lm.group(1));
     for (String v : colorVars) {
+      if (loopVars.contains(v)) continue; // skip loop counters
+      if (v.length() == 1) continue; // skip single-letter vars (likely loop counters or params)
       code = code.replaceAll("\\bint\\s+(" + Pattern.quote(v) + ")\\b", "color $1");
     }
 
@@ -2418,6 +2427,10 @@ public class CppBuild {
       String firstName = t0.text();
       if (firstName.isEmpty() || !Character.isUpperCase(firstName.charAt(0))) continue;
       if (instanceTypes.contains(firstName)) continue; // known instance type
+      // Single-letter uppercase = almost certainly a template param (T, S, U, K, V, etc.)
+      if (firstName.length() == 1) continue;
+      // Two-letter uppercase combos commonly used as template params: Ts, Vs, etc.
+      if (firstName.length() == 2 && Character.isLowerCase(firstName.charAt(1))) continue;
       // Only fire for known static classes OR if preceded by nothing
       // (i.e. not "obj.UpperMethod()" which is a method call)
       // Check context: if previous token is ")", "]", or identifier, skip

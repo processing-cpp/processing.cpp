@@ -1117,10 +1117,13 @@ public final class Parser {
 
         boolean isVirtual = matchKeyword("virtual");
         boolean isStatic = matchKeyword("static");
+        // Java "final" → C++ constexpr (for literals) or const
+        boolean isFinal = check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("final");
+        if (isFinal) advance();
         matchKeyword("inline");
         matchKeyword("volatile"); // consume volatile qualifier
-        boolean isConst = matchKeyword("const");
-        boolean isConstexprFn = matchKeyword("constexpr") || matchKeyword("consteval");
+        boolean isConst = matchKeyword("const") || isFinal;
+        boolean isConstexprFn = matchKeyword("constexpr") || matchKeyword("consteval") || isFinal;
         if (isConstexprFn && !isConst) isConst = true;
         matchKeyword("constinit");
         if (!isVirtual) isVirtual = matchKeyword("virtual"); // constexpr virtual
@@ -2904,7 +2907,8 @@ public final class Parser {
             advance(); // consume "="
         }
         Expr e = parseExpr();
-        matchPunct("..."); // pack expansion in brace-init: "{args...}"
+        if (matchPunct("...")) // pack expansion in brace-init: "{args...}"
+            e = new PostfixExpr("...", e, e.line(), e.col(), List.of());
         return e;
     }
 

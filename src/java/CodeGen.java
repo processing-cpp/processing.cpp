@@ -836,6 +836,8 @@ public final class CodeGen {
             if (nt.baseName().startsWith("decltype(")) return nt.baseName();
             StringBuilder sb = new StringBuilder();
             if (nt.isConst()) sb.append("const ");
+            // Dependent type: "typename T::value_type" -- prepend typename
+            if (nt.baseName().contains("::") && !nt.baseName().startsWith("std::") && !nt.baseName().contains("(")) sb.append("typename ");
             sb.append(nt.baseName());
             if (!nt.templateArgs().isEmpty()) {
                 sb.append('<');
@@ -878,7 +880,17 @@ public final class CodeGen {
     // =====================================================================
 
     public static String renderExpr(Expr e) {
-        if (e instanceof Literal lit) return lit.text();
+        if (e instanceof Literal lit) {
+            String txt = lit.text();
+            // Append f suffix to float literals without one -- prevents
+            // double/float ambiguity on overloaded Processing API functions
+            if (lit.kind() == Literal.Kind.FLOAT
+                    && !txt.endsWith("f") && !txt.endsWith("F")
+                    && !txt.endsWith("d") && !txt.endsWith("D")) {
+                txt = txt + "f";
+            }
+            return txt;
+        }
         if (e instanceof Identifier id) return id.name();
         if (e instanceof ScopedName sn) return sn.joined();
 
@@ -946,7 +958,11 @@ public final class CodeGen {
             return u.op() + renderExpr(u.operand());
         }
         if (e instanceof PostfixExpr p) {
-            return renderExpr(p.operand()) + p.op();
+            // Normalize postfix ++/-- to prefix: better C++ style, avoids
+            // postfix operator resolution issues inside user class bodies
+            if (p.op().equals("++") || p.op().equals("--"))
+                return p.op() + renderExpr(p.operand());
+            return renderExpr(p.operand()) + p.op(); // "..." pack expansion etc.
         }
         if (e instanceof AssignExpr a) {
             return renderExpr(a.target()) + " = " + renderExpr(a.value());
