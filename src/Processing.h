@@ -3050,6 +3050,7 @@ public:
     void endShape(bool close=false)   { closed=close; }
     void vertex(float x,float y,float z=0,float u=0,float v=0) { verts.push_back({x,y,z,u,v}); }
     void addChild(const PShape& s)    { children.push_back(s); }
+    void addChild(const PShape* s)    { if (s) addChild(*s); }
     std::string name; // id/name attribute from SVG
     std::vector<int> subpathStarts; // subpath start indices for multi-part fills
     std::vector<Vertex> anchorVerts; // raw anchor points (M/L/C endpoints only) for getVertex()
@@ -3986,6 +3987,7 @@ struct PApplet {
     void textureMode(int mode);
     void textureWrap(int mode);
     void texture(PImage& img);
+    void texture(PImage* img) { if (img) texture(*img); }
 
     // ── Shader ───────────────────────────────────────────────────────────────
     PShader* loadShader(const std::string& fragPath, const std::string& vertPath="");
