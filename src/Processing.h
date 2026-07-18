@@ -3236,9 +3236,13 @@ public:
 
     void set(const std::string& n, float v)                      { glUniform1f(glGetUniformLocation(program,n.c_str()),v); }
     void set(const std::string& n, int v)                        { glUniform1i(glGetUniformLocation(program,n.c_str()),v); }
+    void set(const std::string& n, double v)                     { set(n,(float)v); }
     void set(const std::string& n, float x, float y)             { glUniform2f(glGetUniformLocation(program,n.c_str()),x,y); }
+    void set(const std::string& n, double x, double y)           { set(n,(float)x,(float)y); }
     void set(const std::string& n, float x, float y, float z)    { glUniform3f(glGetUniformLocation(program,n.c_str()),x,y,z); }
+    void set(const std::string& n, double x, double y, double z) { set(n,(float)x,(float)y,(float)z); }
     void set(const std::string& n, float x, float y, float z, float w){ glUniform4f(glGetUniformLocation(program,n.c_str()),x,y,z,w); }
+    void set(const std::string& n, double x, double y, double z, double w){ set(n,(float)x,(float)y,(float)z,(float)w); }
 
     ~PShader() { if(program)glDeleteProgram(program); if(vert)glDeleteShader(vert); if(frag)glDeleteShader(frag); }
     PShader(const PShader&) __attribute__((error(
