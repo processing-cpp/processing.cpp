@@ -372,6 +372,13 @@ public final class Parser {
         if (checkKeyword("class") || checkKeyword("struct")) {
             // Partial specialization: "template<typename T> struct Foo<T*> { ... }"
             // After parsing the class/struct, check for a specialization arg list.
+            // BUT: "struct TypeName funcName(...)" is a function with elaborated return type
+            if (pos + 2 < tokens.size()
+                    && tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
+                    && tokens.get(pos + 2).type() == CppLexerTokenType.IDENTIFIER
+                    && !tokens.get(pos + 1).isKeyword("class") && !tokens.get(pos + 1).isKeyword("struct")) {
+                return parseFunctionOrVariable(leadingComments, templateParams, true);
+            }
             return List.of(parseTypeDef(leadingComments, templateParams));
         }
         if (checkKeyword("enum")) {
@@ -899,6 +906,12 @@ public final class Parser {
                 raw.append(";");
                 return List.of(new PreprocessorLine(raw.toString(), tokens.get(anonStart).line(), tokens.get(anonStart).col(), leadingComments));
             }
+            // "struct/class Name funcName(" -- elaborated return type, not a definition
+            if (pos + 2 < tokens.size()
+                    && tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
+                    && tokens.get(pos + 2).type() == CppLexerTokenType.IDENTIFIER) {
+                return parseFunctionOrVariable(leadingComments, templateParams, false);
+            }
             return List.of(parseTypeDef(leadingComments, templateParams));
         }
         if (checkKeyword("enum")) {
@@ -955,11 +968,11 @@ public final class Parser {
             matchKeyword("explicit"); // plain explicit
         }
         boolean isConstexprCtor = false;
-        if (checkKeyword("constexpr") && pos + 1 < tokens.size()
+        if ((checkKeyword("constexpr") || checkKeyword("consteval")) && pos + 1 < tokens.size()
                 && tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
                 && tokens.get(pos + 1).text().equals(enclosingClassName)
                 && pos + 2 < tokens.size() && tokens.get(pos + 2).isPunct("(")) {
-            advance(); // consume constexpr
+            advance(); // consume constexpr/consteval
             isConstexprCtor = true;
         }
         // Constructor: match enclosingClassName OR just its base name (for specializations like Grid<T,N,false>)
@@ -1000,18 +1013,6 @@ public final class Parser {
         // order-flexible: also accept override before const, just in case
         if (!isConst) isConst = matchKeyword("const");
 
-        List<FunctionDecl.ConstructorInit> initList = new ArrayList<>();
-        if (!isDestructor && matchPunct(":")) {
-            FunctionDecl.ConstructorInit ci1 = parseConstructorInitEntry();
-            if (matchPunct("...")) ci1 = new FunctionDecl.ConstructorInit(ci1.memberName() + "...", ci1.args());
-            initList.add(ci1);
-            while (matchPunct(",")) {
-                FunctionDecl.ConstructorInit ci = parseConstructorInitEntry();
-                if (matchPunct("...")) ci = new FunctionDecl.ConstructorInit(ci.memberName() + "...", ci.args());
-                initList.add(ci);
-            }
-        }
-
         // Consume trailing qualifiers: noexcept, noexcept(expr), override, final, requires
         while (true) {
             if (checkKeyword("noexcept")) {
@@ -1026,6 +1027,18 @@ public final class Parser {
                 if (checkPunct("(")) { advance(); int d=1; while(!isAtEnd()&&d>0){if(checkPunct("("))d++;else if(checkPunct(")"))d--;advance();} }
                 else { while (!isAtEnd() && !checkPunct("{") && !checkPunct(";") && !checkOp("=")) { if (checkOp("<")) { advance(); int d=1; while(!isAtEnd()&&d>0){if(checkOp("<"))d++;else if(checkOp(">"))d--;advance();} } else advance(); } }
             } else break;
+        }
+        List<FunctionDecl.ConstructorInit> initList = new ArrayList<>();
+        if (!isDestructor && matchPunct(":")) {
+            FunctionDecl.ConstructorInit ci1 = parseConstructorInitEntry();
+            if (matchPunct("...")) ci1 = new FunctionDecl.ConstructorInit(ci1.memberName() + "...", ci1.args());
+            initList.add(ci1);
+            while (matchPunct(",")) {
+                FunctionDecl.ConstructorInit ci = parseConstructorInitEntry();
+                if (matchPunct("...")) ci = new FunctionDecl.ConstructorInit(ci.memberName() + "...", ci.args());
+                initList.add(ci);
+            }
+
         }
 
         // Pure-virtual specifier ("= 0"), e.g. "virtual ~A() = 0;" -- a
@@ -1515,6 +1528,10 @@ public final class Parser {
             expectPunct("(");
             if (checkPunct(")")) return true;
             if (!(check(CppLexerTokenType.IDENTIFIER) || check(CppLexerTokenType.KEYWORD))) return false;
+            // Skip explicit object param keyword: "this"
+            if (checkKeyword("this")) advance();
+            if (checkPunct(")")) return true;
+            if (!(check(CppLexerTokenType.IDENTIFIER) || check(CppLexerTokenType.KEYWORD))) return false;
             try {
                 parseTypeRef();
             } catch (ParseException e) {
@@ -1664,8 +1681,9 @@ public final class Parser {
     }
 
     private TypeRef parseTypeRefAfterConst(boolean isConst) {
-        // typename X::Y -- dependent type name, consume and continue
+        // typename/struct/class/enum X -- type elaboration or dependent type, consume prefix
         if (checkKeyword("typename")) advance();
+        else if (checkKeyword("struct") || checkKeyword("class") || checkKeyword("enum")) advance();
 
         // decltype(expr) -- C++11 computed type
         if (checkKeyword("decltype")) {
@@ -3020,9 +3038,13 @@ public final class Parser {
         boolean byRef = matchOp("&");
         // "this" is a keyword capture: [this] or [&this]
         if (checkKeyword("this")) { advance(); return new Capture("this", byRef); }
+        // C++20 pack init-capture: "[...vals = expr]" -- "..." precedes the name
+        boolean packPrefix = checkPunct("...");
+        if (packPrefix) advance();
         String name = expectIdentifier().text();
         // Pack expansion in capture: "[args...]"
         if (checkPunct("...")) { advance(); name = name + "..."; }
+        if (packPrefix) name = "..." + name;
         // Init-capture: "z = z * 2" or "w = x + y" -- encode into name string
         if (checkOp("=")) {
             advance();
