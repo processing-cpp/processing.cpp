@@ -244,6 +244,7 @@ inline std::string operator+(char c,   const std::string& s) { return std::strin
 
 
 namespace Processing {
+using namespace std;
 
 // =============================================================================
 // PVECTOR  --  2D/3D vector with all standard Processing operations

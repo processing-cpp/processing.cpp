@@ -1063,9 +1063,27 @@ public class CppBuild {
     out.append("using std::to_string; using std::stoi; using std::stof; using std::stod;\n");
     out.append("using std::cout; using std::cerr; using std::endl;\n");
     out.append("using std::ifstream; using std::ofstream; using std::stringstream;\n");
+    out.append("using std::move; using std::forward; using std::swap;\n");
+    out.append("using std::begin; using std::end;\n");
+    out.append("using std::accumulate; using std::transform; using std::find;\n");
+    out.append("using std::array; using std::span; using std::optional; using std::variant;\n");
+    out.append("using std::function;\n");
+    out.append("using std::map; using std::set;\n");
+    out.append("using std::initializer_list; using std::enable_if; using std::enable_if_t;\n");
+    out.append("using std::is_integral_v; using std::is_floating_point_v; using std::is_arithmetic_v;\n");
+    out.append("using std::is_same_v; using std::is_base_of_v; using std::is_convertible_v;\n");
+    out.append("using std::decay_t; using std::remove_reference_t; using std::common_type_t;\n");
+    out.append("using std::declval; using std::void_t;\n");
+    out.append("using std::index_sequence; using std::make_index_sequence;\n");
+    out.append("using std::tuple_size; using std::tuple_element; using std::get;\n");
+    out.append("using std::make_tuple; using std::tie; using std::apply;\n");
+    out.append("using std::runtime_error; using std::logic_error; using std::exception;\n");
+    out.append("using std::numeric_limits;\n");
 
     out.append(preNs); // user #include directives hoisted to global scope
+    out.append("using namespace std;\n");
     out.append("namespace Processing {\n");
+    out.append("using namespace std;\n");
     out.append("#include \"Processing_api.h\"\n");
     out.append("struct _PSketch {\n");
     out.append("  struct _W   { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->logicalW    : 0;     } } width;\n");
@@ -1250,7 +1268,11 @@ public class CppBuild {
           } else {
             out.append(CodeGen.generateNode(item, 0));
           }
-        } else if (item instanceof NamespaceDecl || item instanceof UsingNamespaceDecl) {
+        } else if (item instanceof NamespaceDecl) {
+          // User namespace declarations must be at true file scope, not inside
+          // namespace Processing -- otherwise std:: becomes Processing::std::
+          preNs.append(CodeGen.generateNode(item, 0));
+        } else if (item instanceof UsingNamespaceDecl) {
           out.append(CodeGen.generateNode(item, 0));
         } else {
           sketchMembers.add(item);
