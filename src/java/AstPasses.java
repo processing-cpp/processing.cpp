@@ -567,6 +567,11 @@ final class PSketchInjector {
     }
 
     private static Result inject(TypeDef td) {
+        // Never inject _PSketch into template classes -- they cannot inherit
+        // from a non-template base like _PSketch without full specialization.
+        if (!td.templateParams().isEmpty() || td.name().contains("<")) {
+            return new Result(td, false);
+        }
         if (!hasAnyMethod(td)) {
             return new Result(td, false);
         }

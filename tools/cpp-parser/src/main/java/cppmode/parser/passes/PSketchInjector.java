@@ -53,6 +53,13 @@ public final class PSketchInjector {
     }
 
     private static Result inject(TypeDef td) {
+        // Skip injection for template classes -- they cannot inherit from _PSketch
+        // since _PSketch is not a template and the inheritance would require
+        // explicit instantiation. Template classes access Processing API via
+        // the outer Sketch class through captured state or parameters.
+        if (!td.templateParams().isEmpty()) {
+            return new Result(td, false);
+        }
         if (!hasAnyMethod(td)) {
             return new Result(td, false);
         }

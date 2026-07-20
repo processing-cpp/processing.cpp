@@ -1921,7 +1921,8 @@ public final class Parser {
     }
 
     private TypeRef parseTemplateArg() {
-        if (checkKeyword("true") || checkKeyword("false")) {
+        if (checkKeyword("true") || checkKeyword("false")
+                || check(CppLexerTokenType.BOOL_LITERAL)) {
             String val = advance().text();
             return new NamedType(val, List.of(), 0, false, false, false);
         }
