@@ -1082,9 +1082,14 @@ public final class Parser {
         } else {
             expectPunct("(");
             if (!checkPunct(")")) {
-                args.add(parseExpr());
+                Expr a0 = parseExpr();
+                if (matchPunct("...")) a0 = new PostfixExpr("...", a0, a0.line(), a0.col(), List.of());
+                args.add(a0);
                 while (matchPunct(",")) {
-                    args.add(parseExpr());
+                    if (checkPunct(")")) break;
+                    Expr ai = parseExpr();
+                    if (matchPunct("...")) ai = new PostfixExpr("...", ai, ai.line(), ai.col(), List.of());
+                    args.add(ai);
                 }
             }
             expectPunct(")");
@@ -1139,6 +1144,11 @@ public final class Parser {
         boolean isStatic = matchKeyword("static");
         matchKeyword("inline");
         matchKeyword("volatile"); // consume volatile qualifier
+        // alignas(expr): consume alignment specifier before type
+        if (checkKeyword("alignas") && pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("(")) {
+            advance(); advance(); int _aad=1;
+            while (!isAtEnd() && _aad > 0) { if (checkPunct("(")) _aad++; else if (checkPunct(")")) _aad--; advance(); }
+        }
         boolean isConst = matchKeyword("const");
         boolean isConstexprFn = matchKeyword("constexpr") || matchKeyword("consteval");
         if (isConstexprFn && !isConst) isConst = true;
@@ -1210,10 +1220,31 @@ public final class Parser {
                     // trailing requires clause: "requires expr" -- consume to { or ;
                     advance();
                     if (checkPunct("(")) { advance(); int d=1; while(!isAtEnd()&&d>0){if(checkPunct("("))d++;else if(checkPunct(")"))d--;advance();} }
-                    else { // bare expression like "requires std::is_arithmetic_v<T>"
-                        while (!isAtEnd() && !checkPunct("{") && !checkPunct(";") && !checkOp("=")) {
-                            if (checkOp("<")) { advance(); int d=1; while(!isAtEnd()&&d>0){if(checkOp("<"))d++;else if(checkOp(">"))d--;advance();} }
-                            else advance();
+                    else if (checkPunct("{")) {
+                        // requires { expr } body -- consume the whole braced block
+                        advance(); int d=1;
+                        while (!isAtEnd() && d > 0) {
+                            if (checkPunct("{")) d++;
+                            else if (checkPunct("}")) { if (--d == 0) { advance(); break; } }
+                            advance();
+                        }
+                    } else { // bare expression like "requires std::is_arithmetic_v<T>"
+                        // Also handle "requires requires { ... }" (nested)
+                        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("requires")) {
+                            advance(); // consume inner requires
+                        }
+                        if (checkPunct("{")) {
+                            advance(); int d=1;
+                            while (!isAtEnd() && d > 0) {
+                                if (checkPunct("{")) d++;
+                                else if (checkPunct("}")) { if (--d == 0) { advance(); break; } }
+                                advance();
+                            }
+                        } else {
+                            while (!isAtEnd() && !checkPunct("{") && !checkPunct(";") && !checkOp("=")) {
+                                if (checkOp("<")) { advance(); int d=1; while(!isAtEnd()&&d>0){if(checkOp("<"))d++;else if(checkOp(">"))d--;advance();} }
+                                else advance();
+                            }
                         }
                     }
                 } else break;
@@ -1987,6 +2018,17 @@ public final class Parser {
             return new NamedType(sof.toString(), List.of(), 0, false, false, false);
         }
         TypeRef maybeReturnType = parseTypeRef();
+        // NTTP brace-init: "Point19{0.0f, 0.0f}" as template argument
+        if (checkPunct("{") && maybeReturnType instanceof NamedType _nttp) {
+            StringBuilder _nb = new StringBuilder(_nttp.baseName()).append("{");
+            int _nd = 1; advance();
+            while (!isAtEnd() && _nd > 0) {
+                if (checkPunct("{")) { _nd++; _nb.append("{"); advance(); }
+                else if (checkPunct("}")) { _nd--; if (_nd == 0) { _nb.append("}"); advance(); break; } _nb.append("}"); advance(); }
+                else { _nb.append(peek().text()); advance(); }
+            }
+            return new NamedType(_nb.toString(), List.of(), 0, false, false, false);
+        }
         // Compound boolean expression in template arg: "is_arithmetic_v<T> && !is_same_v<T,bool>"
         // The && was consumed as rvalue-ref by parseTypeRef; check if ! or || follows
         // The && was already consumed by parseTypeRef as rvalue-ref
@@ -2679,7 +2721,15 @@ public final class Parser {
                 while(!isAtEnd()&&d>0){
                     if(checkPunct("(")){ d++; sizeofText.append("("); advance(); }
                     else if(checkPunct(")")){ d--; if(d>0)sizeofText.append(")"); advance(); }
-                    else { sizeofText.append(peek().text()); advance(); }
+                    else {
+                        // Add space before identifier/keyword tokens to avoid merging
+                        String _st = peek().text();
+                        if (sizeofText.length() > 0) {
+                            char _last = sizeofText.charAt(sizeofText.length()-1);
+                            if (Character.isLetterOrDigit(_last) || _last == '_') sizeofText.append(" ");
+                        }
+                        sizeofText.append(_st); advance();
+                    }
                 }
                 sizeofText.append(")");
             } else {
@@ -2698,6 +2748,39 @@ public final class Parser {
             return new Literal(Literal.Kind.INT, "alignof(...)", t.line(), t.col(), List.of());
         }
         if (t.type() == CppLexerTokenType.IDENTIFIER || t.type() == CppLexerTokenType.KEYWORD) {
+            // "typename T::member" in expression context -- fold typename into the following qualified name
+            if (t.text().equals("typename")) {
+                advance(); // consume typename
+                // Parse the following type and prepend "typename "
+                CppLexerToken next = peek();
+                if (next.type() == CppLexerTokenType.IDENTIFIER || next.type() == CppLexerTokenType.KEYWORD) {
+                    String typeName = advance().text();
+                    // Consume :: qualified parts
+                    while (checkPunct("::")) {
+                        advance();
+                        if (check(CppLexerTokenType.IDENTIFIER) || check(CppLexerTokenType.KEYWORD))
+                            typeName += "::" + advance().text();
+                    }
+                    // Consume template args if present
+                    if (checkOp("<") && looksLikeTemplateArgList()) {
+                        int _as = pos; advance(); int _d=1;
+                        while (!isAtEnd() && _d > 0) {
+                            if (checkOp("<")) { _d++; advance(); }
+                            else if (checkOp(">")) { _d--; advance(); }
+                            else if (checkOp(">>")) { _d-=2; splitTrailingShiftIntoTwoCloseAngles(); advance(); }
+                            else advance();
+                        }
+                        StringBuilder _ta = new StringBuilder(typeName).append("<");
+                        for (int _i=_as+1; _i<pos-1; _i++) _ta.append(tokens.get(_i).text());
+                        _ta.append(">");
+                        typeName = _ta.toString();
+                    }
+                    // Consume trailing :: member
+                    if (checkPunct("::")) { advance(); if (check(CppLexerTokenType.IDENTIFIER)||check(CppLexerTokenType.KEYWORD)) typeName += "::" + advance().text(); }
+                    return new Identifier("typename " + typeName, t.line(), t.col(), List.of());
+                }
+                return new Identifier("typename", t.line(), t.col(), List.of());
+            }
             if (t.text().equals("requires")) { advance(); if(checkPunct("(")){ advance();int d=1;while(!isAtEnd()&&d>0){if(checkPunct("("))d++;else if(checkPunct(")"))d--;advance();}} if(checkPunct("{")){ advance();int d=1;while(!isAtEnd()&&d>0){if(checkPunct("{"))d++;else if(checkPunct("}"))d--;advance();}} return new Literal(Literal.Kind.BOOL,"true",t.line(),t.col(),List.of()); }
             if (t.text().equals("R") && !isAtEnd() && check(CppLexerTokenType.STRING_LITERAL)) { advance(); String raw=advance().text(); return new Literal(Literal.Kind.STRING,"R"+raw,t.line(),t.col(),List.of()); }
             // Could be a plain identifier, the start of a "::"-qualified
@@ -3296,6 +3379,18 @@ public final class Parser {
             }
             return List.of(structStmt);
         }
+        // "using T = Type;" local alias -- consume verbatim as ExprStatement
+        if (checkKeyword("using") && pos + 1 < tokens.size()
+                && tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
+                && pos + 2 < tokens.size() && tokens.get(pos + 2).isOp("=")) {
+            int _us = pos;
+            while (!isAtEnd() && !checkPunct(";")) advance();
+            matchPunct(";");
+            StringBuilder _ur = new StringBuilder();
+            for (int _i = _us; _i < pos - 1; _i++) { if (_i > _us) _ur.append(" "); _ur.append(tokens.get(_i).text()); }
+            _ur.append(";");
+            return List.of(new ExprStatement(new Identifier(_ur.toString(), tokens.get(_us).line(), tokens.get(_us).col(), List.of()), tokens.get(_us).line(), tokens.get(_us).col(), leadingComments));
+        }
         if (looksLikeDeclaration()) {
             return new ArrayList<Statement>(parseDeclStatementsDesugared(leadingComments));
         }
@@ -3325,6 +3420,13 @@ public final class Parser {
         // "if constexpr" -- consume constexpr before dispatching to parseIf
         if (checkKeyword("constexpr") && pos + 1 < tokens.size() && tokens.get(pos + 1).isKeyword("if")) {
             advance(); // consume constexpr, leave "if" for parseIf
+        }
+        // "typename T::member;" inside requires body -- type validity assertion
+        if (checkKeyword("typename")) {
+            CppLexerToken _t0 = peek(); advance();
+            try { parseTypeRef(); } catch (ParseException _e) {}
+            matchPunct(";");
+            return new ExprStatement(new Identifier("typename", _t0.line(), _t0.col(), List.of()), _t0.line(), _t0.col(), leadingComments);
         }
         // static_assert: consume entirely and emit as-is
         if (checkKeyword("static_assert")) {
