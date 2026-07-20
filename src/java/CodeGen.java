@@ -149,6 +149,12 @@ public final class CodeGen {
         indent(sb, depth);
         if (nd.isInline()) sb.append("inline ");
         sb.append("namespace ").append(nd.name()).append(" {\n");
+        // Inject ::std alias so std:: inside user namespaces resolves correctly
+        // even when the namespace is emitted inside namespace Processing.
+        if (!nd.name().equals("std")) {
+            indent(sb, depth + 1);
+            sb.append("using namespace ::std;\n");
+        }
         for (TopLevelItem item : nd.items()) {
             emitTopLevelItem(sb, item, depth + 1);
         }

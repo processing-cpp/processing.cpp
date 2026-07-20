@@ -1029,6 +1029,9 @@ public class CppBuild {
 
     String code = sanitize(raw.toString());
     code = removeUserIncludes(code);
+    // Restore noexcept on coroutine promise methods (parser drops noexcept specifier)
+    code = code.replaceAll("(\\bfinal_suspend\\s*\\([^)]*\\))(\\s*\\{)", "$1 noexcept$2");
+    code = code.replaceAll("(\\binitial_suspend\\s*\\([^)]*\\))(\\s*\\{)", "$1 noexcept$2");
     // Remove no-op translate(0, 0) and translate(0, 0, 0) calls (Problem 7.2)
     code = code.replaceAll("\\btranslate\\s*\\(\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*\\)\\s*;", "");
     code = code.replaceAll("\\btranslate\\s*\\(\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*\\)\\s*;", "");
@@ -1240,6 +1243,10 @@ public class CppBuild {
           // Out-of-class static member definition: "int Agent::totalAgents = 0"
           // must be at namespace scope, never inside struct Sketch
           autoHoisted.add(item);
+        } else if (item instanceof FunctionDecl fdoc && fdoc.name().contains("::")) {
+          // Out-of-class function definition: "Generator17 GeneratorPromise17::get_return_object()"
+          // must be at namespace scope, never inside struct Sketch
+          autoHoisted.add(item);
         } else {
           filteredRest.add(item);
         }
@@ -1268,10 +1275,16 @@ public class CppBuild {
           } else {
             out.append(CodeGen.generateNode(item, 0));
           }
-        } else if (item instanceof NamespaceDecl) {
-          // User namespace declarations must be at true file scope, not inside
-          // namespace Processing -- otherwise std:: becomes Processing::std::
-          preNs.append(CodeGen.generateNode(item, 0));
+        } else if (item instanceof NamespaceDecl nd) {
+          // User namespace: emit inside namespace Processing.
+          // CodeGen injects "using namespace ::std" inside namespace bodies
+          // so std:: resolves to global ::std not Processing::std.
+          // std specializations (namespace std { ... }) go to preNs (global scope).
+          if (nd.name().equals("std")) {
+              preNs.append(CodeGen.generateNode(nd, 0));
+          } else {
+              out.append(CodeGen.generateNode(nd, 0));
+          }
         } else if (item instanceof UsingNamespaceDecl) {
           out.append(CodeGen.generateNode(item, 0));
         } else {
@@ -1409,7 +1422,11 @@ public class CppBuild {
     out.append("#endif\n");
 
     File dest = new File(buildDir, "Sketch_run.cpp");
-    Files.writeString(dest.toPath(), out.toString());
+    String outStr = out.toString();
+    // Restore noexcept on coroutine promise methods (parser drops noexcept specifier)
+    outStr = outStr.replaceAll("(\\bfinal_suspend\\b[^{;]*)(\\{)", "$1noexcept $2");
+    outStr = outStr.replaceAll("(\\binitial_suspend\\b[^{;]*)(\\{)", "$1noexcept $2");
+    Files.writeString(dest.toPath(), outStr);
     return dest;
   }
 
