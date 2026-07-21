@@ -2681,6 +2681,17 @@ public:
         return data[(size_t)index];
     }
 
+    // get/set methods for Java-style access and bool[] compatibility
+    T get(int index) const {
+        if (index < 0 || index >= (int)data.size())
+            throw std::out_of_range("Array index " + std::to_string(index) + " out of bounds");
+        return data[(size_t)index];
+    }
+    void set(int index, const T& val) {
+        if (index < 0 || index >= (int)data.size())
+            throw std::out_of_range("Array index " + std::to_string(index) + " out of bounds");
+        data[(size_t)index] = val;
+    }
     auto begin()       { return data.begin(); }
     auto end()         { return data.end(); }
     auto begin() const { return data.begin(); }
