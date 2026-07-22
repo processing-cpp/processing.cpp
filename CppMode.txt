@@ -5,6 +5,6 @@ url=https://github.com/processing-cpp/processing.cpp
 sentence=Write and run Processing sketches in C++.
 paragraph=C++ Mode lets you write sketches using the familiar Processing API — size(), ellipse(), mouseX, draw() — but compiled to a native binary via g++. Runs on Linux and Windows (via MSYS2). Requires g++ and OpenGL (GLFW + GLEW).
 version=8
-prettyVersion=0.2.3
+prettyVersion=0.3.0
 minRevision=1280
 maxRevision=0

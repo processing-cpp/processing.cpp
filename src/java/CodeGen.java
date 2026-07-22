@@ -249,9 +249,6 @@ public final class CodeGen {
         if (type instanceof FunctionPointerType fpt) {
             boolean isConst = name.endsWith("__const__");
             if (isConst) name = name.substring(0, name.length() - 9);
-            String dimSuffix = "";
-            int dimIdx = name.indexOf("[");
-            if (dimIdx >= 0) { dimSuffix = name.substring(dimIdx); name = name.substring(0, dimIdx); }
             int colonIdx = name.indexOf("::");
             String classPrefix = "";
             String ptrChar = "*";
@@ -264,12 +261,31 @@ public final class CodeGen {
                 else { bareNamePart = rest; }
             } else if (name.startsWith("&")) { ptrChar = "&"; bareNamePart = name.substring(1); }
               else if (name.startsWith("*")) { ptrChar = "*"; bareNamePart = name.substring(1); }
+
+            // Split bare name into identifier and optional subscript dims:
+            //   "ec02_ops[4]"  -> bareName="ec02_ops", innerDims="[4]", outerDims=""
+            //   "pArr[10]"     -> same (array-of-fn-ptr: dims stay inside parens)
+            // For ptr-to-array "refToRow[20]" the dims come AFTER the param list,
+            // but the parser encodes that case with an empty paramTypes list AND
+            // appends dims to the name -- so we detect: empty paramTypes = ptr-to-array.
+            String innerDims = ""; // dims inside (*name[N]) -- array of fn-ptrs
+            String outerDims = ""; // dims after (params)    -- ptr to array
+            int dimIdx = bareNamePart.indexOf("[");
+            if (dimIdx >= 0) {
+                String dims = bareNamePart.substring(dimIdx);
+                bareNamePart = bareNamePart.substring(0, dimIdx);
+                if (fpt.paramTypes().isEmpty()) {
+                    outerDims = dims; // ptr-to-array: "void (*p)[20]"
+                } else {
+                    innerDims = dims; // array-of-fn-ptr: "void (*arr[4])(int)"
+                }
+            }
             StringBuilder sb = new StringBuilder(renderTypeRef(fpt.returnType()));
-            sb.append(" (").append(classPrefix).append(ptrChar).append(bareNamePart);
-            if (!dimSuffix.isEmpty()) {
-                sb.append(")").append(dimSuffix);
+            sb.append(" (").append(classPrefix).append(ptrChar).append(bareNamePart).append(innerDims).append(")");
+            if (!outerDims.isEmpty()) {
+                sb.append(outerDims);
             } else {
-                sb.append(")(");
+                sb.append("(");
                 for (int i = 0; i < fpt.paramTypes().size(); i++) {
                     if (i > 0) sb.append(", ");
                     sb.append(renderTypeRef(fpt.paramTypes().get(i)));
@@ -283,6 +299,10 @@ public final class CodeGen {
     }
 
     private static void emitVariableDecl(StringBuilder sb, VariableDecl vd, int depth) {
+        // Unnamed bitfield "unsigned int : 2" -- parser stores name="" after consuming
+        // the width specifier. Skip emission entirely; the bit width info is discarded
+        // (CppMode doesn't model bitfields in the AST) but the struct compiles cleanly.
+        if (vd.name() == null || vd.name().isEmpty()) return;
         indent(sb, depth);
         if (!vd.templateParams().isEmpty()) {
             sb.append("template<");
@@ -294,6 +314,7 @@ public final class CodeGen {
             indent(sb, depth);
         }
         if (vd.isStatic()) sb.append("static ");
+        // Emit constexpr when explicitly marked, or for static const members
         // Static const non-integral members need constexpr in C++
         if (vd.isConst() && vd.isStatic()) sb.append("constexpr ");
         // Only emit const here if the type itself doesn't already carry it and not already constexpr
@@ -626,6 +647,19 @@ public final class CodeGen {
                         if (isConst) sigPart = sigPart.substring(0, sigPart.length() - 9);
                         sb.append(retType).append(" (").append(mpPart).append(")").append(sigPart);
                         if (isConst) sb.append(" const");
+                    } else if (p.name().contains("__fnptr__")) {
+                        // Fn-ptr param encoded by parser as "name__fnptr__(paramtypes)"
+                        // e.g. "fn__fnptr__(float)" -> "float (*fn)(float)"
+                        int fnIdx = p.name().indexOf("__fnptr__");
+                        String fnName = p.name().substring(0, fnIdx);
+                        String fnSig  = p.name().substring(fnIdx + 9); // "(float)" etc.
+                        // Undo the pointerDepth bump the parser added to carry return type
+                        TypeRef fnPtrRetType = p.type();
+                        if (fnPtrRetType instanceof NamedType nt && nt.pointerDepth() > 0) {
+                            fnPtrRetType = new NamedType(nt.baseName(), nt.templateArgs(),
+                                nt.pointerDepth() - 1, nt.isReference(), nt.isConst(), false);
+                        }
+                        sb.append(renderTypeRef(fnPtrRetType)).append(" (*").append(fnName).append(")").append(fnSig);
                     } else {
                         sb.append(renderTypeAndName(p.type(), p.name()));
                     }
@@ -849,7 +883,13 @@ public final class CodeGen {
                 sb.append('<');
                 for (int i = 0; i < nt.templateArgs().size(); i++) {
                     if (i > 0) sb.append(", ");
-                    sb.append(renderTypeRef(nt.templateArgs().get(i)));
+                    TypeRef ta = nt.templateArgs().get(i);
+                    // Sentinel for explicit empty "<>": a NamedType whose baseName is "<>"
+                    if (ta instanceof NamedType sta && sta.baseName().equals("<>")) {
+                        // emit nothing -- the "<>" wrapper is handled below
+                        break;
+                    }
+                    sb.append(renderTypeRef(ta));
                 }
                 sb.append('>');
             }
@@ -892,7 +932,8 @@ public final class CodeGen {
             // double/float ambiguity on overloaded Processing API functions
             if (lit.kind() == Literal.Kind.FLOAT
                     && !txt.endsWith("f") && !txt.endsWith("F")
-                    && !txt.endsWith("d") && !txt.endsWith("D")) {
+                    && !txt.endsWith("d") && !txt.endsWith("D")
+                    && !txt.endsWith("l") && !txt.endsWith("L")) {
                 txt = txt + "f";
             }
             return txt;

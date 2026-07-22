@@ -343,7 +343,17 @@ public final class Parser {
                     if (checkOp("<")) { depth++; advance(); continue; }
                     if (checkOp(">")) { depth--; advance(); continue; }
                     if (checkOp(">>")) { depth -= 2; advance(); continue; }
-                    if (checkPunct("{") || checkPunct(";")) break;
+                    if (checkPunct(";")) break;
+                    if (checkPunct("{")) {
+                        // Braced block in requires: consume it entirely
+                        int _bd = 0;
+                        while (!isAtEnd()) {
+                            if (checkPunct("{")) _bd++;
+                            else if (checkPunct("}")) { _bd--; if (_bd == 0) { advance(); break; } }
+                            advance();
+                        }
+                        continue;
+                    }
                     if (depth == 0) {
                         if (checkKeyword("void") || checkKeyword("auto") ||
                             checkKeyword("int")  || checkKeyword("float") ||
@@ -1207,9 +1217,13 @@ public final class Parser {
                 advance(); // __attribute__
                 if (checkPunct("(")) { advance(); int _ad=1; while(!isAtEnd()&&_ad>0){if(checkPunct("("))_ad++;else if(checkPunct(")"))_ad--;advance();} }
             }
-            // Consume trailing qualifiers: noexcept, noexcept(expr), override, final, requires
+            // Consume trailing qualifiers: noexcept, noexcept(expr), override, final, requires, &/&&
             while (true) {
-                if (checkKeyword("noexcept")) {
+                if (checkOp("&") || checkOp("&&")) {
+                    // Ref-qualifier on member function: "T f() &" or "T f() &&"
+                    // Consume and discard -- not represented in the AST currently.
+                    advance();
+                } else if (checkKeyword("noexcept")) {
                     advance();
                     if (checkPunct("(")) { advance(); int d=1; while(!isAtEnd()&&d>0){if(checkPunct("("))d++;else if(checkPunct(")"))d--;advance();} }
                 } else if (checkKeyword("override")) {
@@ -1284,9 +1298,13 @@ public final class Parser {
         }
 
         // Variable declaration, possibly multi-declarator.
-        // Bit field: "unsigned int read : 1" -- consume ": N" width specifier
-        if (checkPunct(":") && pos + 1 < tokens.size() && tokens.get(pos + 1).type() == CppLexerTokenType.INT_LITERAL) {
-            advance(); advance(); // consume ":" and bit width
+        // Bit field: "unsigned int active : 1" or unnamed "unsigned int : 2"
+        // Consume ": width" specifier. Width may be a literal or constexpr identifier.
+        if (checkPunct(":") && pos + 1 < tokens.size()
+                && (tokens.get(pos + 1).type() == CppLexerTokenType.INT_LITERAL
+                    || tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER)) {
+            advance(); // consume ":"
+            parseExpr(); // consume width expression
         }
         // GCC __attribute__((...)): may appear after variable name
         if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("__attribute__")) {
@@ -1480,6 +1498,12 @@ public final class Parser {
             while (checkOp("*") || checkOp("&")) suffix += advance().text();
             return "operator " + castTok.text() + suffix;
         }
+        // Unnamed bitfield: "unsigned int : 2" -- no identifier before ":"
+        // Return empty name; the caller's bitfield-width consumer will handle ":".
+        if (checkPunct(":") && pos + 1 < tokens.size()
+                && tokens.get(pos + 1).type() == CppLexerTokenType.INT_LITERAL) {
+            return "";
+        }
         String name = expectIdentifier().text();
         // Member data pointer: "ClassName::* varName" -- e.g. "int Point::* ptr"
         // After consuming "Point" as the name, if :: follows and then * (not another identifier),
@@ -1515,6 +1539,17 @@ public final class Parser {
     private VariableDecl parseOneTopLevelDeclarator(TypeRef type, String name, boolean isConst, boolean isStatic,
                                                      List<String> templateParams, CppLexerToken start, List<CppLexerToken> leadingComments) {
         List<Expr> dims = parseOptionalArrayDims();
+        // Bitfield declarator: "unsigned int active : 1" -- consume ": width" and discard.
+        // The ":" is a PUNCT token; must be distinguished from inheritance ":" (which
+        // appears at class scope before a type name) and ternary ":" (inside expressions).
+        // Here we're inside a declarator so ":" followed by INT_LITERAL or IDENTIFIER
+        // is unambiguously a bitfield width specifier.
+        if (checkPunct(":") && pos + 1 < tokens.size()
+                && (tokens.get(pos + 1).type() == CppLexerTokenType.INT_LITERAL
+                    || tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER)) {
+            advance(); // consume ":"
+            parseExpr(); // consume width expression (usually a literal, may be constexpr)
+        }
         Expr initializer = null;
         if (matchOp("=")) {
             initializer = checkPunct("{") ? parseInitializerList() : parseExpr();
@@ -1738,10 +1773,12 @@ public final class Parser {
 
         List<TypeRef> templateArgs = List.of();
         if (checkOp("<") && !checkOp("<>")) {
-            // Empty diamond <> in "new Foo<>()" -- skip template args,
-            // the declared type on the LHS already has the full type.
             if (pos + 1 < tokens.size() && tokens.get(pos + 1).isOp(">")) {
+                // Explicit empty "<>" -- e.g. "Ec06Buf<> ec06_b" or "new Foo<>()".
+                // Store sentinel so CodeGen emits "<>" rather than bare name.
+                // (List.of() is indistinguishable from "no args" -- sentinel needed.)
                 advance(); advance(); // consume < and >
+                templateArgs = List.of(new NamedType("<>", List.of(), 0, false, false, false));
             } else {
                 templateArgs = parseTemplateArgList();
             }
@@ -1842,35 +1879,42 @@ public final class Parser {
      * operator, swallowing the closing '>' of the template parameter list.
      */
     private void parseTemplateDefaultValue() {
-        int depth = 0;
-        int braceDepth = 0; // track {} so < inside lambdas doesn't affect angle depth
+        // parenDepth: tracks () and [] nesting -- a > inside parens is a
+        // comparison operator, not a template closer. e.g. (sizeof(T) > 2 ? 8 : 4)
+        // angleDepth: tracks <> nesting from template args inside the default value
+        // braceDepth: tracks {} so < inside lambdas/init-lists doesn't affect angle depth
+        int parenDepth = 0;
+        int angleDepth = 0;
+        int braceDepth = 0;
         while (!isAtEnd()) {
             if (checkPunct("{")) { braceDepth++; advance(); continue; }
             if (checkPunct("}")) { if (braceDepth > 0) { braceDepth--; advance(); continue; } break; }
-            if (checkPunct("(") || checkPunct("[")) { depth++; advance(); }
-            else if (checkPunct(")") || checkPunct("]")) {
-                if (depth == 0) break;
-                depth--; advance();
+            if (checkPunct("(") || checkPunct("[")) { parenDepth++; advance(); continue; }
+            if (checkPunct(")") || checkPunct("]")) {
+                if (parenDepth == 0) break; // closing the outer param list
+                parenDepth--; advance(); continue;
             }
-            else if (checkOp("<") && braceDepth == 0) { depth++; advance(); }
-            else if (checkOp(">") && braceDepth == 0) {
-                if (depth == 0) break;
-                depth--; advance();
+            // < and > are only angle brackets when not inside parens/braces
+            if (checkOp("<") && parenDepth == 0 && braceDepth == 0) {
+                angleDepth++; advance(); continue;
             }
-            else if (checkOp(">>")) {
-                if (depth == 1) {
-                    // Split ">>" into two ">" -- first closes inner template,
-                    // second will close outer template param list
+            if (checkOp(">") && parenDepth == 0 && braceDepth == 0) {
+                if (angleDepth == 0) break; // closes the outer template param list
+                angleDepth--; advance(); continue;
+            }
+            if (checkOp(">>") && parenDepth == 0 && braceDepth == 0) {
+                if (angleDepth == 1) {
+                    // Split ">>" -- first closes inner angle, second closes outer
                     splitTrailingShiftIntoTwoCloseAngles();
-                    depth--; advance(); // consume first ">"
+                    angleDepth--; advance(); // consume first ">"
                     break; // second ">" left for outer list
                 }
-                if (depth == 0) break;
-                depth -= 2; advance();
+                if (angleDepth == 0) break;
+                angleDepth -= 2; advance(); continue;
             }
-            else if (depth == 0 && checkPunct(",")) break;
-            else if (depth == 0 && checkPunct(";")) break;
-            else advance();
+            if (parenDepth == 0 && angleDepth == 0 && checkPunct(",")) break;
+            if (parenDepth == 0 && angleDepth == 0 && checkPunct(";")) break;
+            advance();
         }
     }
 
@@ -1890,6 +1934,13 @@ public final class Parser {
     private List<TypeRef> parseTemplateArgList() {
         expectOp("<");
         List<TypeRef> args = new ArrayList<>();
+        // Explicit empty "<>": store a sentinel so CodeGen emits "<>" not bare name
+        if (checkOp(">") || checkOp(">>")) {
+            if (checkOp(">>")) splitTrailingShiftIntoTwoCloseAngles();
+            expectOp(">");
+            args.add(new NamedType("<>", List.of(), 0, false, false, false));
+            return args;
+        }
         if (!checkOp(">")) {
             TypeRef _a0 = parseTemplateArg();
             if (matchPunct("...") && _a0 instanceof NamedType _nt0)
@@ -2150,7 +2201,16 @@ public final class Parser {
             ? classQual.toString() + (isRef ? "&" : "*") + name
             : (isRef ? "&" : "") + name;
         // Array-of-function-pointers: (*arr[5]) -- consume the [N] subscript
+        // Encode dims into name now so CodeGen can emit "void (*arr[5])(int)" correctly.
+        // parseOptionalArrayDims consumes them; we re-encode as "[N]" string suffix.
         List<Expr> arrayDims = parseOptionalArrayDims();
+        StringBuilder arrayDimStr = new StringBuilder();
+        for (Expr dim : arrayDims) {
+            arrayDimStr.append("[");
+            if (dim != null) arrayDimStr.append(CodeGen.renderExpr(dim));
+            arrayDimStr.append("]");
+        }
+        encodedName = encodedName + arrayDimStr.toString();
         expectPunct(")");
         // Pointer-to-array or reference-to-array: "int (*p)[20]" / "int (&r)[20]"
         // Encode array dims into name for CodeGen: "&refToRow[20]"
@@ -2225,6 +2285,17 @@ public final class Parser {
     }
 
     private Expr parseTernary() {
+        // throw-expression: "throw expr" is valid as an expression in C++
+        // e.g. "cond ? val : throw std::runtime_error(...)"
+        if (checkKeyword("throw")) {
+            CppLexerToken t = advance();
+            if (checkPunct(";") || checkPunct(")") || checkPunct(":") || checkPunct(",")) {
+                // bare throw (rethrow) with no operand
+                return new UnaryExpr("throw ", new Literal(Literal.Kind.INT, "0", t.line(), t.col(), List.of()), t.line(), t.col(), List.of());
+            }
+            Expr val = parseTernary();
+            return new UnaryExpr("throw ", val, t.line(), t.col(), List.of());
+        }
         Expr cond = parseLogicalOr();
         if (checkPunct("?")) {
             CppLexerToken t = advance();
@@ -2442,6 +2513,17 @@ public final class Parser {
         if (matchPunct("[")) {
             Expr sizeExpr = parseExpr();
             expectPunct("]");
+            // Consume optional value-initializer on array-new: "new float[n]()"
+            // This is valid C++ (zero-initializes the array) and must be consumed
+            // here or the "()" is left in the stream, breaking the enclosing
+            // constructor init-list parser. Args inside are allowed but rare.
+            if (checkPunct("(")) {
+                advance(); int _d = 1;
+                while (!isAtEnd() && _d > 0) {
+                    if (checkPunct("(")) _d++; else if (checkPunct(")")) _d--;
+                    advance();
+                }
+            }
             return new ArrayNewExpr(type, sizeExpr, start.line(), start.col(), List.of());
         }
         List<Expr> args = new ArrayList<>();
@@ -2912,6 +2994,13 @@ public final class Parser {
                     else if (checkOp(">")) depth--;
                     else if (checkOp(">>")) depth -= 2;
                     else if (checkPunct(";")) return false;
+                    // A bare "?" at depth 0 means ternary operator -- not a template arg list.
+                    // Template args never contain unparenthesized ternary operators.
+                    // e.g. "v < lo ? lo : v > hi" -- the "?" rules out template args.
+                    else if (checkPunct("?") && depth == 1) return false;
+                    // A bare "+" "-" "*" "/" "%" at depth 0 after a non-type token
+                    // strongly suggests arithmetic expression, not template args.
+                    // But these can appear in NTTPs so only reject "?" which is unambiguous.
                 }
                 advance(); steps++;
             }
@@ -3222,8 +3311,13 @@ public final class Parser {
             return new Param(type, encoded, null, List.of(), false);
         }
 
-        // Reference-to-array or pointer-to-array parameter: "int (&arr)[10]" or "int (*arr)[10]"
-        // Detected after parsing the element type: if ( & name ) [ follows, consume and return.
+        // Reference-to-array, pointer-to-array, or function-pointer parameter:
+        //   "int (&arr)[10]"            -- ref-to-array
+        //   "int (*arr)[10]"            -- ptr-to-array
+        //   "float (*fn)(float)"        -- function pointer
+        //   "float (*fn)(float) = nullptr" -- function pointer with default
+        // Discriminator: after consuming (*name), if "(" follows it is a function
+        // pointer param list; if "[" follows it is an array dimension.
         if (checkPunct("(") && pos + 1 < tokens.size()
                 && (tokens.get(pos + 1).isOp("&") || tokens.get(pos + 1).isOp("*"))
                 && pos + 2 < tokens.size() && tokens.get(pos + 2).type() == CppLexerTokenType.IDENTIFIER) {
@@ -3231,7 +3325,37 @@ public final class Parser {
             boolean isRef = matchOp("&"); if (!isRef) matchOp("*");
             String pname = expectIdentifier().text();
             expectPunct(")");
-            // Encode dims into name: "&arr[10]" -> CodeGen emits "int (&arr)[10]"
+
+            // Function pointer param: "float (*fn)(float) = nullptr"
+            // "(" immediately after ")" means this is a fn-ptr, not an array.
+            if (checkPunct("(")) {
+                // Capture the param list tokens verbatim for CodeGen encoding.
+                // CodeGen detects "name__fnptr__(sig)" and emits "rettype (*name)(sig)".
+                int sigStart = pos;
+                advance(); int d = 1;
+                List<String> sigToks = new ArrayList<>();
+                while (!isAtEnd() && d > 0) {
+                    if (checkPunct("(")) { d++; sigToks.add("("); advance(); }
+                    else if (checkPunct(")")) { d--; if (d > 0) { sigToks.add(")"); advance(); } else advance(); }
+                    else { sigToks.add(peek().text()); advance(); }
+                }
+                String paramSig = "(" + String.join(", ", sigToks) + ")";
+                // Consume optional trailing qualifiers
+                matchKeyword("const");
+                matchKeyword("noexcept");
+                // Consume optional default value: "= nullptr", "= identity", etc.
+                Expr defaultValue = null;
+                if (matchOp("=")) defaultValue = parseExpr();
+                // Encode as "name__fnptr__(sig)" -- CodeGen decodes this in emitParamList.
+                // Type carries the return type; pointerDepth bump marks it as fn-ptr.
+                if (type instanceof NamedType nt) {
+                    type = new NamedType(nt.baseName(), nt.templateArgs(), nt.pointerDepth() + 1, false, nt.isConst(), false);
+                }
+                return new Param(type, pname + "__fnptr__" + paramSig, defaultValue, List.of(), false);
+            }
+
+            // Ref-to-array or ptr-to-array: encode dims into name.
+            // CodeGen uses the "&"/"*" prefix to emit "int (&arr)[10]".
             StringBuilder dimEnc = new StringBuilder();
             while (checkPunct("[")) {
                 int _ds = pos; advance(); dimEnc.append("[");

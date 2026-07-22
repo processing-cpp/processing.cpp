@@ -77,3 +77,14 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Sync to Processing bundled mode dirs so IDE picks up changes immediately
+import shutil, pathlib
+jar = pathlib.Path("/home/pep/sketchbook/modes/CppMode/mode/CppMode.jar")
+for dest in [
+    "/home/pep/Projects/processing4/app/build/resources-bundled/common/modes/CppMode/mode/CppMode.jar",
+    "/home/pep/Projects/processing4/app/build/compose/tmp/prepareAppResources/modes/CppMode/mode/CppMode.jar",
+]:
+    pathlib.Path(dest).parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(jar, dest)
+    print(f"Synced to {dest}")

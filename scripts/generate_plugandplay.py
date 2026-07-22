@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-generate_dragdrop.py -- builds the drag-and-drop release of processing-cpp:
+generate_plugandplay.py -- builds the drag-and-drop release of processing-cpp:
 a zip containing the engine, two examples, and a README that only ever
 shows plain g++ commands. No build system assumed.
 
@@ -14,9 +14,9 @@ For people already using CMake, see generate_cmake.py instead -- that's
 a separate release built for that audience, not a flag on this one.
 
 Usage:
-    scripts/generate_dragdrop.py                # writes dist/processing-cpp-dragdrop.zip
-    scripts/generate_dragdrop.py --no-zip        # leave the folder unzipped, for inspection
-    scripts/generate_dragdrop.py --out PATH      # write the zip somewhere else
+    scripts/generate_plugandplay.py                # writes dist/processing-cpp-plugandplay.zip
+    scripts/generate_plugandplay.py --no-zip        # leave the folder unzipped, for inspection
+    scripts/generate_plugandplay.py --out PATH      # write the zip somewhere else
 
 dist/ is gitignored -- this is a generated release artifact, not
 something to hand-edit or commit.
@@ -78,7 +78,7 @@ def generate(out_dir: Path) -> None:
     shutil.copy2(REPO_ROOT / "LICENSE", out_dir / "LICENSE")
 
     version = get_library_version()
-    print(f"Generated drag-and-drop package: {out_dir}")
+    print(f"Generated plug-and-play package: {out_dir}")
     print(f"  version {version}")
     print(f"  include/ ({len(ENGINE_HEADERS)} headers), "
           f"src/ ({len(ENGINE_SOURCES)} engine source files), "
@@ -92,7 +92,7 @@ def generate(out_dir: Path) -> None:
 # =============================================================================
 
 README_MD = '''\
-# processing-cpp (drag-and-drop)
+# processing-cpp (plug-and-play)
 
 This is [Processing](https://processing.org)'s API -- `size()`, `ellipse()`,
 `mouseX`, `draw()`, and the rest of it -- implemented natively in C++.
@@ -686,7 +686,7 @@ def main() -> None:
         help="Where to write the release. A directory ending in .zip writes "
              "a zip there; anything else is treated as a folder to write "
              "unzipped, as if --no-zip were also given. "
-             "Default: dist/processing-cpp-dragdrop.zip"
+             "Default: dist/processing-cpp-plugandplay.zip"
     )
     parser.add_argument(
         "--no-zip", action="store_true",
@@ -701,8 +701,8 @@ def main() -> None:
         folder = args.out
         zip_path = None
     else:
-        folder = DIST_DIR / "processing-cpp-dragdrop"
-        zip_path = DIST_DIR / "processing-cpp-dragdrop.zip"
+        folder = DIST_DIR / "processing-cpp-plugandplay"
+        zip_path = DIST_DIR / "processing-cpp-plugandplay.zip"
 
     generate(folder)
 

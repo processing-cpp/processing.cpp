@@ -252,13 +252,9 @@ public class CppBuild {
           System.getProperty("user.home") + "\\msys64\\mingw64\\bin\\g++.exe",
           "C:\\msys64\\ucrt64\\bin\\g++.exe"})
         if (new File(p).exists()) return;
-      try { if (Runtime.getRuntime().exec(new String[]{"g++","--version"}).waitFor()==0) return; }
-      catch (Exception ignored) {}
-
-      // Try the guided installer first. If it succeeds, we're done. If the
-      // user cancels, InstallWizard throws CancelledByUser, which stops
-      // the build entirely instead of falling through. Only a genuine
-      // wizard failure (not a cancel) falls through to the dialog below.
+      // Do NOT fall back to PATH g++ -- it won't have GLFW/GLEW and will
+      // produce linker errors. Only MSYS2 mingw64 g++ is accepted on Windows.
+      // Run the wizard unconditionally if MSYS2 g++ not found at known paths.
       if (InstallWizard.run(listener)) return;
 
       Object[] opts = { "Install Automatically", "Download MSYS2", "Cancel" };
@@ -2400,6 +2396,10 @@ public class CppBuild {
   }
   // [E0005b] Detect inline .get().field pattern: particles.get(0).x
   // This is a pointer dereference error -- should use -> not .
+  // Only fires for ArrayList (pointer-storage), not Array (value-storage).
+  // Distinguish by looking at the token before .get(): ArrayList<T> uses
+  // pointer storage and get() returns T*; Array<T> uses value storage and
+  // get() returns T by value, so .field is correct there.
   private void checkForArrayListGetDotAccess(String code, RunnerListener listener) {
     List<CppLexerToken> tokens;
     try { tokens = new CppLexer(code).tokenize(); } catch (Exception e) { return; }
@@ -2408,6 +2408,53 @@ public class CppBuild {
       if (!tokens.get(i).isPunct(".")) continue;
       if (!tokens.get(i + 1).text().equals("get")) continue;
       if (!tokens.get(i + 2).isPunct("(")) continue;
+      // Only fire E0005b when we can positively identify the receiver as ArrayList
+      // (pointer-storage). Array<T> is value-storage and get() returns T by value,
+      // so .field is correct there. Since we have no symbol table, we can't resolve
+      // arbitrary expression types -- so we require a positive signal: the variable
+      // name immediately before .get( must appear in a nearby ArrayList<...> declaration.
+      // If we can't confirm ArrayList, skip -- false negatives are safer than false
+      // positives that block valid code.
+      {
+        // Find the identifier token immediately before this ".get("
+        // It may be: "name.get(" or "name[i].get(" or "fn().get(" etc.
+        // Walk back to find the base name token.
+        int back = i - 1;
+        while (back > 0 && (tokens.get(back).isPunct("]") || tokens.get(back).isPunct(")"))) {
+          String closeStr = tokens.get(back).text();
+          String openStr  = closeStr.equals("]") ? "[" : "(";
+          int bd = 1; back--;
+          while (back >= 0 && bd > 0) {
+            if (tokens.get(back).text().equals(closeStr)) bd++;
+            else if (tokens.get(back).text().equals(openStr)) bd--;
+            back--;
+          }
+        }
+        String baseName = (back >= 0 && tokens.get(back).type() == CppLexerTokenType.IDENTIFIER)
+            ? tokens.get(back).text() : null;
+        // Require positive confirmation: scan nearby tokens for "ArrayList < ... > baseName"
+        boolean confirmedArrayList = false;
+        if (baseName != null) {
+          for (int k = Math.max(0, i - 40); k < Math.min(tokens.size(), i + 5); k++) {
+            if (tokens.get(k).text().equals("ArrayList")
+                && k + 1 < tokens.size() && tokens.get(k+1).isOp("<")) {
+              // Scan forward past the template args to find the variable name
+              int m = k + 2; int ad = 1;
+              while (m < tokens.size() && ad > 0) {
+                if (tokens.get(m).isOp("<")) ad++;
+                else if (tokens.get(m).isOp(">") || tokens.get(m).isOp(">>")) ad--;
+                m++;
+              }
+              // m now points just after ">", optionally "*", then the variable name
+              while (m < tokens.size() && tokens.get(m).isOp("*")) m++;
+              if (m < tokens.size() && tokens.get(m).text().equals(baseName)) {
+                confirmedArrayList = true; break;
+              }
+            }
+          }
+        }
+        if (!confirmedArrayList) continue; // can't confirm ArrayList -- skip
+      }
       // Consume the get(...) args
       int j = i + 3; int depth = 1;
       while (j < tokens.size() && depth > 0) {
