@@ -430,6 +430,11 @@ endif()
 if(WIN32 AND NOT MSVC)
     target_link_options(processing_cpp PUBLIC -mwindows)
 endif()
+# GCC 16+ requires -fcoroutines explicitly; earlier versions accept it silently.
+# MSVC and Clang enable coroutines via /std:c++20 or -std=c++20 automatically.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(processing_cpp PUBLIC -fcoroutines)
+endif()
 
 # -----------------------------------------------------------------------------
 # install + export, so `cmake --install` followed by `find_package(processing_cpp)`
