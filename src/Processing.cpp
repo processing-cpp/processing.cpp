@@ -3094,14 +3094,6 @@ void PApplet::run(){
         }
         glfwSwapBuffers(w);
     });
-    if(!gWindow){
-#ifdef _WIN32
-        MessageBoxA(NULL, "Window creation failed.\nCheck that your GPU supports OpenGL 2.0+", "processing-cpp Error", MB_OK|MB_ICONERROR);
-#else
-        fprintf(stderr, "[ERR] Window creation failed. Check OpenGL 2.0+ support.\n");
-#endif
-        glfwTerminate(); return;
-    }
     glfwMakeContextCurrent(gWindow);
     GLenum glewErr = glewInit();
     if(glewErr != GLEW_OK){
