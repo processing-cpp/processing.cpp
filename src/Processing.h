@@ -12,10 +12,9 @@
 // Win32 APIs (FindFirstFileA, MessageBoxA, AllocConsole, Sleep, etc.).
 // <GL/glew.h> pulls it in transitively but only after GLEW's own includes --
 // explicit include here guarantees it arrives before any Win32 API usage.
+// NOTE: do NOT define WIN32_LEAN_AND_MEAN here -- GLEW needs wingdi.h which
+// WIN32_LEAN_AND_MEAN strips, causing GL type definition failures.
 #ifdef _WIN32
-#  ifndef WIN32_LEAN_AND_MEAN
-#    define WIN32_LEAN_AND_MEAN
-#  endif
 #  ifndef NOMINMAX
 #    define NOMINMAX
 #  endif
