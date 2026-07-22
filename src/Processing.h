@@ -8,11 +8,29 @@
 #    include "stb_truetype.h"
 #  endif
 #endif
+// On Windows, include <windows.h> explicitly before anything else that needs
+// Win32 APIs (FindFirstFileA, MessageBoxA, AllocConsole, Sleep, etc.).
+// <GL/glew.h> pulls it in transitively but only after GLEW's own includes --
+// explicit include here guarantees it arrives before any Win32 API usage.
+#ifdef _WIN32
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#  include <shellapi.h>
+#endif
 #ifndef _WIN32
 #include <dirent.h>
 #endif
 #include <functional>
+// <coroutine> requires -fcoroutines on GCC; guard it so the header compiles
+// without that flag when coroutines aren't needed by the user's sketch.
+#if defined(__cpp_impl_coroutine) || defined(__clang__) || defined(_MSC_VER) ||     (defined(__GNUC__) && defined(_GLIBCXX_COROUTINE))
 #include <coroutine>
+#endif
 // =============================================================================
 // Processing.h  --  processing-cpp API
 // =============================================================================

@@ -596,9 +596,9 @@ if not exist "%LIB_A%" set NEED_ENGINE_BUILD=1
 
 if %NEED_ENGINE_BUILD%==1 (
     echo Compiling engine ^(first run; ~10-15s^)...
-    call :run_build_step "engine compile" g++ -std=c++17 -O2 -c -I"%ENGINE_DIR%include" %DEFINES% "%ENGINE_DIR%src\\Processing.cpp" -o "%LIB_DIR%\\Processing.o"
+    call :run_build_step "engine compile" g++ -std=c++17 -fcoroutines -O2 -c -I"%ENGINE_DIR%include" %DEFINES% "%ENGINE_DIR%src\\Processing.cpp" -o "%LIB_DIR%\\Processing.o"
     if errorlevel 1 exit /b 1
-    call :run_build_step "engine compile" g++ -std=c++17 -O2 -c -I"%ENGINE_DIR%include" %DEFINES% "%ENGINE_DIR%src\\Processing_defaults.cpp" -o "%LIB_DIR%\\Processing_defaults.o"
+    call :run_build_step "engine compile" g++ -std=c++17 -fcoroutines -O2 -c -I"%ENGINE_DIR%include" %DEFINES% "%ENGINE_DIR%src\\Processing_defaults.cpp" -o "%LIB_DIR%\\Processing_defaults.o"
     if errorlevel 1 exit /b 1
     ar rcs "%LIB_A%" "%LIB_DIR%\\Processing.o" "%LIB_DIR%\\Processing_defaults.o"
     del "%LIB_DIR%\\Processing.o" "%LIB_DIR%\\Processing_defaults.o"
@@ -616,11 +616,11 @@ if %NEED_PCH_BUILD%==1 (
     REM by actually building this package and checking with the
     REM -Winvalid-pch warning flag -- it's not a build failure, the
     REM caching just quietly stops working).
-    call :run_build_step "header precompile" g++ -std=c++17 -I"%ENGINE_DIR%include" %DEFINES% -pthread -x c++-header "%ENGINE_DIR%include\\Processing.h" -o "%PCH_FILE%"
+    call :run_build_step "header precompile" g++ -std=c++17 -fcoroutines -I"%ENGINE_DIR%include" %DEFINES% -pthread -x c++-header "%ENGINE_DIR%include\\Processing.h" -o "%PCH_FILE%"
     if errorlevel 1 exit /b 1
 )
 
-call :run_build_step "sketch compile" g++ -std=c++17 -I"%ENGINE_DIR%include" %DEFINES% %SOURCES% -L"%LIB_DIR%" -lprocessing_cpp -lglfw3 -lglew32 -lopengl32 -lglu32 -lcomdlg32 -lshell32 -lole32 -luuid -mwindows -pthread -o "%PROJECT_DIR%\\.processing-cpp-build.exe"
+call :run_build_step "sketch compile" g++ -std=c++17 -fcoroutines -I"%ENGINE_DIR%include" %DEFINES% %SOURCES% -L"%LIB_DIR%" -lprocessing_cpp -lglfw3 -lglew32 -lopengl32 -lglu32 -lcomdlg32 -lshell32 -lole32 -luuid -mwindows -pthread -o "%PROJECT_DIR%\\.processing-cpp-build.exe"
 if errorlevel 1 exit /b 1
 
 echo Running...
