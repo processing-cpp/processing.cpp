@@ -492,12 +492,34 @@ public class CppBuild {
 
   private void checkWindowsDLLs(RunnerListener listener, File binary) throws Exception {
     String[] required = { "glfw3.dll", "glew32.dll" };
+    String[] allDlls  = { "glfw3.dll", "glew32.dll",
+        "libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll" };
+    String[] msysDirs = { "C:\\msys64\\mingw64\\bin", "C:\\msys2\\mingw64\\bin" };
+
     java.util.List<String> searchDirs = new java.util.ArrayList<>();
     searchDirs.add(binary.getParent());
-    searchDirs.add("C:\\msys64\\mingw64\\bin");
-    searchDirs.add("C:\\msys2\\mingw64\\bin");
+    for (String d : msysDirs) searchDirs.add(d);
     String path = System.getenv("PATH");
     if (path != null) for (String p : path.split(";")) searchDirs.add(p);
+
+    // Always copy all required DLLs next to the binary so the sketch can
+    // find them at runtime without MSYS2 on PATH. This is the root cause of
+    // exit code -1073741819 (0xC0000005) on fresh Windows installs: the DLLs
+    // exist in C:\msys64\mingw64in but Windows can't find them at runtime
+    // unless they're next to the exe or on PATH. Copy unconditionally.
+    for (String dll : allDlls) {
+      File dest = new File(binary.getParent(), dll);
+      if (dest.exists()) continue; // already copied from a previous run
+      for (String dir : msysDirs) {
+        File src2 = new File(dir, dll);
+        if (src2.exists()) {
+          try { java.nio.file.Files.copy(src2.toPath(), dest.toPath(),
+              java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
+          catch (Exception ignored) {}
+          break;
+        }
+      }
+    }
 
     java.util.List<String> missing = new java.util.ArrayList<>();
     outer:

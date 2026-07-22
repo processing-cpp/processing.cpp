@@ -3053,6 +3053,24 @@ void PApplet::run(){
     glfwWindowHint(GLFW_SAMPLES,4); // 4x MSAA for crisp P3D rendering; 2D noSmooth() disables at runtime
     glfwWindowHint(GLFW_STENCIL_BITS,8);  // needed for concave shape fill
     gWindow=glfwCreateWindow(winWidth,winHeight,g_sketchName.c_str(),nullptr,nullptr);
+    if(!gWindow){
+        const char* err=nullptr; glfwGetError(&err);
+        fprintf(stderr,"[ERR] glfwCreateWindow() failed: %s\n", err?err:"unknown");
+#ifdef _WIN32
+        MessageBoxA(NULL,
+            "Failed to create OpenGL window.\n\n"
+            "This usually means:\n"
+            "  - Your GPU driver does not support OpenGL 3.3\n"
+            "  - glfw3.dll or glew32.dll is missing next to the sketch exe\n\n"
+            "Try updating your GPU drivers.\n"
+            "Intel: https://www.intel.com/content/www/us/en/download-center/home.html\n"
+            "AMD:   https://www.amd.com/en/support\n"
+            "NVIDIA: https://www.nvidia.com/drivers",
+            "processing-cpp: Window Creation Failed", MB_OK|MB_ICONERROR);
+#endif
+        glfwTerminate();
+        return;
+    }
     // Prevent freeze when dragging title bar on Windows
     glfwSetWindowRefreshCallback(gWindow,[](GLFWwindow* w){
         // Originally just glClear()+swap "to prevent freeze when dragging the
