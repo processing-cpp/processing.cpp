@@ -3222,7 +3222,6 @@ void PApplet::run(){
         glfwPollEvents();
         glfwSwapBuffers(gWindow);
     }
-    }
 #endif
     if (!defaultP3D) setProjection(winWidth, winHeight);
 
