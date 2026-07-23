@@ -7,6 +7,10 @@
 #endif
 
 #include "Processing.h"
+#ifdef EMSCRIPTEN
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#endif
 #include <csignal>
 #include <cstdlib>
 #include <cmath>
@@ -1914,7 +1918,9 @@ void PApplet::normal(float nx, float ny, float nz) { glNormal3f(nx, ny, nz); }
 
 void PApplet::ambient(float r, float g, float b) {
     GLfloat col[] = { lc(r), lc(g), lc(b), 1.0f };
+#ifndef EMSCRIPTEN
     glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, col);
+#endif
 }
 void PApplet::ambient(color c) {
     unsigned int v = c.value;
@@ -1925,7 +1931,9 @@ void PApplet::ambient(color c) {
 
 void PApplet::emissive(float r, float g, float b) {
     GLfloat col[] = { lc(r), lc(g), lc(b), 1.0f };
+#ifndef EMSCRIPTEN
     glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, col);
+#endif
 }
 void PApplet::emissive(color c) {
     unsigned int v = c.value;
@@ -1936,7 +1944,9 @@ void PApplet::emissive(color c) {
 
 void PApplet::specular(float r, float g, float b) {
     GLfloat col[] = { lc(r), lc(g), lc(b), 1.0f };
+#ifndef EMSCRIPTEN
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, col);
+#endif
 }
 void PApplet::specular(color c) {
     unsigned int v = c.value;
@@ -1946,7 +1956,9 @@ void PApplet::specular(color c) {
 }
 
 void PApplet::shininess(float s) {
+#ifndef EMSCRIPTEN
     glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, s);
+#endif
 }
 
 // =============================================================================
@@ -3054,7 +3066,7 @@ void PApplet::run(){
     glfwWindowHint(GLFW_STENCIL_BITS,8);  // needed for concave shape fill
     gWindow=glfwCreateWindow(winWidth,winHeight,g_sketchName.c_str(),nullptr,nullptr);
     if(!gWindow){
-        const char* err=nullptr; glfwGetError(&err);
+        const char* err="unknown"; (void)err;
         fprintf(stderr,"[ERR] glfwCreateWindow() failed: %s\n", err?err:"unknown");
 #ifdef _WIN32
         MessageBoxA(NULL,
@@ -3203,12 +3215,15 @@ void PApplet::run(){
     glfwSwapBuffers(gWindow);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     glfwSwapBuffers(gWindow);
+#ifndef EMSCRIPTEN
     for (int _settle = 0; _settle < 5; _settle++) {
         glClearColor(0.8f,0.8f,0.8f,1);
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
         glfwPollEvents();
         glfwSwapBuffers(gWindow);
     }
+    }
+#endif
     if (!defaultP3D) setProjection(winWidth, winHeight);
 
     this->setup();
@@ -3278,6 +3293,7 @@ void PApplet::run(){
 
     redrawOnce = looping;
     auto last=std::chrono::steady_clock::now();
+#ifndef EMSCRIPTEN
     // Drain Windows message queue before entering main loop.
     // On Windows, a WM_QUIT from a previous sketch run can be in the queue.
     // Poll multiple times to flush it, then forcibly clear the close flag.
@@ -3293,6 +3309,8 @@ void PApplet::run(){
             glfwSwapBuffers(gWindow);
         }
     }
+#endif
+#ifndef EMSCRIPTEN
     while(!glfwWindowShouldClose(gWindow)){
 
         if(looping||redrawOnce){
@@ -3394,14 +3412,26 @@ void PApplet::run(){
             // Reset material to neutral so non-lit objects look correct
             GLfloat matWhite[] = { 0.8f, 0.8f, 0.8f, 1.0f };
             GLfloat matBlack[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+#ifndef EMSCRIPTEN
             glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT,  matBlack);
+#endif
+#ifndef EMSCRIPTEN
             glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE,  matWhite);
+#endif
+#ifndef EMSCRIPTEN
             glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, matBlack);
+#endif
+#ifndef EMSCRIPTEN
             glMaterialf (GL_FRONT_AND_BACK, GL_SHININESS, 0.0f);
+#endif
             // Reset specular material to none
             GLfloat noSpec[] = {0,0,0,1};
+#ifndef EMSCRIPTEN
             glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, noSpec);
+#endif
+#ifndef EMSCRIPTEN
             glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, noSpec);
+#endif
 
             // Draw guard: handle different sketch types
             if (!looping && _staticSketchSetup) {
@@ -3449,6 +3479,25 @@ void PApplet::run(){
     }
     if(phongProg){glDeleteProgram(phongProg);phongProg=0;}
     glfwDestroyWindow(gWindow);gWindow=nullptr;glfwTerminate();
+#else
+    emscripten_set_main_loop_arg([](void* arg){
+        auto* p = static_cast<PApplet*>(arg);
+        if(p->looping||p->redrawOnce){
+            p->redrawOnce=false;
+            glViewport(0, 0, p->winWidth, p->winHeight);
+            glMatrixMode(GL_PROJECTION); glLoadIdentity();
+            glOrtho(0, p->logicalW, p->logicalH, 0, -1, 1);
+            glMatrixMode(GL_MODELVIEW); glLoadIdentity();
+            glDisable(GL_DEPTH_TEST);
+            glDisable(GL_LIGHTING);
+            p->_backgroundCalledThisFrame=false;
+            ++p->frameCount;
+            p->draw();
+            p->pmouseX=p->mouseX; p->pmouseY=p->mouseY;
+            p->mouseDX=0; p->mouseDY=0;
+        }
+    }, this, 0, 1);
+#endif
 }
 
 // =============================================================================
