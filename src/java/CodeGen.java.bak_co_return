@@ -270,22 +270,14 @@ public final class CodeGen {
             // appends dims to the name -- so we detect: empty paramTypes = ptr-to-array.
             String innerDims = ""; // dims inside (*name[N]) -- array of fn-ptrs
             String outerDims = ""; // dims after (params)    -- ptr to array
-            // Detect array-of-fn-ptr via "__arr__" sentinel added by parser.
-            // Without sentinel, ptr-to-array (empty paramTypes, dims outside)
-            // and array-of-fn-ptr with no params (also empty paramTypes) are
-            // indistinguishable. The sentinel is stripped before emission.
-            int arrSentinel = bareNamePart.indexOf("__arr__");
-            if (arrSentinel >= 0) {
-                // Array-of-fn-ptr: dims go inside parens
-                innerDims = bareNamePart.substring(arrSentinel + 7); // after "__arr__"
-                bareNamePart = bareNamePart.substring(0, arrSentinel);
-            } else {
-                int dimIdx = bareNamePart.indexOf("[");
-                if (dimIdx >= 0) {
-                    String dims = bareNamePart.substring(dimIdx);
-                    bareNamePart = bareNamePart.substring(0, dimIdx);
-                    // No sentinel -- must be ptr-to-array (outer dims)
-                    outerDims = dims;
+            int dimIdx = bareNamePart.indexOf("[");
+            if (dimIdx >= 0) {
+                String dims = bareNamePart.substring(dimIdx);
+                bareNamePart = bareNamePart.substring(0, dimIdx);
+                if (fpt.paramTypes().isEmpty()) {
+                    outerDims = dims; // ptr-to-array: "void (*p)[20]"
+                } else {
+                    innerDims = dims; // array-of-fn-ptr: "void (*arr[4])(int)"
                 }
             }
             StringBuilder sb = new StringBuilder(renderTypeRef(fpt.returnType()));
@@ -525,13 +517,11 @@ public final class CodeGen {
 
     private static void emitFunctionDecl(StringBuilder sb, FunctionDecl fd, int depth) {
         indent(sb, depth);
-        if (fd.templateParams() != null && (fd.templateParams().isEmpty()
-                ? fd.name().contains("::") && fd.name().contains("<") // explicit specialization: template<>
-                : true)) {
+        if (!fd.templateParams().isEmpty()) {
             sb.append("template<");
             for (int i = 0; i < fd.templateParams().size(); i++) {
                 if (i > 0) sb.append(", ");
-                sb.append(fd.templateParams().get(i));
+                sb.append(fd.templateParams().get(i)); // full text, not just name
             }
             sb.append(">\n");
             indent(sb, depth);
@@ -739,7 +729,7 @@ public final class CodeGen {
             sb.append("continue;\n");
         } else if (s instanceof ReturnStatement r) {
             indent(sb, depth);
-            sb.append(r.isCoReturn() ? "co_return" : "return");
+            sb.append("return");
             if (r.value() != null) sb.append(' ').append(renderExpr(r.value()));
             sb.append(";\n");
         } else if (s instanceof TryStatement t) {

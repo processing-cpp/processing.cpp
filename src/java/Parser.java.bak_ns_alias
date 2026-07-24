@@ -1412,9 +1412,6 @@ public final class Parser {
             matchKeyword("consteval");
             matchKeyword("constinit");
             matchKeyword("inline");
-            matchKeyword("constexpr"); // "inline constexpr int x" -- C++17 inline variable
-            matchKeyword("consteval");
-            matchKeyword("constinit");
             matchKeyword("static"); // tolerate either order, mirroring the real parse path
 
             if (looksLikeFunctionPointerVariable()) return true;
@@ -1570,26 +1567,6 @@ public final class Parser {
             }
             sb.append(">");
             name = sb.toString();
-            // Qualified member after template specialization: "Class<T>::method"
-            // e.g. "void Printer<float>::print()" -- out-of-class specialization.
-            while (checkPunct("::")) {
-                advance();
-                if (checkKeyword("operator")) {
-                    name += "::" + parseFunctionOrVariableName();
-                } else if (check(CppLexerTokenType.IDENTIFIER)) {
-                    name += "::" + advance().text();
-                    if (checkOp("<") && looksLikeTemplateArgList()) {
-                        StringBuilder sb2 = new StringBuilder(name).append("<");
-                        advance(); int d2 = 1;
-                        while (!isAtEnd() && d2 > 0) {
-                            if (checkOp("<")) { d2++; sb2.append(advance().text()); }
-                            else if (checkOp(">")) { d2--; if (d2>0) sb2.append(advance().text()); else advance(); }
-                            else sb2.append(advance().text());
-                        }
-                        sb2.append(">"); name = sb2.toString();
-                    }
-                }
-            }
         }
         return name;
     }
@@ -1733,7 +1710,7 @@ public final class Parser {
         return new EnumDecl(name, isScoped, values, start.line(), start.col(), leadingComments);
     }
 
-    private TopLevelItem parseNamespaceDecl(List<CppLexerToken> leadingComments) {
+    private NamespaceDecl parseNamespaceDecl(List<CppLexerToken> leadingComments) {
         CppLexerToken start = peek();
         boolean isInlineNs = matchKeyword("inline"); // "inline namespace"
         expectKeyword("namespace");
@@ -1741,22 +1718,10 @@ public final class Parser {
         while (checkPunct("::")) { advance(); nameBuilder.append("::").append(expectIdentifier().text()); }
         String name = nameBuilder.toString();
         if (matchOp("=")) {
-            // Namespace alias: "namespace Short = Long::Name;"
-            // Emit verbatim as a PreprocessorLine so CodeGen passes it through unchanged.
-            // CppBuild hoists it to global scope (preNs) so it resolves correctly.
-            // Space before and after "=" so CppBuild's " = " check fires correctly.
-            StringBuilder alias = new StringBuilder("namespace ").append(name).append(" = ");
-            while (!isAtEnd() && !checkPunct(";")) {
-                alias.append(peek().text());
-                // Add space after "::" and between tokens for readability
-                // (critical: " = " must be present for CppBuild routing)
-                advance();
-                if (!isAtEnd() && !checkPunct(";")) alias.append(" ");
-            }
-            // Trim trailing space before ";"
-            String aliasStr = alias.toString().stripTrailing() + ";";
+            StringBuilder alias = new StringBuilder();
+            while (!isAtEnd() && !checkPunct(";")) { alias.append(peek().text()); advance(); }
             matchPunct(";");
-            return new PreprocessorLine(aliasStr, start.line(), start.col(), leadingComments);
+            return new NamespaceDecl(name, false, List.of(), start.line(), start.col(), leadingComments);
         }
         expectPunct("{");
         List<TopLevelItem> items = new ArrayList<>();
@@ -2139,9 +2104,6 @@ public final class Parser {
             return new NamedType("...", List.of(), 0, false, false, false);
         }
         // sizeof expression: sizeof(T) or sizeof...(Args)
-        // co_await as expression: "int x = co_await awaitable;"
-        // co_await and co_yield can appear as unary prefix expressions,
-        // not just as statements.
         if (checkKeyword("sizeof")) {
             int sStart = pos; advance();
             StringBuilder sof = new StringBuilder("sizeof");
@@ -2910,17 +2872,6 @@ public final class Parser {
             String txt = prefix + advance().text();
             while (check(CppLexerTokenType.STRING_LITERAL)) txt += advance().text();
             return new Literal(Literal.Kind.STRING, txt, t.line(), t.col(), List.of());
-        }
-        // co_await/co_yield as expressions: "int x = co_await awaitable;"
-        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("co_await")) {
-            CppLexerToken coTok = advance();
-            Expr coVal = parseUnary();
-            return new UnaryExpr("co_await ", coVal, coTok.line(), coTok.col(), List.of());
-        }
-        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("co_yield")) {
-            CppLexerToken coTok = advance();
-            Expr coVal = parseUnary();
-            return new UnaryExpr("co_yield ", coVal, coTok.line(), coTok.col(), List.of());
         }
         // sizeof expression: "sizeof(T)" or "sizeof expr" (no parens)
         if (checkKeyword("sizeof")) {

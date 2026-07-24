@@ -278,22 +278,6 @@ public final class Parser {
 
         List<String> templateParams = List.of();
         // extern "C" / extern "C++" linkage specification -- consume verbatim
-        // "extern template class Foo<T>;" -- explicit instantiation declaration
-        // Suppresses implicit instantiation in this TU. Consume verbatim to ";".
-        if (checkKeyword("extern") && pos + 1 < tokens.size()
-                && tokens.get(pos + 1).isKeyword("template")) {
-            int startPos = pos;
-            while (!isAtEnd() && !checkPunct(";")) advance();
-            matchPunct(";");
-            StringBuilder raw = new StringBuilder();
-            for (int i = startPos; i < pos - 1; i++) {
-                if (i > startPos) raw.append(' ');
-                raw.append(tokens.get(i).text());
-            }
-            raw.append(';');
-            return List.of(new PreprocessorLine(raw.toString(),
-                tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
-        }
         if (checkKeyword("extern") && pos + 1 < tokens.size()
                 && tokens.get(pos + 1).type() == CppLexerTokenType.STRING_LITERAL) {
             advance(); advance(); // consume extern "C++"
@@ -637,26 +621,17 @@ public final class Parser {
             return "<template-template>";
         }
 
-        // --- concept-constrained type parameter: "Numeric T" or "Numeric typename" ---
-        // Also handles concept-constrained template-template params:
-        // "template<Concept typename> class C" -- the inner param has
-        // concept name then "typename" keyword (not an identifier).
+        // --- concept-constrained type parameter: "Numeric T" ---
         if (check(CppLexerTokenType.IDENTIFIER) && pos + 1 < tokens.size()
-                && (tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
-                    || tokens.get(pos + 1).isKeyword("typename")
-                    || tokens.get(pos + 1).isKeyword("class"))
+                && tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
                 && pos + 2 < tokens.size()
                 && (tokens.get(pos + 2).isOp(">") || tokens.get(pos + 2).isOp(">>")
                     || tokens.get(pos + 2).isPunct(",")
                     || tokens.get(pos + 2).isPunct("...")
                     || tokens.get(pos + 2).isOp("="))) {
-            advance(); // concept name
+            advance();
             if (checkPunct("...")) advance();
-            // param name may be a keyword (typename/class) or identifier or absent
-            String name;
-            if (check(CppLexerTokenType.IDENTIFIER)) name = advance().text();
-            else if (checkKeyword("typename") || checkKeyword("class")) { advance(); name = "<anon>"; }
-            else name = "<anon>";
+            String name = advance().text();
             if (matchOp("=")) parseTemplateDefaultValue();
             return name;
         }
@@ -762,16 +737,6 @@ public final class Parser {
         }
         // Also consume [[attributes]] before the name
         consumeAttributes();
-        // GCC __attribute__((...)): "struct __attribute__((packed)) Name"
-        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("__attribute__")) {
-            advance();
-            if (checkPunct("(")) { advance(); int _ad=1; while(!isAtEnd()&&_ad>0){if(checkPunct("("))_ad++;else if(checkPunct(")"))_ad--;advance();} }
-        }
-        // MSVC __declspec(...): "struct __declspec(align(16)) Name"
-        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("__declspec")) {
-            advance();
-            if (checkPunct("(")) { advance(); int _ad=1; while(!isAtEnd()&&_ad>0){if(checkPunct("("))_ad++;else if(checkPunct(")"))_ad--;advance();} }
-        }
 
         String name = expectIdentifier().text();
 
@@ -1412,9 +1377,6 @@ public final class Parser {
             matchKeyword("consteval");
             matchKeyword("constinit");
             matchKeyword("inline");
-            matchKeyword("constexpr"); // "inline constexpr int x" -- C++17 inline variable
-            matchKeyword("consteval");
-            matchKeyword("constinit");
             matchKeyword("static"); // tolerate either order, mirroring the real parse path
 
             if (looksLikeFunctionPointerVariable()) return true;
@@ -1570,26 +1532,6 @@ public final class Parser {
             }
             sb.append(">");
             name = sb.toString();
-            // Qualified member after template specialization: "Class<T>::method"
-            // e.g. "void Printer<float>::print()" -- out-of-class specialization.
-            while (checkPunct("::")) {
-                advance();
-                if (checkKeyword("operator")) {
-                    name += "::" + parseFunctionOrVariableName();
-                } else if (check(CppLexerTokenType.IDENTIFIER)) {
-                    name += "::" + advance().text();
-                    if (checkOp("<") && looksLikeTemplateArgList()) {
-                        StringBuilder sb2 = new StringBuilder(name).append("<");
-                        advance(); int d2 = 1;
-                        while (!isAtEnd() && d2 > 0) {
-                            if (checkOp("<")) { d2++; sb2.append(advance().text()); }
-                            else if (checkOp(">")) { d2--; if (d2>0) sb2.append(advance().text()); else advance(); }
-                            else sb2.append(advance().text());
-                        }
-                        sb2.append(">"); name = sb2.toString();
-                    }
-                }
-            }
         }
         return name;
     }
@@ -1733,7 +1675,7 @@ public final class Parser {
         return new EnumDecl(name, isScoped, values, start.line(), start.col(), leadingComments);
     }
 
-    private TopLevelItem parseNamespaceDecl(List<CppLexerToken> leadingComments) {
+    private NamespaceDecl parseNamespaceDecl(List<CppLexerToken> leadingComments) {
         CppLexerToken start = peek();
         boolean isInlineNs = matchKeyword("inline"); // "inline namespace"
         expectKeyword("namespace");
@@ -1741,22 +1683,10 @@ public final class Parser {
         while (checkPunct("::")) { advance(); nameBuilder.append("::").append(expectIdentifier().text()); }
         String name = nameBuilder.toString();
         if (matchOp("=")) {
-            // Namespace alias: "namespace Short = Long::Name;"
-            // Emit verbatim as a PreprocessorLine so CodeGen passes it through unchanged.
-            // CppBuild hoists it to global scope (preNs) so it resolves correctly.
-            // Space before and after "=" so CppBuild's " = " check fires correctly.
-            StringBuilder alias = new StringBuilder("namespace ").append(name).append(" = ");
-            while (!isAtEnd() && !checkPunct(";")) {
-                alias.append(peek().text());
-                // Add space after "::" and between tokens for readability
-                // (critical: " = " must be present for CppBuild routing)
-                advance();
-                if (!isAtEnd() && !checkPunct(";")) alias.append(" ");
-            }
-            // Trim trailing space before ";"
-            String aliasStr = alias.toString().stripTrailing() + ";";
+            StringBuilder alias = new StringBuilder();
+            while (!isAtEnd() && !checkPunct(";")) { alias.append(peek().text()); advance(); }
             matchPunct(";");
-            return new PreprocessorLine(aliasStr, start.line(), start.col(), leadingComments);
+            return new NamespaceDecl(name, false, List.of(), start.line(), start.col(), leadingComments);
         }
         expectPunct("{");
         List<TopLevelItem> items = new ArrayList<>();
@@ -2079,8 +2009,7 @@ public final class Parser {
             return new NamedType(val, List.of(), 0, false, false, false);
         }
         if (check(CppLexerTokenType.INT_LITERAL) || check(CppLexerTokenType.FLOAT_LITERAL)
-                || check(CppLexerTokenType.CHAR_LITERAL)
-                || check(CppLexerTokenType.STRING_LITERAL)) {
+                || check(CppLexerTokenType.CHAR_LITERAL)) {
             String val = advance().text();
             return new NamedType(val, List.of(), 0, false, false, false);
         }
@@ -2117,21 +2046,6 @@ public final class Parser {
             dt.append(")");
             return new NamedType(dt.toString(), List.of(), 0, false, false, false);
         }
-        // Parenthesized NTTP expression: "(true ? 4 : 8)", "(sizeof(T) > 2 ? 8 : 4)"
-        // The whole parenthesized expression is a valid template argument.
-        // Consume it by tracking paren depth and return verbatim as a NamedType.
-        if (checkPunct("(")) {
-            int pStart = pos;
-            advance(); int pd = 1;
-            StringBuilder pexpr = new StringBuilder("(");
-            while (!isAtEnd() && pd > 0) {
-                if (checkPunct("(")) { pd++; pexpr.append("("); advance(); }
-                else if (checkPunct(")")) { pd--; if (pd > 0) pexpr.append(")"); advance(); }
-                else { pexpr.append(peek().text()); advance(); }
-            }
-            pexpr.append(")");
-            return new NamedType(pexpr.toString(), List.of(), 0, false, false, false);
-        }
         // Pack expansion "..." trailing a type: "Ts..." in template args
         // Also handles standalone "..." as a variadic marker
         if (checkPunct("...")) {
@@ -2139,9 +2053,6 @@ public final class Parser {
             return new NamedType("...", List.of(), 0, false, false, false);
         }
         // sizeof expression: sizeof(T) or sizeof...(Args)
-        // co_await as expression: "int x = co_await awaitable;"
-        // co_await and co_yield can appear as unary prefix expressions,
-        // not just as statements.
         if (checkKeyword("sizeof")) {
             int sStart = pos; advance();
             StringBuilder sof = new StringBuilder("sizeof");
@@ -2290,9 +2201,8 @@ public final class Parser {
             ? classQual.toString() + (isRef ? "&" : "*") + name
             : (isRef ? "&" : "") + name;
         // Array-of-function-pointers: (*arr[5]) -- consume the [N] subscript
-        // Encode dims into name with "__arr__" sentinel so CodeGen can distinguish
-        // array-of-fn-ptr from ptr-to-array (which also has empty paramTypes).
-        // e.g. "ops[2]" -> "ops__arr__[2]" -- CodeGen strips sentinel, puts inside parens.
+        // Encode dims into name now so CodeGen can emit "void (*arr[5])(int)" correctly.
+        // parseOptionalArrayDims consumes them; we re-encode as "[N]" string suffix.
         List<Expr> arrayDims = parseOptionalArrayDims();
         StringBuilder arrayDimStr = new StringBuilder();
         for (Expr dim : arrayDims) {
@@ -2300,9 +2210,7 @@ public final class Parser {
             if (dim != null) arrayDimStr.append(CodeGen.renderExpr(dim));
             arrayDimStr.append("]");
         }
-        if (arrayDimStr.length() > 0) {
-            encodedName = encodedName + "__arr__" + arrayDimStr.toString();
-        }
+        encodedName = encodedName + arrayDimStr.toString();
         expectPunct(")");
         // Pointer-to-array or reference-to-array: "int (*p)[20]" / "int (&r)[20]"
         // Encode array dims into name for CodeGen: "&refToRow[20]"
@@ -2326,11 +2234,6 @@ public final class Parser {
         }
         expectPunct(")");
         boolean isConstMethod = matchKeyword("const"); // trailing const on member function pointer
-        // Consume optional noexcept after const: "void (T::*)(int) const noexcept"
-        if (checkKeyword("noexcept")) {
-            advance();
-            if (checkPunct("(")) { advance(); int _nd=1; while(!isAtEnd()&&_nd>0){if(checkPunct("("))_nd++;else if(checkPunct(")"))_nd--;advance();} }
-        }
         // Encode const into name with sentinel __const__ for CodeGen
         if (isConstMethod) encodedName = encodedName + "__const__";
         return new NameAndFunctionPointerType(encodedName, new FunctionPointerType(returnType, paramTypes));
@@ -2566,12 +2469,6 @@ public final class Parser {
             } catch (ParseException e) {
                 return false;
             }
-            // Consume optional array declarator: "(int[])" -- compound literal cast
-            while (checkPunct("[")) {
-                advance();
-                while (!isAtEnd() && !checkPunct("]")) advance();
-                if (!matchPunct("]")) return false;
-            }
             if (!checkPunct(")")) return false;
             advance(); // consume ')'
             // What follows a real cast must be able to start a unary expression.
@@ -2587,14 +2484,9 @@ public final class Parser {
             || t.type() == CppLexerTokenType.CHAR_LITERAL || t.type() == CppLexerTokenType.BOOL_LITERAL) {
             return true;
         }
-        if (t.isPunct("(") || t.isPunct("{")) return true;
-        if (t.isOp("-") || t.isOp("+") || t.isOp("*") || t.isOp("!") || t.isOp("&")
-                || t.isOp("~") || t.isOp("++") || t.isOp("--")) return true;
-        // Keyword unary operators that can follow a C-style cast
-        if (t.isKeyword("new") || t.isKeyword("delete")) return true;
-        if (t.isKeyword("sizeof") || t.isKeyword("alignof") || t.isKeyword("decltype")) return true;
-        if (t.isKeyword("throw")) return true;
-        if (t.isKeyword("true") || t.isKeyword("false") || t.isKeyword("nullptr")) return true;
+        if (t.isPunct("(")) return true;
+        if (t.isOp("-") || t.isOp("!") || t.isOp("&") || t.isOp("~") || t.isOp("++") || t.isOp("--")) return true;
+        if (t.isKeyword("new")) return true;
         return false;
     }
 
@@ -2602,18 +2494,6 @@ public final class Parser {
         CppLexerToken start = peek();
         expectPunct("(");
         TypeRef targetType = parseTypeRef();
-        // Consume optional array declarator in compound literal cast: "(int[]){...}"
-        // The [] makes this a C99 compound literal (GCC extension in C++).
-        // Bump pointer depth to represent the array-decayed pointer type.
-        while (checkPunct("[")) {
-            advance();
-            if (!checkPunct("]")) parseExpr(); // optional size expression
-            expectPunct("]");
-            if (targetType instanceof NamedType nt) {
-                targetType = new NamedType(nt.baseName(), nt.templateArgs(),
-                    nt.pointerDepth() + 1, nt.isReference(), nt.isConst(), false);
-            }
-        }
         expectPunct(")");
         Expr expr = parseUnary();
         return new CastExpr(targetType, expr, start.line(), start.col(), List.of());
@@ -2910,17 +2790,6 @@ public final class Parser {
             String txt = prefix + advance().text();
             while (check(CppLexerTokenType.STRING_LITERAL)) txt += advance().text();
             return new Literal(Literal.Kind.STRING, txt, t.line(), t.col(), List.of());
-        }
-        // co_await/co_yield as expressions: "int x = co_await awaitable;"
-        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("co_await")) {
-            CppLexerToken coTok = advance();
-            Expr coVal = parseUnary();
-            return new UnaryExpr("co_await ", coVal, coTok.line(), coTok.col(), List.of());
-        }
-        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("co_yield")) {
-            CppLexerToken coTok = advance();
-            Expr coVal = parseUnary();
-            return new UnaryExpr("co_yield ", coVal, coTok.line(), coTok.col(), List.of());
         }
         // sizeof expression: "sizeof(T)" or "sizeof expr" (no parens)
         if (checkKeyword("sizeof")) {
@@ -3635,11 +3504,9 @@ public final class Parser {
             return List.of(structStmt);
         }
         // "using T = Type;" local alias -- consume verbatim as ExprStatement
-        if (checkKeyword("using") && pos + 1 < tokens.size()) {
-            // using X = Type;  (alias)
-            // using X::Y;      (qualified name import, e.g. "using std::string;")
-            // using namespace X; (handled earlier)
-            // Consume everything to ";" and emit verbatim as an identifier statement.
+        if (checkKeyword("using") && pos + 1 < tokens.size()
+                && tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
+                && pos + 2 < tokens.size() && tokens.get(pos + 2).isOp("=")) {
             int _us = pos;
             while (!isAtEnd() && !checkPunct(";")) advance();
             matchPunct(";");
@@ -3703,7 +3570,7 @@ public final class Parser {
         // throw statement: "throw expr;" or bare "throw;"
         if (checkKeyword("throw")) {
             CppLexerToken t0 = advance();
-            if (checkPunct(";")) { advance(); return new ReturnStatement(null, false, t0.line(), t0.col(), leadingComments); }
+            if (checkPunct(";")) { advance(); return new ReturnStatement(null, t0.line(), t0.col(), leadingComments); }
             Expr val = parseExpr();
             expectPunct(";");
             // Encode as ReturnStatement with a UnaryExpr("throw", val) -- CodeGen emits via renderExpr
@@ -3734,38 +3601,6 @@ public final class Parser {
             return new ExprStatement(new Identifier(raw.toString(), tokens.get(startPos).line(), tokens.get(startPos).col(), List.of()), tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments);
         }
         if (checkKeyword("return")) return parseReturn(leadingComments);
-        // Coroutine keywords: co_return, co_yield, co_await
-        // co_return: like return but for coroutines -- may have no operand
-        // co_yield:  suspends the coroutine and yields a value
-        // co_await:  suspends until the awaitable is ready
-        // All three are statement-level in practice; co_yield/co_await can
-        // also appear as expressions but handling them as statements covers
-        // all real corpus cases.
-        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("co_return")) {
-            CppLexerToken t = advance();
-            Expr val = null;
-            if (!checkPunct(";")) val = parseExpr();
-            expectPunct(";");
-            return new ReturnStatement(val, true, t.line(), t.col(), leadingComments);
-        }
-        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("co_yield")) {
-            CppLexerToken t = advance();
-            Expr val = checkPunct(";") ? null : parseExpr();
-            expectPunct(";");
-            return new ExprStatement(
-                new UnaryExpr("co_yield ", val != null ? val
-                    : new Literal(Literal.Kind.INT, "0", t.line(), t.col(), List.of()),
-                    t.line(), t.col(), List.of()),
-                t.line(), t.col(), leadingComments);
-        }
-        if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("co_await")) {
-            CppLexerToken t = advance();
-            Expr val = parseExpr();
-            expectPunct(";");
-            return new ExprStatement(
-                new UnaryExpr("co_await ", val, t.line(), t.col(), List.of()),
-                t.line(), t.col(), leadingComments);
-        }
         if (checkKeyword("break")) return parseBreak(leadingComments);
         if (checkKeyword("continue")) return parseContinue(leadingComments);
         if (checkKeyword("try")) return parseTry(leadingComments);
@@ -3992,7 +3827,7 @@ public final class Parser {
         CppLexerToken start = expectKeyword("return");
         Expr value = checkPunct(";") ? null : parseExpr();
         expectPunct(";");
-        return new ReturnStatement(value, false, start.line(), start.col(), leadingComments);
+        return new ReturnStatement(value, start.line(), start.col(), leadingComments);
     }
 
     private Statement parseBreak(List<CppLexerToken> leadingComments) {
@@ -4087,7 +3922,7 @@ public final class Parser {
      */
     private static final java.util.Set<String> STATEMENT_KEYWORDS = java.util.Set.of(
         "return", "if", "for", "while", "do", "switch", "break", "continue",
-        "try", "delete", "case", "default", "else", "throw", "using"
+        "try", "delete", "case", "default", "else", "throw"
     );
 
     /** Keyword type names that are valid cast-operator targets ("operator int()",

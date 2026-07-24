@@ -1412,9 +1412,6 @@ public final class Parser {
             matchKeyword("consteval");
             matchKeyword("constinit");
             matchKeyword("inline");
-            matchKeyword("constexpr"); // "inline constexpr int x" -- C++17 inline variable
-            matchKeyword("consteval");
-            matchKeyword("constinit");
             matchKeyword("static"); // tolerate either order, mirroring the real parse path
 
             if (looksLikeFunctionPointerVariable()) return true;
@@ -2913,14 +2910,14 @@ public final class Parser {
         }
         // co_await/co_yield as expressions: "int x = co_await awaitable;"
         if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("co_await")) {
-            CppLexerToken coTok = advance();
-            Expr coVal = parseUnary();
-            return new UnaryExpr("co_await ", coVal, coTok.line(), coTok.col(), List.of());
+            CppLexerToken t = advance();
+            Expr val = parseUnary();
+            return new UnaryExpr("co_await ", val, t.line(), t.col(), List.of());
         }
         if (check(CppLexerTokenType.IDENTIFIER) && peek().text().equals("co_yield")) {
-            CppLexerToken coTok = advance();
-            Expr coVal = parseUnary();
-            return new UnaryExpr("co_yield ", coVal, coTok.line(), coTok.col(), List.of());
+            CppLexerToken t = advance();
+            Expr val = parseUnary();
+            return new UnaryExpr("co_yield ", val, t.line(), t.col(), List.of());
         }
         // sizeof expression: "sizeof(T)" or "sizeof expr" (no parens)
         if (checkKeyword("sizeof")) {

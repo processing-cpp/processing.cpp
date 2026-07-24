@@ -278,7 +278,6 @@ record SwitchStatement(
 
 record ReturnStatement(
     Expr value,
-    boolean isCoReturn,
     int line,
     int col,
     List<CppLexerToken> leadingComments

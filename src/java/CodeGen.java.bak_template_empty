@@ -525,13 +525,11 @@ public final class CodeGen {
 
     private static void emitFunctionDecl(StringBuilder sb, FunctionDecl fd, int depth) {
         indent(sb, depth);
-        if (fd.templateParams() != null && (fd.templateParams().isEmpty()
-                ? fd.name().contains("::") && fd.name().contains("<") // explicit specialization: template<>
-                : true)) {
+        if (!fd.templateParams().isEmpty()) {
             sb.append("template<");
             for (int i = 0; i < fd.templateParams().size(); i++) {
                 if (i > 0) sb.append(", ");
-                sb.append(fd.templateParams().get(i));
+                sb.append(fd.templateParams().get(i)); // full text, not just name
             }
             sb.append(">\n");
             indent(sb, depth);

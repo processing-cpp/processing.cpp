@@ -7,9 +7,14 @@
 #endif
 
 #include "Processing.h"
-#ifdef EMSCRIPTEN
+#ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <emscripten/html5.h>
+// Remap unsupported GL primitives to WebGL-compatible equivalents
+#undef GL_QUADS
+#define GL_QUADS GL_TRIANGLES
+#undef GL_QUAD_STRIP
+#define GL_QUAD_STRIP GL_TRIANGLE_STRIP
 #endif
 #include <csignal>
 #include <cstdlib>
@@ -662,11 +667,19 @@ void PApplet::smooth(int level) {
     // smooth() always has, regardless of which level was requested.
     smoothing = true;
     smoothLevel = level;
+#ifndef __EMSCRIPTEN__
     glEnable(GL_LINE_SMOOTH);glHint(GL_LINE_SMOOTH_HINT,GL_NICEST);
     glEnable(GL_POINT_SMOOTH);glHint(GL_POINT_SMOOTH_HINT,GL_NICEST);
     glEnable(GL_MULTISAMPLE);
+#endif
 }
-void PApplet::noSmooth(){smoothing=false;glDisable(GL_LINE_SMOOTH);glDisable(GL_POLYGON_SMOOTH);glDisable(GL_POINT_SMOOTH);glDisable(GL_MULTISAMPLE);}
+void PApplet::noSmooth(){
+    smoothing=false;
+#ifndef __EMSCRIPTEN__
+    glDisable(GL_LINE_SMOOTH);glDisable(GL_POLYGON_SMOOTH);
+    glDisable(GL_POINT_SMOOTH);glDisable(GL_MULTISAMPLE);
+#endif
+}
 void PApplet::hint(int which){
     switch(which){
         case ENABLE_DEPTH_TEST:  glEnable(GL_DEPTH_TEST);  break;
@@ -877,10 +890,17 @@ void PApplet::line(float x1, float y1, float x2, float y2) {
     glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
     glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE);
     // Draw body into stencil
+#ifdef __EMSCRIPTEN__
+    glBegin(GL_TRIANGLES);
+    glVertex2f(x1+px2,y1+py2); glVertex2f(x2+px2,y2+py2); glVertex2f(x2-px2,y2-py2);
+    glVertex2f(x1+px2,y1+py2); glVertex2f(x2-px2,y2-py2); glVertex2f(x1-px2,y1-py2);
+    glEnd();
+#else
     glBegin(GL_QUADS);
     glVertex2f(x1+px2,y1+py2); glVertex2f(x2+px2,y2+py2);
     glVertex2f(x2-px2,y2-py2); glVertex2f(x1-px2,y1-py2);
     glEnd();
+#endif
     // Draw end caps into stencil
     for(int ep=0;ep<2;ep++){
         float cx2=ep?x2:x1, cy2=ep?y2:y1;
@@ -901,10 +921,17 @@ void PApplet::line(float x1, float y1, float x2, float y2) {
     // Fill bounding box with stroke color
     float minx=std::min(x1,x2)-r, maxx=std::max(x1,x2)+r;
     float miny=std::min(y1,y2)-r, maxy=std::max(y1,y2)+r;
+#ifdef __EMSCRIPTEN__
+    glBegin(GL_TRIANGLES);
+    glVertex2f(minx,miny); glVertex2f(maxx,miny); glVertex2f(maxx,maxy);
+    glVertex2f(minx,miny); glVertex2f(maxx,maxy); glVertex2f(minx,maxy);
+    glEnd();
+#else
     glBegin(GL_QUADS);
     glVertex2f(minx,miny); glVertex2f(maxx,miny);
     glVertex2f(maxx,maxy); glVertex2f(minx,maxy);
     glEnd();
+#endif
     glDisable(GL_STENCIL_TEST);
     restoreLighting();
 }
@@ -940,12 +967,19 @@ void PApplet::rect(float x, float y, float w, float h) {
 
     if (doFill) {
         applyFill();
+#ifdef __EMSCRIPTEN__
+        glBegin(GL_TRIANGLES);
+            glVertex2f(x,     y    ); glVertex2f(x + w, y    ); glVertex2f(x + w, y + h);
+            glVertex2f(x,     y    ); glVertex2f(x + w, y + h); glVertex2f(x,     y + h);
+        glEnd();
+#else
         glBegin(GL_QUADS);
             glVertex2f(x,     y    );
             glVertex2f(x + w, y    );
             glVertex2f(x + w, y + h);
             glVertex2f(x,     y + h);
         glEnd();
+#endif
     }
 
     if (doStroke) {
@@ -967,6 +1001,14 @@ void PApplet::rect(float x, float y, float w, float h) {
         float xi = x + half, yi = y + half;       // inner edge (top-left side)
         float xow = x + w + half, yoh = y + h + half; // outer edge (bottom-right side)
         float xiw = x + w - half, yih = y + h - half; // inner edge (bottom-right side)
+#ifdef __EMSCRIPTEN__
+        glBegin(GL_TRIANGLES);
+            glVertex2f(xo,yo);glVertex2f(xow,yo);glVertex2f(xow,yi); glVertex2f(xo,yo);glVertex2f(xow,yi);glVertex2f(xo,yi);
+            glVertex2f(xo,yih);glVertex2f(xow,yih);glVertex2f(xow,yoh); glVertex2f(xo,yih);glVertex2f(xow,yoh);glVertex2f(xo,yoh);
+            glVertex2f(xo,yi);glVertex2f(xi,yi);glVertex2f(xi,yih); glVertex2f(xo,yi);glVertex2f(xi,yih);glVertex2f(xo,yih);
+            glVertex2f(xiw,yi);glVertex2f(xow,yi);glVertex2f(xow,yih); glVertex2f(xiw,yi);glVertex2f(xow,yih);glVertex2f(xiw,yih);
+        glEnd();
+#else
         glBegin(GL_QUADS);
             // Top edge
             glVertex2f(xo,  yo); glVertex2f(xow, yo); glVertex2f(xow, yi); glVertex2f(xo,  yi);
@@ -977,6 +1019,7 @@ void PApplet::rect(float x, float y, float w, float h) {
             // Right edge
             glVertex2f(xiw, yi); glVertex2f(xow, yi); glVertex2f(xow, yih); glVertex2f(xiw, yih);
         glEnd();
+#endif
         restoreLighting();
     }
 }
@@ -1047,12 +1090,19 @@ void PApplet::quad(float x1, float y1, float x2, float y2,
           float x3, float y3, float x4, float y4) {
     if (doFill) {
         applyFill();
+#ifdef __EMSCRIPTEN__
+        glBegin(GL_TRIANGLES);
+            glVertex2f(x1,y1); glVertex2f(x2,y2); glVertex2f(x3,y3);
+            glVertex2f(x1,y1); glVertex2f(x3,y3); glVertex2f(x4,y4);
+        glEnd();
+#else
         glBegin(GL_QUADS);
             glVertex2f(x1, y1);
             glVertex2f(x2, y2);
             glVertex2f(x3, y3);
             glVertex2f(x4, y4);
         glEnd();
+#endif
     }
     if (doStroke) {
         applyStroke();
@@ -1090,6 +1140,12 @@ static GLuint compileShader(GLenum type, const char* code) {
 }
 void PApplet::initPhongShader() {
     if (phongProg) return;
+#ifdef __EMSCRIPTEN__
+    // Phong shader uses GLSL 1.20 compatibility built-ins (gl_LightSource,
+    // gl_LightModel, gl_NormalMatrix) that don't exist in WebGL GLSL ES.
+    // Fall back to fixed-function emulation lighting instead.
+    return;
+#endif
     // Phong shader using compatibility profile built-ins.
     // Works on any system that supports our fixed-function GL pipeline.
     const char* vs = R"VERT(
@@ -1173,12 +1229,25 @@ void PApplet::box(float bw,float bh,float bd){
     };
     if(doFill){
         applyFill();
-        glBegin(GL_QUADS);
         for(auto& f:faces){
-            glNormal3f(f.nx,f.ny,f.nz);
-            for(auto& v:f.v) glVertex3f(v[0],v[1],v[2]);
+#ifdef __EMSCRIPTEN__
+            glBegin(GL_TRIANGLES);
+            glNormal3f(f.nx,f.ny,f.nz); glVertex3f(f.v[0][0],f.v[0][1],f.v[0][2]);
+            glNormal3f(f.nx,f.ny,f.nz); glVertex3f(f.v[1][0],f.v[1][1],f.v[1][2]);
+            glNormal3f(f.nx,f.ny,f.nz); glVertex3f(f.v[2][0],f.v[2][1],f.v[2][2]);
+            glNormal3f(f.nx,f.ny,f.nz); glVertex3f(f.v[0][0],f.v[0][1],f.v[0][2]);
+            glNormal3f(f.nx,f.ny,f.nz); glVertex3f(f.v[2][0],f.v[2][1],f.v[2][2]);
+            glNormal3f(f.nx,f.ny,f.nz); glVertex3f(f.v[3][0],f.v[3][1],f.v[3][2]);
+            glEnd();
+#else
+            glBegin(GL_QUADS);
+            for(auto& v:f.v){
+                glNormal3f(f.nx,f.ny,f.nz);
+                glVertex3f(v[0],v[1],v[2]);
+            }
+            glEnd();
+#endif
         }
-        glEnd();
         {
             GLenum err = glGetError();
             PDEBUG("PApplet::box() AFTER glEnd(): glError=0x%x firstFaceVertex=(%.1f,%.1f,%.1f)\n",
@@ -1217,15 +1286,23 @@ void PApplet::sphere(float r){
         applyFill();
         for(int i=0;i<stacks;i++){
             float a0=PI*i/stacks-HALF_PI, a1=PI*(i+1)/stacks-HALF_PI;
-            glBegin(GL_QUAD_STRIP);
-            for(int j=0;j<=slices;j++){
-                float b=TWO_PI*j/slices;
-                float x1=std::cos(a1)*std::cos(b),y1=std::sin(a1),z1=std::cos(a1)*std::sin(b);
-                float x0=std::cos(a0)*std::cos(b),y0=std::sin(a0),z0=std::cos(a0)*std::sin(b);
-                glNormal3f(x1,y1,z1); glVertex3f(r*x1,r*y1,r*z1);
-                glNormal3f(x0,y0,z0); glVertex3f(r*x0,r*y0,r*z0);
+            for(int j=0;j<slices;j++){
+                float b0=TWO_PI*j/slices, b1=TWO_PI*(j+1)/slices;
+                float x00=std::cos(a0)*std::cos(b0),y00=std::sin(a0),z00=std::cos(a0)*std::sin(b0);
+                float x01=std::cos(a0)*std::cos(b1),y01=std::sin(a0),z01=std::cos(a0)*std::sin(b1);
+                float x10=std::cos(a1)*std::cos(b0),y10=std::sin(a1),z10=std::cos(a1)*std::sin(b0);
+                float x11=std::cos(a1)*std::cos(b1),y11=std::sin(a1),z11=std::cos(a1)*std::sin(b1);
+                glBegin(GL_TRIANGLES);
+                // tri 1
+                glNormal3f(x10,y10,z10); glVertex3f(r*x10,r*y10,r*z10);
+                glNormal3f(x00,y00,z00); glVertex3f(r*x00,r*y00,r*z00);
+                glNormal3f(x01,y01,z01); glVertex3f(r*x01,r*y01,r*z01);
+                // tri 2
+                glNormal3f(x10,y10,z10); glVertex3f(r*x10,r*y10,r*z10);
+                glNormal3f(x01,y01,z01); glVertex3f(r*x01,r*y01,r*z01);
+                glNormal3f(x11,y11,z11); glVertex3f(r*x11,r*y11,r*z11);
+                glEnd();
             }
-            glEnd();
         }
         if (usePhong) glUseProgram(0);
     }
@@ -1325,8 +1402,13 @@ void PApplet::endShape(int mode){
             case TRIANGLES:     gm=GL_TRIANGLES;     break;
             case TRIANGLE_FAN:  gm=GL_TRIANGLE_FAN;  break;
             case TRIANGLE_STRIP:gm=GL_TRIANGLE_STRIP;break;
+#ifdef __EMSCRIPTEN__
+            case QUADS:         gm=GL_TRIANGLES;     break; // GL_QUADS unsupported in WebGL
+            case QUAD_STRIP:    gm=GL_TRIANGLE_STRIP; break; // GL_QUAD_STRIP unsupported in WebGL
+#else
             case QUADS:         gm=GL_QUADS;         break;
             case QUAD_STRIP:    gm=GL_QUAD_STRIP;    break;
+#endif
             default:            gm=GL_POLYGON;       break;
         }
 
@@ -1463,11 +1545,17 @@ void PApplet::endShape(int mode){
                 minz=std::min(minz,v[2]); maxz=std::max(maxz,v[2]);
             }
             float mz=(minz+maxz)*0.5f;
+#ifdef __EMSCRIPTEN__
+            glBegin(GL_TRIANGLES);
+            glVertex3f(minx,miny,mz); glVertex3f(maxx,miny,mz); glVertex3f(maxx,maxy,mz);
+            glVertex3f(minx,miny,mz); glVertex3f(maxx,maxy,mz); glVertex3f(minx,maxy,mz);
+            glEnd();
+#else
             glBegin(GL_QUADS);
             glVertex3f(minx,miny,mz); glVertex3f(maxx,miny,mz);
             glVertex3f(maxx,maxy,mz); glVertex3f(minx,maxy,mz);
             glEnd();
-
+#endif
             glDisable(GL_STENCIL_TEST);
         }
         if(doStroke){
@@ -1918,7 +2006,7 @@ void PApplet::normal(float nx, float ny, float nz) { glNormal3f(nx, ny, nz); }
 
 void PApplet::ambient(float r, float g, float b) {
     GLfloat col[] = { lc(r), lc(g), lc(b), 1.0f };
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
     glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, col);
 #endif
 }
@@ -1931,7 +2019,7 @@ void PApplet::ambient(color c) {
 
 void PApplet::emissive(float r, float g, float b) {
     GLfloat col[] = { lc(r), lc(g), lc(b), 1.0f };
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
     glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, col);
 #endif
 }
@@ -1944,7 +2032,7 @@ void PApplet::emissive(color c) {
 
 void PApplet::specular(float r, float g, float b) {
     GLfloat col[] = { lc(r), lc(g), lc(b), 1.0f };
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, col);
 #endif
 }
@@ -1956,7 +2044,7 @@ void PApplet::specular(color c) {
 }
 
 void PApplet::shininess(float s) {
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
     glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, s);
 #endif
 }
@@ -2057,6 +2145,13 @@ void PApplet::drawBitmapStr(float x, float y, const std::string& s, int scale) {
             unsigned char bits = bm[row];
             for (int col = 0; col < BF_GW; col++) {
                 if (bits & (1 << (BF_GW - 1 - col))) {
+#ifdef __EMSCRIPTEN__
+                    { float px = cx + col*scale, py = y + row*scale;
+                    glBegin(GL_TRIANGLES);
+                    glVertex2f(px,py); glVertex2f(px+scale,py); glVertex2f(px+scale,py+scale);
+                    glVertex2f(px,py); glVertex2f(px+scale,py+scale); glVertex2f(px,py+scale);
+                    glEnd(); }
+#else
                     glBegin(GL_QUADS);
                     float px = cx + col*scale, py = y + row*scale;
                     glVertex2f(px,        py);
@@ -2064,6 +2159,7 @@ void PApplet::drawBitmapStr(float x, float y, const std::string& s, int scale) {
                     glVertex2f(px+scale,  py+scale);
                     glVertex2f(px,        py+scale);
                     glEnd();
+#endif
                 }
             }
         }
@@ -2108,20 +2204,30 @@ void PApplet::drawTTFStr(float x, float y, const std::string& s) {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     // Use fill colour modulated by font alpha
     glColor4f(fillR, fillG, fillB, fillA);
-    glBegin(GL_QUADS);
-
     float cx = x;
     for (char ch : s) {
         if (ch < 32 || ch >= 128) continue;
         stbtt_aligned_quad q;
         stbtt_GetBakedQuad(g_ttf.chars, g_ttf.atlasW, g_ttf.atlasH,
                            ch - 32, &cx, &y, &q, 1);
+#ifdef __EMSCRIPTEN__
+        glBegin(GL_TRIANGLES);
+        glTexCoord2f(q.s0,q.t0); glVertex2f(q.x0,q.y0);
+        glTexCoord2f(q.s1,q.t0); glVertex2f(q.x1,q.y0);
+        glTexCoord2f(q.s1,q.t1); glVertex2f(q.x1,q.y1);
+        glTexCoord2f(q.s0,q.t0); glVertex2f(q.x0,q.y0);
+        glTexCoord2f(q.s1,q.t1); glVertex2f(q.x1,q.y1);
+        glTexCoord2f(q.s0,q.t1); glVertex2f(q.x0,q.y1);
+        glEnd();
+#else
+        glBegin(GL_QUADS);
         glTexCoord2f(q.s0, q.t0); glVertex2f(q.x0, q.y0);
         glTexCoord2f(q.s1, q.t0); glVertex2f(q.x1, q.y0);
         glTexCoord2f(q.s1, q.t1); glVertex2f(q.x1, q.y1);
         glTexCoord2f(q.s0, q.t1); glVertex2f(q.x0, q.y1);
+        glEnd();
+#endif
     }
-    glEnd();
     glBindTexture(GL_TEXTURE_2D, 0);
     glDisable(GL_TEXTURE_2D);
     if (wasLighting) glEnable(GL_LIGHTING);
@@ -2473,12 +2579,23 @@ void PApplet::drawImageRect(PImage& img,float x,float y,float w,float h){
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D,img.texID);
     glColor4f(doTint?tintR:1.f,doTint?tintG:1.f,doTint?tintB:1.f,doTint?tintA:1.f);
+#ifdef __EMSCRIPTEN__
+    glBegin(GL_TRIANGLES);
+    glTexCoord2f(0,0);glVertex2f(x,y);
+    glTexCoord2f(1,0);glVertex2f(x+w,y);
+    glTexCoord2f(1,1);glVertex2f(x+w,y+h);
+    glTexCoord2f(0,0);glVertex2f(x,y);
+    glTexCoord2f(1,1);glVertex2f(x+w,y+h);
+    glTexCoord2f(0,1);glVertex2f(x,y+h);
+    glEnd();
+#else
     glBegin(GL_QUADS);
     glTexCoord2f(0,0);glVertex2f(x,y);
     glTexCoord2f(1,0);glVertex2f(x+w,y);
     glTexCoord2f(1,1);glVertex2f(x+w,y+h);
     glTexCoord2f(0,1);glVertex2f(x,y+h);
     glEnd();
+#endif
     glBindTexture(GL_TEXTURE_2D,0);
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_BLEND);
@@ -2521,14 +2638,23 @@ void PApplet::drawPGraphicsRect(PGraphics& pg, float x, float y, float w, float 
     glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_TEXTURE_2D); glBindTexture(GL_TEXTURE_2D,pg.texID);
     glColor4f(1,1,1,1);
+#ifdef __EMSCRIPTEN__
+    glBegin(GL_TRIANGLES);
+    glTexCoord2f(0,0);glVertex2f(x,y);
+    glTexCoord2f(1,0);glVertex2f(x+w,y);
+    glTexCoord2f(1,1);glVertex2f(x+w,y+h);
+    glTexCoord2f(0,0);glVertex2f(x,y);
+    glTexCoord2f(1,1);glVertex2f(x+w,y+h);
+    glTexCoord2f(0,1);glVertex2f(x,y+h);
+    glEnd();
+#else
     glBegin(GL_QUADS);
-    // Y-up FBO with Processing Y-down remap: Processing y=0 -> v=1 (top of texture)
-    // Display with V-flip: v=1 at screen top = Processing y=0
     glTexCoord2f(0,0);glVertex2f(x,y);
     glTexCoord2f(1,0);glVertex2f(x+w,y);
     glTexCoord2f(1,1);glVertex2f(x+w,y+h);
     glTexCoord2f(0,1);glVertex2f(x,y+h);
     glEnd();
+#endif
     glBindTexture(GL_TEXTURE_2D,0); glDisable(GL_TEXTURE_2D); glDisable(GL_BLEND);
     glColor4f(1,1,1,1);
     if (wasLighting) glEnable(GL_LIGHTING);
@@ -2584,7 +2710,25 @@ void PApplet::filter(int mode, float /*param*/) {
             buf[i*4] = buf[i*4+1] = buf[i*4+2] = t;
         }
     }
+#ifndef __EMSCRIPTEN__
     glDrawPixels(winWidth, winHeight, GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
+#else
+    // WASM: upload pixels via texture blit
+    GLuint tex; glGenTextures(1,&tex);
+    glBindTexture(GL_TEXTURE_2D,tex);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,winWidth,winHeight,0,GL_RGBA,GL_UNSIGNED_BYTE,buf.data());
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+    glEnable(GL_TEXTURE_2D); glBindTexture(GL_TEXTURE_2D,tex);
+    glColor4f(1,1,1,1);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0,1);glVertex2f(0,0);
+    glTexCoord2f(1,1);glVertex2f(winWidth,0);
+    glTexCoord2f(1,0);glVertex2f(winWidth,winHeight);
+    glTexCoord2f(0,0);glVertex2f(0,winHeight);
+    glEnd();
+    glDisable(GL_TEXTURE_2D); glDeleteTextures(1,&tex);
+#endif
 }
 void PApplet::loadPixels() {
     int total = winWidth * winHeight;
@@ -2624,7 +2768,24 @@ void PApplet::updatePixels() {
             rgba[di*4 + 3] = (pixels[si] >> 24) & 0xFF;  // A
         }
     }
+#ifndef __EMSCRIPTEN__
     glDrawPixels(winWidth, winHeight, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+#else
+    GLuint tex; glGenTextures(1,&tex);
+    glBindTexture(GL_TEXTURE_2D,tex);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,winWidth,winHeight,0,GL_RGBA,GL_UNSIGNED_BYTE,rgba.data());
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+    glEnable(GL_TEXTURE_2D); glBindTexture(GL_TEXTURE_2D,tex);
+    glColor4f(1,1,1,1);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0,1);glVertex2f(0,0);
+    glTexCoord2f(1,1);glVertex2f(winWidth,0);
+    glTexCoord2f(1,0);glVertex2f(winWidth,winHeight);
+    glTexCoord2f(0,0);glVertex2f(0,winHeight);
+    glEnd();
+    glDisable(GL_TEXTURE_2D); glDeleteTextures(1,&tex);
+#endif
 }
 color PApplet::get(int x, int y) {
     unsigned char p[4];
@@ -2640,8 +2801,28 @@ void PApplet::set(int x, int y, color c) {
         (unsigned char)( v        & 0xFF),  // B
         (unsigned char)((v >> 24) & 0xFF)   // A
     };
+#ifndef __EMSCRIPTEN__
     glWindowPos2i(x, winHeight - 1 - y);
     glDrawPixels(1, 1, GL_RGBA, GL_UNSIGNED_BYTE, p);
+#else
+    // WASM: single pixel set via texture
+    GLuint tex; glGenTextures(1,&tex);
+    glBindTexture(GL_TEXTURE_2D,tex);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,1,1,0,GL_RGBA,GL_UNSIGNED_BYTE,p);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+    glEnable(GL_TEXTURE_2D); glBindTexture(GL_TEXTURE_2D,tex);
+    glColor4f(1,1,1,1);
+    glBegin(GL_TRIANGLES);
+    glTexCoord2f(0,0);glVertex2f((float)x,(float)y);
+    glTexCoord2f(1,0);glVertex2f((float)x+1,(float)y);
+    glTexCoord2f(1,1);glVertex2f((float)x+1,(float)y+1);
+    glTexCoord2f(0,0);glVertex2f((float)x,(float)y);
+    glTexCoord2f(1,1);glVertex2f((float)x+1,(float)y+1);
+    glTexCoord2f(0,1);glVertex2f((float)x,(float)y+1);
+    glEnd();
+    glDisable(GL_TEXTURE_2D); glDeleteTextures(1,&tex);
+#endif
 }
 
 // =============================================================================
@@ -2679,6 +2860,32 @@ void PApplet::noClip() {
 // =============================================================================
 
 void PApplet::saveFrame(const std::string& filename) {
+#ifdef __EMSCRIPTEN__
+    // WASM: capture pixels and trigger browser download
+    int _sw = logicalW, _sh = logicalH;
+    std::vector<unsigned char> _spx(_sw * _sh * 4);
+    glReadPixels(0, 0, _sw, _sh, GL_RGBA, GL_UNSIGNED_BYTE, _spx.data());
+    for (int _sy = 0; _sy < _sh/2; _sy++)
+        for (int _sx = 0; _sx < _sw*4; _sx++)
+            std::swap(_spx[_sy*_sw*4+_sx], _spx[(_sh-1-_sy)*_sw*4+_sx]);
+    int pngLen = 0;
+    unsigned char* png = stbi_write_png_to_mem(_spx.data(), _sw*4, _sw, _sh, 4, &pngLen);
+    if (png && pngLen > 0) {
+        // Pass to JS for download
+        EM_ASM({
+            var arr = new Uint8Array(Module.HEAPU8.buffer, $0, $1);
+            var blob = new Blob([arr], {type:'image/png'});
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url; a.download = UTF8ToString($2);
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, png, pngLen, filename.c_str());
+        free(png);
+    }
+    return;
+#endif
     std::string fn = filename;
     size_t pos = fn.find("####");
     if (pos != std::string::npos) {
@@ -3122,7 +3329,9 @@ void PApplet::run(){
     if(phongProg){glDeleteProgram(phongProg);phongProg=0;}
     glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_DEPTH_TEST);
+#ifndef __EMSCRIPTEN__
     glShadeModel(GL_SMOOTH);
+#endif
     glEnable(GL_NORMALIZE);
     smooth();
     // Don't call setProjection here -- let size() in this->setup() do it
@@ -3176,7 +3385,8 @@ void PApplet::run(){
             _docsPath = std::string(ud) + "/Documents/Processing/";
 #endif
 
-        if (!tryLoadTTF(_modePath + "fonts/" + _font, g_textSize) &&
+        if (!tryLoadTTF("fonts/" + _font, g_textSize) &&
+            !tryLoadTTF(_modePath + "fonts/" + _font, g_textSize) &&
             !tryLoadTTF(_modePath + _font, g_textSize) &&
             !tryLoadTTF(_docsPath + "modes/CppMode/fonts/" + _font, g_textSize) &&
             // Windows: Processing4 install locations
@@ -3215,7 +3425,7 @@ void PApplet::run(){
     glfwSwapBuffers(gWindow);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     glfwSwapBuffers(gWindow);
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
     for (int _settle = 0; _settle < 5; _settle++) {
         glClearColor(0.8f,0.8f,0.8f,1);
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
@@ -3292,7 +3502,7 @@ void PApplet::run(){
 
     redrawOnce = looping;
     auto last=std::chrono::steady_clock::now();
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
     // Drain Windows message queue before entering main loop.
     // On Windows, a WM_QUIT from a previous sketch run can be in the queue.
     // Poll multiple times to flush it, then forcibly clear the close flag.
@@ -3309,7 +3519,7 @@ void PApplet::run(){
         }
     }
 #endif
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
     while(!glfwWindowShouldClose(gWindow)){
 
         if(looping||redrawOnce){
@@ -3411,24 +3621,24 @@ void PApplet::run(){
             // Reset material to neutral so non-lit objects look correct
             GLfloat matWhite[] = { 0.8f, 0.8f, 0.8f, 1.0f };
             GLfloat matBlack[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
             glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT,  matBlack);
 #endif
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
             glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE,  matWhite);
 #endif
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
             glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, matBlack);
 #endif
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
             glMaterialf (GL_FRONT_AND_BACK, GL_SHININESS, 0.0f);
 #endif
             // Reset specular material to none
             GLfloat noSpec[] = {0,0,0,1};
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
             glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, noSpec);
 #endif
-#ifndef EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
             glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, noSpec);
 #endif
 
@@ -3483,12 +3693,28 @@ void PApplet::run(){
         auto* p = static_cast<PApplet*>(arg);
         if(p->looping||p->redrawOnce){
             p->redrawOnce=false;
-            glViewport(0, 0, p->winWidth, p->winHeight);
-            glMatrixMode(GL_PROJECTION); glLoadIdentity();
-            glOrtho(0, p->logicalW, p->logicalH, 0, -1, 1);
-            glMatrixMode(GL_MODELVIEW); glLoadIdentity();
-            glDisable(GL_DEPTH_TEST);
+            if(p->defaultP3D){
+                glViewport(0, 0, p->winWidth, p->winHeight);
+                glEnable(GL_DEPTH_TEST);
+                glDepthFunc(GL_LESS);
+                glDisable(GL_CULL_FACE);
+                glFrontFace(GL_CW);
+                glEnable(GL_NORMALIZE);
+                glClear(GL_DEPTH_BUFFER_BIT);
+                p->applyDefaultCamera();
+            } else {
+                glViewport(0, 0, p->winWidth, p->winHeight);
+                glMatrixMode(GL_PROJECTION); glLoadIdentity();
+                glOrtho(0, p->logicalW, p->logicalH, 0, -1, 1);
+                glMatrixMode(GL_MODELVIEW); glLoadIdentity();
+                glDisable(GL_DEPTH_TEST);
+                glDisable(GL_LIGHTING);
+            }
+            // reset lights each frame
+            for(int _li=0;_li<8;_li++) glDisable(GL_LIGHT0+_li);
             glDisable(GL_LIGHTING);
+            glDisable(GL_COLOR_MATERIAL);
+            p->lightsEnabled=false; p->lightIndex=0;
             p->_backgroundCalledThisFrame=false;
             ++p->frameCount;
             p->draw();
@@ -3498,6 +3724,80 @@ void PApplet::run(){
     }, this, 0, 1);
 #endif
 }
+
+// =============================================================================
+// PGRAPHICS EXTENDED METHOD IMPLEMENTATIONS
+// All methods call through to PApplet after beginDraw() has set up context.
+// =============================================================================
+
+void PGraphics::stroke(float g, float a)               { if(PApplet::g_papplet) PApplet::g_papplet->stroke(g,a); }
+void PGraphics::stroke(float r, float g, float b, float a){ if(PApplet::g_papplet) PApplet::g_papplet->stroke(r,g,b,a); }
+void PGraphics::stroke(color c)                        { if(PApplet::g_papplet) PApplet::g_papplet->stroke(c); }
+void PGraphics::fill(float g, float a)                 { if(PApplet::g_papplet) PApplet::g_papplet->fill(g,a); }
+void PGraphics::fill(color c)                          { if(PApplet::g_papplet) PApplet::g_papplet->fill(c); }
+void PGraphics::background(color c)                    { if(PApplet::g_papplet) PApplet::g_papplet->background(c); }
+void PGraphics::beginShape(int kind)                   { if(PApplet::g_papplet) PApplet::g_papplet->beginShape(kind); }
+void PGraphics::vertex(float x, float y, float z)     { if(PApplet::g_papplet) PApplet::g_papplet->vertex(x,y,z); }
+void PGraphics::camera()                               { if(PApplet::g_papplet) PApplet::g_papplet->camera(); }
+void PGraphics::camera(float ex,float ey,float ez,float cx,float cy,float cz,float ux,float uy,float uz)
+                                                       { if(PApplet::g_papplet) PApplet::g_papplet->camera(ex,ey,ez,cx,cy,cz,ux,uy,uz); }
+void PGraphics::perspective()                          { if(PApplet::g_papplet) PApplet::g_papplet->perspective(); }
+void PGraphics::perspective(float fov,float aspect,float zNear,float zFar)
+                                                       { if(PApplet::g_papplet) PApplet::g_papplet->perspective(fov,aspect,zNear,zFar); }
+void PGraphics::ortho()                                { if(PApplet::g_papplet) PApplet::g_papplet->ortho(); }
+void PGraphics::ortho(float l,float r,float b,float t,float n,float f)
+                                                       { if(PApplet::g_papplet) PApplet::g_papplet->ortho(l,r,b,t,n,f); }
+void PGraphics::bezier(float x1,float y1,float cx1,float cy1,float cx2,float cy2,float x2,float y2)
+                                                       { if(PApplet::g_papplet) PApplet::g_papplet->bezier(x1,y1,cx1,cy1,cx2,cy2,x2,y2); }
+void PGraphics::curve(float x0,float y0,float x1,float y1,float x2,float y2,float x3,float y3)
+                                                       { if(PApplet::g_papplet) PApplet::g_papplet->curve(x0,y0,x1,y1,x2,y2,x3,y3); }
+void PGraphics::bezierVertex(float cx1,float cy1,float cx2,float cy2,float x,float y)
+                                                       { if(PApplet::g_papplet) PApplet::g_papplet->bezierVertex(cx1,cy1,cx2,cy2,x,y); }
+void PGraphics::curveVertex(float x, float y)          { if(PApplet::g_papplet) PApplet::g_papplet->curveVertex(x,y); }
+void PGraphics::image(PImage* img,float x,float y)    { if(PApplet::g_papplet) PApplet::g_papplet->image(img,x,y); }
+void PGraphics::image(PImage* img,float x,float y,float w,float h)
+                                                       { if(PApplet::g_papplet) PApplet::g_papplet->image(img,x,y,w,h); }
+void PGraphics::tint(float gray)                       { if(PApplet::g_papplet) PApplet::g_papplet->tint(gray); }
+void PGraphics::tint(float gray,float a)               { if(PApplet::g_papplet) PApplet::g_papplet->tint(gray,a); }
+void PGraphics::tint(float r,float g,float b,float a)  { if(PApplet::g_papplet) PApplet::g_papplet->tint(r,g,b,a); }
+void PGraphics::noTint()                               { if(PApplet::g_papplet) PApplet::g_papplet->noTint(); }
+void PGraphics::colorMode(int mode,float mx)           { if(PApplet::g_papplet) PApplet::g_papplet->colorMode(mode,mx); }
+void PGraphics::colorMode(int mode,float mH,float mS,float mB,float mA)
+                                                       { if(PApplet::g_papplet) PApplet::g_papplet->colorMode(mode,mH,mS,mB,mA); }
+void PGraphics::textLeading(float v)                   { if(PApplet::g_papplet) PApplet::g_papplet->textLeading(v); }
+float PGraphics::textWidth(const std::string& s)       { return PApplet::g_papplet ? PApplet::g_papplet->textWidth(s) : 0; }
+void PGraphics::push()                                 { if(PApplet::g_papplet) PApplet::g_papplet->push(); }
+void PGraphics::pop()                                  { if(PApplet::g_papplet) PApplet::g_papplet->pop(); }
+void PGraphics::scale(float sx,float sy)               { if(PApplet::g_papplet) PApplet::g_papplet->scale(sx,sy); }
+void PGraphics::rect(float x,float y,float w,float h,float r)                     { if(PApplet::g_papplet) PApplet::g_papplet->rect(x,y,w,h,r); }
+void PGraphics::resetMatrix()                          { if(PApplet::g_papplet) PApplet::g_papplet->resetMatrix(); }
+void PGraphics::shearX(float a)                        { if(PApplet::g_papplet) PApplet::g_papplet->shearX(a); }
+void PGraphics::shearY(float a)                        { if(PApplet::g_papplet) PApplet::g_papplet->shearY(a); }
+void PGraphics::normal(float nx,float ny,float nz)     { if(PApplet::g_papplet) PApplet::g_papplet->normal(nx,ny,nz); }
+void PGraphics::shininess(float s)                     { if(PApplet::g_papplet) PApplet::g_papplet->shininess(s); }
+void PGraphics::specular(float r,float g,float b)      { if(PApplet::g_papplet) PApplet::g_papplet->specular(r,g,b); }
+void PGraphics::emissive(float r,float g,float b)      { if(PApplet::g_papplet) PApplet::g_papplet->emissive(r,g,b); }
+void PGraphics::ambient(float r,float g,float b)       { if(PApplet::g_papplet) PApplet::g_papplet->ambient(r,g,b); }
+void PGraphics::rectMode(int m)                        { if(PApplet::g_papplet) PApplet::g_papplet->rectMode(m); }
+void PGraphics::ellipseMode(int m)                     { if(PApplet::g_papplet) PApplet::g_papplet->ellipseMode(m); }
+void PGraphics::imageMode(int m)                       { if(PApplet::g_papplet) PApplet::g_papplet->imageMode(m); }
+void PGraphics::noSmooth()                             { if(PApplet::g_papplet) PApplet::g_papplet->noSmooth(); }
+void PGraphics::smooth()                               { if(PApplet::g_papplet) PApplet::g_papplet->smooth(); }
+void PGraphics::circle(float x,float y,float d)        { if(PApplet::g_papplet) PApplet::g_papplet->circle(x,y,d); }
+void PGraphics::square(float x,float y,float s)        { if(PApplet::g_papplet) PApplet::g_papplet->square(x,y,s); }
+void PGraphics::quad(float x1,float y1,float x2,float y2,float x3,float y3,float x4,float y4)
+                                                       { if(PApplet::g_papplet) PApplet::g_papplet->quad(x1,y1,x2,y2,x3,y3,x4,y4); }
+void PGraphics::arc(float cx,float cy,float w,float h,float sa,float ea)
+                                                       { if(PApplet::g_papplet) PApplet::g_papplet->arc(cx,cy,w,h,sa,ea); }
+void PGraphics::arc(float cx,float cy,float w,float h,float sa,float ea,int mode)
+                                                       { if(PApplet::g_papplet) PApplet::g_papplet->arc(cx,cy,w,h,sa,ea,mode); }
+void PGraphics::blendMode(int mode)                    { if(PApplet::g_papplet) PApplet::g_papplet->blendMode(mode); }
+void PGraphics::clip(float x,float y,float w,float h)  { if(PApplet::g_papplet) PApplet::g_papplet->clip(x,y,w,h); }
+void PGraphics::noClip()                               { if(PApplet::g_papplet) PApplet::g_papplet->noClip(); }
+void PGraphics::loadPixels()                           { if(PApplet::g_papplet) PApplet::g_papplet->loadPixels(); }
+void PGraphics::updatePixels()                         { if(PApplet::g_papplet) PApplet::g_papplet->updatePixels(); }
+color PGraphics::get(int x,int y)                      { return PApplet::g_papplet ? PApplet::g_papplet->get(x,y) : color(0); }
+void PGraphics::set(int x,int y,color c)               { if(PApplet::g_papplet) PApplet::g_papplet->set(x,y,c); }
 
 // =============================================================================
 // JSON IMPLEMENTATION
@@ -4331,10 +4631,17 @@ void PApplet::drawPShape(const PShape& s,float x,float y,float w,float h,bool pa
             glStencilOp(GL_KEEP,GL_KEEP,GL_KEEP);
             float minx=s.verts[0].x,maxx=minx,miny=s.verts[0].y,maxy=miny;
             for(auto& v:s.verts){minx=std::min(minx,v.x);maxx=std::max(maxx,v.x);miny=std::min(miny,v.y);maxy=std::max(maxy,v.y);}
+#ifdef __EMSCRIPTEN__
+            glBegin(GL_TRIANGLES);
+            glVertex3f(minx,miny,0);glVertex3f(maxx,miny,0);glVertex3f(maxx,maxy,0);
+            glVertex3f(minx,miny,0);glVertex3f(maxx,maxy,0);glVertex3f(minx,maxy,0);
+            glEnd();
+#else
             glBegin(GL_QUADS);
             glVertex3f(minx,miny,0);glVertex3f(maxx,miny,0);
             glVertex3f(maxx,maxy,0);glVertex3f(minx,maxy,0);
             glEnd();
+#endif
             glDisable(GL_STENCIL_TEST);
             glDisable(GL_BLEND);
             } // end else (non-TRIANGLES path)
@@ -4495,18 +4802,27 @@ BufferedReader* PApplet::createReader(const std::string& path){ return new Buffe
 PrintWriter* PApplet::createWriter(const std::string& path){ return new PrintWriter(path); }
 
 std::string PApplet::selectInput(const std::string& prompt,const std::string&){
+#ifdef __EMSCRIPTEN__
+    (void)prompt; return "";
+#endif
     std::string cmd="zenity --file-selection --title=\""+prompt+"\" 2>/dev/null";
     FILE* p=popen(cmd.c_str(),"r"); if(!p)return "";
     char buf[4096]=""; fgets(buf,sizeof(buf),p); pclose(p);
     std::string r(buf); if(!r.empty()&&r.back()=='\n')r.pop_back(); return r;
 }
 std::string PApplet::selectOutput(const std::string& prompt,const std::string&){
+#ifdef __EMSCRIPTEN__
+    (void)prompt; return "";
+#endif
     std::string cmd="zenity --file-selection --save --title=\""+prompt+"\" 2>/dev/null";
     FILE* p=popen(cmd.c_str(),"r"); if(!p)return "";
     char buf[4096]=""; fgets(buf,sizeof(buf),p); pclose(p);
     std::string r(buf); if(!r.empty()&&r.back()=='\n')r.pop_back(); return r;
 }
 std::string PApplet::selectFolder(const std::string& prompt){
+#ifdef __EMSCRIPTEN__
+    (void)prompt; return "";
+#endif
     std::string cmd="zenity --file-selection --directory --title=\""+prompt+"\" 2>/dev/null";
     FILE* p=popen(cmd.c_str(),"r"); if(!p)return "";
     char buf[4096]=""; fgets(buf,sizeof(buf),p); pclose(p);
@@ -4730,3 +5046,4 @@ std::string PApplet::binary(int v) {
 }
 
 } // namespace Processing
+

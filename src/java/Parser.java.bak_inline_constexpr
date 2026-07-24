@@ -1412,9 +1412,6 @@ public final class Parser {
             matchKeyword("consteval");
             matchKeyword("constinit");
             matchKeyword("inline");
-            matchKeyword("constexpr"); // "inline constexpr int x" -- C++17 inline variable
-            matchKeyword("consteval");
-            matchKeyword("constinit");
             matchKeyword("static"); // tolerate either order, mirroring the real parse path
 
             if (looksLikeFunctionPointerVariable()) return true;

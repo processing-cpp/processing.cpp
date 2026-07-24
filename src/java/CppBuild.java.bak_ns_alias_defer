@@ -1305,11 +1305,10 @@ public class CppBuild {
             // Must also be outside namespace Processing -- same constraint as above.
             preNs.append(CodeGen.generateNode(item, 0));
           } else if (rt.startsWith("namespace ") && rt.contains(" = ")) {
-            // Namespace alias: "namespace Short = Long::Name;"
-            // Must be emitted AFTER the namespaces it references are defined,
-            // but within the same namespace scope (namespace Processing).
-            // Defer until after struct definitions like type aliases.
-            deferredAliases.add(item);
+            // Namespace alias: "namespace Short = Long::Name;" -- must be at global scope
+            // so it resolves correctly without being inside namespace Processing.
+            System.err.println("[DEBUG] hoisting namespace alias: " + rt);
+            preNs.append(CodeGen.generateNode(item, 0));
           } else {
             out.append(CodeGen.generateNode(item, 0));
           }

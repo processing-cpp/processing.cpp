@@ -766,6 +766,8 @@ public:
 // PGRAPHICS  --  Off-screen render target (framebuffer object)
 // =============================================================================
 
+struct color;  // forward declaration -- full definition follows PApplet
+
 class PGraphics : public PImage {
 public:
     GLuint fbo = 0; // framebuffer object
@@ -907,6 +909,7 @@ public:
     void strokeWeight(float w);
     void ellipse(float x, float y, float w, float h);
     void rect(float x, float y, float w, float h);
+    void rect(float x, float y, float w, float h, float r);
     void line(float x1, float y1, float x2, float y2);
     void point(float x, float y);
     void triangle(float x1,float y1,float x2,float y2,float x3,float y3);
@@ -935,6 +938,59 @@ public:
     void pushMatrix(); void popMatrix();
     void beginShape(); void endShape(int mode=0); void vertex(float x, float y);
     void clear();
+
+    // ── Additional PGraphics methods matching Java Processing ──────────────
+    void stroke(float g, float a);
+    void stroke(float r, float g, float b, float a);
+    void fill(float g, float a);
+    void beginShape(int kind);
+    void vertex(float x, float y, float z);
+    void camera();
+    void camera(float ex,float ey,float ez,float cx,float cy,float cz,float ux,float uy,float uz);
+    void perspective();
+    void perspective(float fov, float aspect, float zNear, float zFar);
+    void ortho();
+    void ortho(float l, float r, float b, float t, float n, float f);
+    void bezier(float x1,float y1,float cx1,float cy1,float cx2,float cy2,float x2,float y2);
+    void curve(float x0,float y0,float x1,float y1,float x2,float y2,float x3,float y3);
+    void bezierVertex(float cx1,float cy1,float cx2,float cy2,float x,float y);
+    void curveVertex(float x, float y);
+    void image(PImage* img, float x, float y);
+    void image(PImage* img, float x, float y, float w, float h);
+    void tint(float gray);
+    void tint(float gray, float a);
+    void tint(float r, float g, float b, float a);
+    void noTint();
+    void colorMode(int mode, float mx=255);
+    void colorMode(int mode, float mH, float mS, float mB, float mA);
+    void textLeading(float v);
+    float textWidth(const std::string& s);
+    void push(); void pop();
+    void scale(float sx, float sy);
+    void resetMatrix();
+    void shearX(float a); void shearY(float a);
+    void normal(float nx, float ny, float nz);
+    void shininess(float s);
+    void specular(float r, float g, float b);
+    void emissive(float r, float g, float b);
+    void ambient(float r, float g, float b);
+    void rectMode(int m); void ellipseMode(int m); void imageMode(int m);
+    void noSmooth(); void smooth();
+    void circle(float x, float y, float d);
+    void square(float x, float y, float s);
+    void quad(float x1,float y1,float x2,float y2,float x3,float y3,float x4,float y4);
+    void arc(float cx,float cy,float w,float h,float sa,float ea);
+    void arc(float cx,float cy,float w,float h,float sa,float ea,int mode);
+    void blendMode(int mode);
+    void clip(float x, float y, float w, float h); void noClip();
+    void loadPixels(); void updatePixels();
+    void stroke(color c);
+    void fill(color c);
+    void background(color c);
+    color get(int x, int y);
+    void set(int x, int y, color c);
+
+
 
     ~PGraphics() {
         // Defensive cleanup: a PGraphics can be destroyed (via delete, or
@@ -1257,6 +1313,7 @@ struct color {
 // Build a color value from components (respects colorMode)
 
 // Pack raw 0-255 RGBA without colorMode (for internal use)
+
 inline color colorVal(int r, int g, int b, int a=255) {
     // Clamp to [0,255] -- don't wrap, which would cause dark artifacts
     // when noise()*255 or other values slightly exceed 255
@@ -3742,6 +3799,7 @@ struct PApplet {
     template<typename A, typename B, typename C, typename D, typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
     void background(A r, B g, C b, D a) { background((float)r,(float)g,(float)b,(float)a); }
     void clear();
+
 
     // ── Fill ─────────────────────────────────────────────────────────────────
     void fill(float gray, float a);

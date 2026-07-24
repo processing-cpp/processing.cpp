@@ -492,34 +492,12 @@ public class CppBuild {
 
   private void checkWindowsDLLs(RunnerListener listener, File binary) throws Exception {
     String[] required = { "glfw3.dll", "glew32.dll" };
-    String[] allDlls  = { "glfw3.dll", "glew32.dll",
-        "libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll" };
-    String[] msysDirs = { "C:\\msys64\\mingw64\\bin", "C:\\msys2\\mingw64\\bin" };
-
     java.util.List<String> searchDirs = new java.util.ArrayList<>();
     searchDirs.add(binary.getParent());
-    for (String d : msysDirs) searchDirs.add(d);
+    searchDirs.add("C:\\msys64\\mingw64\\bin");
+    searchDirs.add("C:\\msys2\\mingw64\\bin");
     String path = System.getenv("PATH");
     if (path != null) for (String p : path.split(";")) searchDirs.add(p);
-
-    // Always copy all required DLLs next to the binary so the sketch can
-    // find them at runtime without MSYS2 on PATH. This is the root cause of
-    // exit code -1073741819 (0xC0000005) on fresh Windows installs: the DLLs
-    // exist in C:\msys64\mingw64in but Windows can't find them at runtime
-    // unless they're next to the exe or on PATH. Copy unconditionally.
-    for (String dll : allDlls) {
-      File dest = new File(binary.getParent(), dll);
-      if (dest.exists()) continue; // already copied from a previous run
-      for (String dir : msysDirs) {
-        File src2 = new File(dir, dll);
-        if (src2.exists()) {
-          try { java.nio.file.Files.copy(src2.toPath(), dest.toPath(),
-              java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
-          catch (Exception ignored) {}
-          break;
-        }
-      }
-    }
 
     java.util.List<String> missing = new java.util.ArrayList<>();
     outer:
@@ -1163,17 +1141,7 @@ public class CppBuild {
           preNs.append(CodeGen.generateNode(item, 0)); // hoist before namespace
           continue;
         }
-        if (item instanceof PreprocessorLine pl3) {
-          String rt3 = pl3.rawText().trim();
-          if (rt3.startsWith("extern template ") || rt3.startsWith("template ")
-              || (rt3.startsWith("namespace ") && rt3.contains(" = "))) {
-            preNs.append(CodeGen.generateNode(item, 0)); // hoist to global scope
-          } else {
-            fileScopeOnly.append(CodeGen.generateNode(item, 0));
-          }
-          continue;
-        }
-        if (item instanceof NamespaceDecl || item instanceof UsingNamespaceDecl) {
+        if (item instanceof PreprocessorLine || item instanceof NamespaceDecl || item instanceof UsingNamespaceDecl) {
           fileScopeOnly.append(CodeGen.generateNode(item, 0));
           continue;
         }
@@ -1300,16 +1268,6 @@ public class CppBuild {
           } else if (rt.startsWith("template ") && !rt.startsWith("template<") && !rt.startsWith("template <")) {
             // Explicit template instantiation: must be outside namespace Processing
             preNs.append(CodeGen.generateNode(item, 0));
-          } else if (rt.startsWith("extern template ")) {
-            // Explicit instantiation declaration: "extern template class std::vector<float>;"
-            // Must also be outside namespace Processing -- same constraint as above.
-            preNs.append(CodeGen.generateNode(item, 0));
-          } else if (rt.startsWith("namespace ") && rt.contains(" = ")) {
-            // Namespace alias: "namespace Short = Long::Name;"
-            // Must be emitted AFTER the namespaces it references are defined,
-            // but within the same namespace scope (namespace Processing).
-            // Defer until after struct definitions like type aliases.
-            deferredAliases.add(item);
           } else {
             out.append(CodeGen.generateNode(item, 0));
           }
