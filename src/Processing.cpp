@@ -548,7 +548,7 @@ void PApplet::size(int w,int h){
             }
             #ifdef _WIN32
             Sleep(1);
-            #else
+            #elif !defined(__EMSCRIPTEN__)
             usleep(1000);
             #endif
         }
@@ -2494,8 +2494,10 @@ PImage* PApplet::loadImage(const std::string& path){
         std::string _ep(_buf);
         size_t _sl = _ep.find_last_of("\\\\");
 #else
+#ifndef __EMSCRIPTEN__
         ssize_t _len = readlink("/proc/self/exe", _buf, sizeof(_buf)-1);
         if (_len > 0) _buf[_len] = 0;
+#endif
         std::string _ep(_buf);
         size_t _sl = _ep.find_last_of("/");
 #endif
@@ -4851,8 +4853,10 @@ PImage* PApplet::requestImage(const std::string& path){
         std::string _ep(_buf);
         size_t _sl = _ep.find_last_of("\\\\");
 #else
+#ifndef __EMSCRIPTEN__
         ssize_t _len = readlink("/proc/self/exe", _buf, sizeof(_buf)-1);
         if (_len > 0) _buf[_len] = 0;
+#endif
         std::string _ep(_buf);
         size_t _sl = _ep.find_last_of("/");
 #endif
