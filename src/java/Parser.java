@@ -3162,7 +3162,11 @@ public final class Parser {
 
     private boolean isStructuredBindingStart() {
         int i = pos;
+        // Consume optional leading qualifiers: const, constexpr, constinit
         if (i < tokens.size() && tokens.get(i).isKeyword("const")) i++;
+        if (i < tokens.size() && tokens.get(i).isKeyword("constexpr")) i++;
+        if (i < tokens.size() && tokens.get(i).isKeyword("constinit")) i++;
+        if (i < tokens.size() && tokens.get(i).isKeyword("const")) i++; // const after constexpr
         if (i >= tokens.size() || !tokens.get(i).isKeyword("auto")) return false;
         i++;
         if (i < tokens.size() && (tokens.get(i).isOp("&") || tokens.get(i).isOp("&&"))) i++;
@@ -3172,6 +3176,9 @@ public final class Parser {
     private Statement parseStructuredBinding(List<CppLexerToken> leadingComments) {
         CppLexerToken start = peek();
         matchKeyword("const");
+        matchKeyword("constexpr");
+        matchKeyword("constinit");
+        matchKeyword("const"); // const after constexpr
         expectKeyword("auto");
         matchOp("&"); matchOp("&&");
         expectPunct("[");
