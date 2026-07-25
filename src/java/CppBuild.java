@@ -1111,6 +1111,24 @@ out.append("#if __has_include(<inplace_vector>)\n");
 out.append("using std::inplace_vector;\n");
 out.append("#endif\n");
 out.append("#endif\n");
+// C++23 additions (GCC sets __cplusplus=202302L for -std=c++23)
+out.append("#if __cplusplus >= 202302L\n");
+out.append("#if __has_include(<expected>)\n");
+out.append("using std::expected; using std::unexpected;\n");
+out.append("#endif\n");
+out.append("#if __has_include(<print>)\n");
+out.append("using std::print; using std::println;\n");
+out.append("#endif\n");
+out.append("#endif\n");
+// C++26 additions (GCC sets __cplusplus=202400 for -std=c++2c)
+out.append("#if __cplusplus >= 202400L\n");
+out.append("#if __has_include(<inplace_vector>)\n");
+out.append("using std::inplace_vector;\n");
+out.append("#endif\n");
+out.append("#if __has_include(<function_ref>)\n");
+out.append("using std::function_ref;\n");
+out.append("#endif\n");
+out.append("#endif\n");
 
     out.append(preNs); // user #include directives hoisted to global scope
     out.append("using namespace std;\n");

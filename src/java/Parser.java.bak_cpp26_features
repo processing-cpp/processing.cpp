@@ -1100,6 +1100,12 @@ public final class Parser {
                 advance(); isDefault = true;
             } else if (checkKeyword("delete")) {
                 advance(); isDelete = true;
+                // C++26: = delete("reason") -- optional string message
+                if (checkPunct("(")) {
+                    advance(); // (
+                    while (!isAtEnd() && !checkPunct(")")) advance();
+                    matchPunct(")");
+                }
             } else if (checkLiteralZero()) {
                 advance();
                 isPureVirtual = true;

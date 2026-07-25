@@ -1106,6 +1106,12 @@ public final class Parser {
                     while (!isAtEnd() && !checkPunct(")")) advance();
                     matchPunct(")");
                 }
+                // C++26: = delete("reason") -- optional string message
+                if (checkPunct("(")) {
+                    advance(); // (
+                    while (!isAtEnd() && !checkPunct(")")) advance();
+                    matchPunct(")");
+                }
             } else if (checkLiteralZero()) {
                 advance();
                 isPureVirtual = true;

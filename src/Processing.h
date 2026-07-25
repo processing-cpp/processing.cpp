@@ -25,6 +25,22 @@
 #include <dirent.h>
 #endif
 #include <functional>
+// C++23/26 headers -- guarded by __has_include for maximum portability
+#if __has_include(<expected>)
+#  include <expected>
+#endif
+#if __has_include(<flat_map>)
+#  include <flat_map>
+#endif
+#if __has_include(<flat_set>)
+#  include <flat_set>
+#endif
+#if __has_include(<print>)
+#  include <print>
+#endif
+#if __has_include(<inplace_vector>)
+#  include <inplace_vector>
+#endif
 // <coroutine> requires -fcoroutines on GCC; guard it so the header compiles
 // without that flag when coroutines aren't needed by the user's sketch.
 #if defined(__cpp_impl_coroutine) || defined(__clang__) || defined(_MSC_VER) ||     (defined(__GNUC__) && defined(_GLIBCXX_COROUTINE))
