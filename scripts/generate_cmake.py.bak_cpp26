@@ -297,7 +297,7 @@ project(processing_cpp VERSION __PROCESSING_CPP_VERSION__ LANGUAGES CXX)
 # scripts/generate_cmake.py. Don't hand-edit a copy of this folder;
 # re-run that script instead.
 
-set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Needed early -- CMAKE_INSTALL_INCLUDEDIR (used a few lines down, in
@@ -321,7 +321,7 @@ target_compile_definitions(processing_cpp PUBLIC
     PROCESSING_HAS_STB_TRUETYPE
 )
 
-target_compile_features(processing_cpp PUBLIC cxx_std_26)
+target_compile_features(processing_cpp PUBLIC cxx_std_17)
 
 option(PROCESSING_CPP_FETCH_DEPS "Build GLFW/GLEW from source if missing" OFF)
 
