@@ -103,6 +103,16 @@ public final class Parser {
         return t;
     }
 
+    private CppLexerToken prev() {
+        // Walk backward from pos-1 skipping comments, return the last
+        // consumed real token. Used by expectPunct(";") to point the
+        // error caret at the end of the broken statement, not the start
+        // of the next token.
+        int p = pos - 1;
+        while (p > 0 && (tokens.get(p).type() == CppLexerTokenType.LINE_COMMENT
+                       || tokens.get(p).type() == CppLexerTokenType.BLOCK_COMMENT)) p--;
+        return p >= 0 ? tokens.get(p) : tokens.get(0);
+    }
     private boolean isAtEnd() {
         return peek().type() == CppLexerTokenType.EOF;
     }
@@ -149,6 +159,15 @@ public final class Parser {
 
     private CppLexerToken expectPunct(String p) {
         if (checkPunct(p)) return advance();
+        if (p.equals(";")) {
+            // Point the caret at the end of the previous token (where the
+            // semicolon should have been), not the start of the next token.
+            CppLexerToken last = prev();
+            throw new ParseException(
+                "expected ';' but found '" + peek().text() + "'",
+                last.line(), last.col() + last.text().length()
+            );
+        }
         throw error("expected '" + p + "' but found '" + peek().text() + "'");
     }
 
@@ -1321,6 +1340,8 @@ public final class Parser {
                     advance(); isDefault = true;
                 } else if (checkKeyword("delete")) {
                     advance(); isDelete = true;
+                    // C++26: = delete("reason")
+                    if (checkPunct("(")) { advance(); int _dd=1; while(!isAtEnd()&&_dd>0){if(checkPunct("("))_dd++;else if(checkPunct(")"))_dd--;advance();} }
                 } else {
                     pos = save;
                 }
