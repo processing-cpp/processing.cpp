@@ -18,6 +18,7 @@ Usage:
 import subprocess
 import sys
 import os
+import glob
 
 SKETCHBOOK_JAR_DEST = os.path.expanduser("~/sketchbook/modes/CppMode/mode/CppMode.jar")
 TMP_DIR = "/tmp/_cpp"
@@ -47,7 +48,13 @@ def get_processing4_dir():
 def main():
     processing4_dir = get_processing4_dir()
     cppbuild_java = os.path.join(processing4_dir, "java/src/processing/mode/cpp/CppBuild.java")
-    java_jar = os.path.join(processing4_dir, "java/build/libs/java.jar")
+    libs_dir = os.path.join(processing4_dir, "java/build/libs")
+    # Handle both "java.jar" (older builds) and versioned "java-X.Y.Z.jar" (newer)
+    _candidates = (
+        glob.glob(os.path.join(libs_dir, "java.jar")) +
+        glob.glob(os.path.join(libs_dir, "java-*.jar"))
+    )
+    java_jar = _candidates[0] if _candidates else os.path.join(libs_dir, "java.jar")
     gradlew = os.path.join(processing4_dir, "gradlew")
 
     if not os.path.exists(cppbuild_java):
