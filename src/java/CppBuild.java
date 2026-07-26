@@ -3112,7 +3112,7 @@ public class CppBuild {
       // the .cpp extension's default.  -P would strip line markers; we keep
       // them (omit -P) since downstream code already re-stamps its own
       // #line directive, and keeping g++'s markers costs nothing here.
-      ProcessBuilder pb = new ProcessBuilder(gpp, "-E", "-x", "c++", scratch.getAbsolutePath());
+      ProcessBuilder pb = new ProcessBuilder(gpp, "-E", "-std=c++2c", "-x", "c++", scratch.getAbsolutePath());
       pb.directory(buildDir);
       pb.redirectErrorStream(false);
       Process proc = pb.start();

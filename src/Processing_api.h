@@ -80,9 +80,6 @@ inline void ellipseMode(int m)                         { if(::Processing::PApple
 inline void imageMode(int m)                           { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->imageMode(m); }
 inline void blendMode(int m)                           { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->blendMode(m); }
 inline void clear()                                    { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->clear(); }
-inline void size(int w,int h)                          { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->size(w,h); }
-inline void size(int w,int h,int r)                    { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->size(w,h,r); }
-inline void fullScreen()                               { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->fullScreen(); }
 inline void noLoop()                                   { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->noLoop(); }
 inline void loop()                                     { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->loop(); }
 inline void redraw()                                   { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->redraw(); }

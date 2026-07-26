@@ -116,5 +116,35 @@ public final class CppJavaArrayCheck {
 
             throw new E0004Exception(t.text(), dims, t.line(), t.col());
         }
+        // Second pass: bare "Type[] name;" with no "= new" initializer.
+        // The original check intentionally skipped this shape since it's a
+        // pure C++ parse failure rather than a Java-specific pattern, but
+        // we handle it here so E0004 fires before the parser produces a
+        // confusing "unexpected token ']'" message.
+        for (int i = 0; i < n; i++) {
+            CppLexerToken t = tokens.get(i);
+            if (t.type() != CppLexerTokenType.IDENTIFIER && t.type() != CppLexerTokenType.KEYWORD) continue;
+            int j = i + 1;
+            int dims = 0;
+            while (j + 1 < n && tokens.get(j).isPunct("[") && tokens.get(j + 1).isPunct("]")) {
+                dims++;
+                j += 2;
+            }
+            if (dims == 0) continue;
+            // Must be followed by an identifier (variable name) then ';' or '='
+            // but NOT "= new" (already caught above).
+            if (j >= n || tokens.get(j).type() != CppLexerTokenType.IDENTIFIER) continue;
+            int afterName = j + 1;
+            if (afterName >= n) continue;
+            boolean endsWithSemi   = tokens.get(afterName).isPunct(";");
+            boolean endsWithAssign = tokens.get(afterName).isOp("=");
+            if (!endsWithSemi && !endsWithAssign) continue;
+            // If it's "= new" the first pass already handled it.
+            if (endsWithAssign) {
+                int newPos = afterName + 1;
+                if (newPos < n && tokens.get(newPos).isKeyword("new")) continue;
+            }
+            throw new E0004Exception(t.text(), dims, t.line(), t.col());
+        }
     }
 }

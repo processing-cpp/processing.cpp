@@ -1624,6 +1624,10 @@ inline void fill(color c, int a) { fill(c, (float)a); }
 // Implementations are after struct PApplet (which defines g_papplet).
 struct PApplet;
 namespace _api {
+    void size(int,int);
+    void size(int,int,int);
+    void fullScreen();
+    void fullScreen(int);
     void line(float,float,float,float);
     void line(float,float,float,float,float,float);
     void rect(float,float,float,float);
@@ -3433,6 +3437,12 @@ inline PVector createVector(float x, float y, float z=0) { return PVector(x, y, 
 // line()
 template<typename A,typename B,typename C,typename D,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+inline void size(int w, int h){ _api::size(w,h); }
+inline void size(int w, int h, int mode){ _api::size(w,h,mode); }
+inline void fullScreen(){ _api::fullScreen(); }
+inline void fullScreen(int mode){ _api::fullScreen(mode); }
+template<typename A,typename B,typename C,typename D,
+    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
 inline void line(A x1,B y1,C x2,D y2){ _api::line((float)x1,(float)y1,(float)x2,(float)y2); }
 template<typename A,typename B,typename C,typename D,typename E,typename F,
     typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>>>
@@ -3729,6 +3739,7 @@ struct PApplet {
     void size(int w, int h);
     void size(int w, int h, int renderer);
     void fullScreen();
+    void fullScreen(int mode);
     void frameRate(int fps);
     void noLoop();
     void loop();
@@ -4444,6 +4455,10 @@ namespace _api {
     inline void tint(float r,float g,float b){ if(PApplet::g_papplet) PApplet::g_papplet->tint(r,g,b); }
     inline void tint(float r,float g,float b,float a){ if(PApplet::g_papplet) PApplet::g_papplet->tint(r,g,b,a); }
     inline void strokeWeight(float w){ if(PApplet::g_papplet) PApplet::g_papplet->strokeWeight(w); }
+    inline void size(int w, int h)        { if(PApplet::g_papplet) PApplet::g_papplet->size(w,h); }
+    inline void size(int w, int h, int m) { if(PApplet::g_papplet) PApplet::g_papplet->size(w,h,m); }
+    inline void fullScreen()              { if(PApplet::g_papplet) PApplet::g_papplet->fullScreen(); }
+    inline void fullScreen(int m)         { if(PApplet::g_papplet) PApplet::g_papplet->fullScreen(m); }
 } // namespace _api
 
 

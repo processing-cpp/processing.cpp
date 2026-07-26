@@ -65,13 +65,8 @@ def main():
     print(f"Using processing4 at: {processing4_dir}")
     os.utime(cppbuild_java, None)
 
-    # Delete build artifacts to force recompilation without triggering
-    # the Kotlin daemon (which fails on this system with --rerun-tasks)
-    import shutil as _shutil
-    for d in ["java/build/classes", "java/build/libs"]:
-        p = os.path.join(processing4_dir, d)
-        if os.path.exists(p): _shutil.rmtree(p)
-    run([gradlew, ":java:compileJava", ":java:jar", "--no-daemon"], cwd=processing4_dir)
+    run([gradlew, ":java:compileJava", "--rerun-tasks", "-x", ":plugins:library:compileKotlin"], cwd=processing4_dir)
+    run([gradlew, ":java:jar"], cwd=processing4_dir)
 
     if not os.path.exists(java_jar):
         print(f"ERROR: expected jar not found at {java_jar}")

@@ -981,8 +981,8 @@ public class CppBuild {
     try {
       return Parser.parse(code);
     } catch (ParseException e) {
-      System.err.println(e.getMessage());
-      listener.statusError("Syntax error: " + e.getMessage());
+      System.err.println(ErrorFormatter.format(code, e));
+      listener.statusError(ErrorFormatter.statusLine(e));
       throw new AlreadyReportedException("Syntax error: " + e.getMessage());
     }
   }
@@ -1100,8 +1100,25 @@ public class CppBuild {
     out.append("using std::make_tuple; using std::tie; using std::apply;\n");
     out.append("using std::runtime_error; using std::logic_error; using std::exception;\n");
     out.append("using std::numeric_limits;\n");
-
-    out.append(preNs); // user #include directives hoisted to global scope
+    // C++23 standard library additions -- guarded by version check
+    out.append("#if __cplusplus >= 202302L\n");
+    out.append("#  if __has_include(<expected>)\n");
+    out.append("     using std::expected; using std::unexpected;\n");
+    out.append("#  endif\n");
+    out.append("#  if __has_include(<print>)\n");
+    out.append("     using std::print; using std::println;\n");
+    out.append("#  endif\n");
+    out.append("#endif\n");
+    // C++26 standard library additions -- guarded by version check
+    out.append("#if __cplusplus > 202302L\n");
+    out.append("#  if __has_include(<inplace_vector>)\n");
+    out.append("     using std::inplace_vector;\n");
+    out.append("#  endif\n");
+    out.append("#  if __has_include(<function_ref>)\n");
+    out.append("     using std::function_ref;\n");
+    out.append("#  endif\n");
+    out.append("#endif\n");
+        out.append(preNs); // user #include directives hoisted to global scope
     out.append("using namespace std;\n");
     out.append("namespace Processing {\n");
     out.append("using namespace std;\n");
@@ -2889,7 +2906,7 @@ public class CppBuild {
   private List<String> buildCommand(String gpp, File src, File bin, boolean win, boolean mac) {
     List<String> cmd = new ArrayList<>();
     cmd.add(gpp);
-    cmd.add("-std=c++20");
+    cmd.add("-std=c++2c");
     cmd.add("-O2");
     // -march=native isn't reliably supported by Apple's clang (which is
     // what g++/gcc resolve to on macOS via Xcode Command Line Tools) â
@@ -2932,7 +2949,7 @@ public class CppBuild {
 
     if (needsProcessing) {
       List<String> preCmd = new ArrayList<>();
-      preCmd.add(gpp); preCmd.add("-std=c++20"); preCmd.add("-O2");
+      preCmd.add(gpp); preCmd.add("-std=c++2c"); preCmd.add("-O2");
       if (!mac) preCmd.add("-march=native");
       if (homebrewPrefix != null) preCmd.add("-I" + homebrewPrefix + "/include");
       preCmd.add("-I" + runtimeDir.getAbsolutePath());
@@ -2956,7 +2973,7 @@ public class CppBuild {
     }
     if (needsDefaults) {
       List<String> preCmd2 = new ArrayList<>();
-      preCmd2.add(gpp); preCmd2.add("-std=c++20"); preCmd2.add("-O2");
+      preCmd2.add(gpp); preCmd2.add("-std=c++2c"); preCmd2.add("-O2");
       if (!mac) preCmd2.add("-march=native");
       if (homebrewPrefix != null) preCmd2.add("-I" + homebrewPrefix + "/include");
       preCmd2.add("-I" + runtimeDir.getAbsolutePath());
@@ -3631,7 +3648,7 @@ public class CppBuild {
     } else {
       cmd.add(t.compiler);
     }
-    cmd.add("-std=c++20"); cmd.add("-O2");
+    cmd.add("-std=c++2c"); cmd.add("-O2");
     for (File s : sources) cmd.add(s.getAbsolutePath());
     // Use pre-built cached .o if available for this target
     String exportCacheDir = t.isWindows ? "cache/windows-x64"

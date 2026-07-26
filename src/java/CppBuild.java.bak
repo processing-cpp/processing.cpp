@@ -1100,26 +1100,25 @@ public class CppBuild {
     out.append("using std::make_tuple; using std::tie; using std::apply;\n");
     out.append("using std::runtime_error; using std::logic_error; using std::exception;\n");
     out.append("using std::numeric_limits;\n");
-// C++23 additions (GCC sets __cplusplus=202302L for -std=c++23)
-out.append("#if __cplusplus >= 202302L\n");
-out.append("#if __has_include(<expected>)\n");
-out.append("using std::expected; using std::unexpected;\n");
-out.append("#endif\n");
-out.append("#if __has_include(<print>)\n");
-out.append("using std::print; using std::println;\n");
-out.append("#endif\n");
-out.append("#endif\n");
-// C++26 additions (GCC sets __cplusplus=202400 for -std=c++2c)
-out.append("#if __cplusplus >= 202400L\n");
-out.append("#if __has_include(<inplace_vector>)\n");
-out.append("using std::inplace_vector;\n");
-out.append("#endif\n");
-out.append("#if __has_include(<function_ref>)\n");
-out.append("using std::function_ref;\n");
-out.append("#endif\n");
-out.append("#endif\n");
-
-    out.append(preNs); // user #include directives hoisted to global scope
+    // C++23 standard library additions -- guarded by version check
+    out.append("#if __cplusplus >= 202302L\n");
+    out.append("#  if __has_include(<expected>)\n");
+    out.append("     using std::expected; using std::unexpected;\n");
+    out.append("#  endif\n");
+    out.append("#  if __has_include(<print>)\n");
+    out.append("     using std::print; using std::println;\n");
+    out.append("#  endif\n");
+    out.append("#endif\n");
+    // C++26 standard library additions -- guarded by version check
+    out.append("#if __cplusplus > 202302L\n");
+    out.append("#  if __has_include(<inplace_vector>)\n");
+    out.append("     using std::inplace_vector;\n");
+    out.append("#  endif\n");
+    out.append("#  if __has_include(<function_ref>)\n");
+    out.append("     using std::function_ref;\n");
+    out.append("#  endif\n");
+    out.append("#endif\n");
+        out.append(preNs); // user #include directives hoisted to global scope
     out.append("using namespace std;\n");
     out.append("namespace Processing {\n");
     out.append("using namespace std;\n");

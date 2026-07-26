@@ -509,7 +509,12 @@ public final class Parser {
             raw.append(';');
             return List.of(new PreprocessorLine(raw.toString(), tokens.get(startPos).line(), tokens.get(startPos).col(), leadingComments));
         }
-        if (checkOp("~") || (checkKeyword("virtual") && tokens.get(pos + 1).isOp("~"))) {
+        // Destructor dispatch: "~Name()", "virtual ~Name()", "constexpr virtual ~Name()", "constexpr ~Name()"
+        if (checkOp("~")
+                || (checkKeyword("virtual") && pos + 1 < tokens.size() && tokens.get(pos + 1).isOp("~"))
+                || (checkKeyword("constexpr") && pos + 1 < tokens.size() && tokens.get(pos + 1).isOp("~"))
+                || (checkKeyword("constexpr") && pos + 1 < tokens.size() && tokens.get(pos + 1).isKeyword("virtual")
+                    && pos + 2 < tokens.size() && tokens.get(pos + 2).isOp("~"))) {
             return List.of(parseFunctionOrConstructorOrDestructor(leadingComments, templateParams));
         }
 
@@ -1002,7 +1007,12 @@ public final class Parser {
         // must look one token past an optional leading "virtual", since that
         // keyword (confirmed common on destructors, e.g. "virtual ~LSystem()")
         // precedes the '~' that would otherwise be the dispatch signal.
-        if (checkOp("~") || (checkKeyword("virtual") && tokens.get(pos + 1).isOp("~"))) {
+        // Destructor dispatch: "~Name()", "virtual ~Name()", "constexpr virtual ~Name()", "constexpr ~Name()"
+        if (checkOp("~")
+                || (checkKeyword("virtual") && pos + 1 < tokens.size() && tokens.get(pos + 1).isOp("~"))
+                || (checkKeyword("constexpr") && pos + 1 < tokens.size() && tokens.get(pos + 1).isOp("~"))
+                || (checkKeyword("constexpr") && pos + 1 < tokens.size() && tokens.get(pos + 1).isKeyword("virtual")
+                    && pos + 2 < tokens.size() && tokens.get(pos + 2).isOp("~"))) {
             return List.of(parseFunctionOrConstructorOrDestructor(leadingComments, templateParams));
         }
         // Constructor dispatch: identifier matching the enclosing class name,
@@ -1284,8 +1294,12 @@ public final class Parser {
                 if (checkPunct("(")) { advance(); int _ad=1; while(!isAtEnd()&&_ad>0){if(checkPunct("("))_ad++;else if(checkPunct(")"))_ad--;advance();} }
             }
             // Consume trailing qualifiers: noexcept, noexcept(expr), override, final, requires, &/&&
+            // Also consume C++11/20/26 [[attributes]] and contract annotations [[pre:...]] [[post:...]]
             while (true) {
-                if (checkOp("&") || checkOp("&&")) {
+                if (checkPunct("[") && pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("[")) {
+                    // [[attribute]] or [[pre: cond]] / [[post r: cond]] -- C++26 contracts
+                    consumeAttributes();
+                } else if (checkOp("&") || checkOp("&&")) {
                     // Ref-qualifier on member function: "T f() &" or "T f() &&"
                     // Consume and discard -- not represented in the AST currently.
                     advance();
@@ -2844,6 +2858,25 @@ public final class Parser {
                 if (matchPunct("...")) ai = new PostfixExpr("...", ai, ai.line(), ai.col(), List.of());
                 args.add(ai);
             }
+            // If the next token looks like the start of another argument but
+            // there was no comma, the user forgot the comma rather than the
+            // closing paren — emit a more precise error.
+            if (!checkPunct(")")) {
+                CppLexerToken next = peek();
+                boolean looksLikeArg = next.type() == CppLexerTokenType.IDENTIFIER
+                    || next.type() == CppLexerTokenType.KEYWORD
+                    || next.type() == CppLexerTokenType.INT_LITERAL
+                    || next.type() == CppLexerTokenType.FLOAT_LITERAL
+                    || next.type() == CppLexerTokenType.STRING_LITERAL
+                    || next.type() == CppLexerTokenType.CHAR_LITERAL;
+                if (looksLikeArg) {
+                    CppLexerToken last = prev();
+                    throw new ParseException(
+                        "expected ',' between arguments but found '" + next.text() + "'",
+                        last.line(), last.col() + last.text().length()
+                    );
+                }
+            }
         }
         expectPunct(")");
         return args;
@@ -3706,6 +3739,18 @@ public final class Parser {
      */
     private Statement parseStatement(List<CppLexerToken> leadingComments) {
         consumeAttributes();
+        // Detect "TypeKeyword = ..." -- missing variable name, e.g. "float = 100".
+        // looksLikeDeclaration() returns false here (no identifier after the type),
+        // so without this guard it silently falls through to parseExprStatement and
+        // emits garbage to codegen. Catch it early with a clear error.
+        if (check(CppLexerTokenType.KEYWORD) && isTypeKeyword(peek().text())
+                && pos + 1 < tokens.size() && tokens.get(pos + 1).isOp("=")) {
+            CppLexerToken t = peek();
+            throw new ParseException(
+                "expected a variable name after '" + t.text() + "' but found '='",
+                t.line(), t.col() + t.text().length() + 1
+            );
+        }
         if (checkPunct(";")) {
             CppLexerToken t = advance();
             return new ExprStatement(new Literal(Literal.Kind.INT, "0", t.line(), t.col(), List.of()), t.line(), t.col(), leadingComments);
@@ -4139,6 +4184,10 @@ public final class Parser {
         "unsigned", "signed", "void", "size_t"
     );
 
+    private static boolean isTypeKeyword(String text) {
+        return CAST_OPERATOR_TYPE_KEYWORDS.contains(text)
+            || PSEUDO_TYPE_KEYWORDS_USABLE_AS_NAMES.contains(text);
+    }
     private boolean looksLikeDeclaration() {
         int save = pos;
         try {
