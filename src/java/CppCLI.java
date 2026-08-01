@@ -11,7 +11,7 @@ import java.nio.charset.StandardCharsets;
  */
 public class CppCLI {
 
-    private static final Set<String> LIFECYCLE_METHOD_NAMES = Set.of(
+    private static final Set<String> LIFECYCLE = Set.of(
         "setup","draw","mousePressed","mouseReleased","mouseClicked",
         "mouseMoved","mouseDragged","mouseWheel",
         "keyPressed","keyReleased","keyTyped","settings"
@@ -19,155 +19,129 @@ public class CppCLI {
 
     public static void main(String[] args) throws Exception {
         String input = new String(System.in.readAllBytes(), StandardCharsets.UTF_8);
-        CppBuild build = allocate();
+        try {
+            System.out.print(translate(input));
+        } catch (Exception e) {
+            System.err.println(e.getMessage());
+            System.exit(1);
+        }
+    }
 
-        // String-level pre-processing (mirrors writeSketchImpl)
+    private static String translate(String input) throws Exception {
+        CppBuild b = allocate();
         String code = input;
-        code = invoke(build, "sanitize", code);
-        code = invoke(build, "removeUserIncludes", code);
+        code = invoke(b, "sanitize", code);
+        code = invoke(b, "removeUserIncludes", code);
         code = code.replaceAll("(\\bfinal_suspend\\s*\\([^)]*\\))(\\s*\\{)", "$1 noexcept$2");
         code = code.replaceAll("(\\binitial_suspend\\s*\\([^)]*\\))(\\s*\\{)", "$1 noexcept$2");
         code = code.replaceAll("\\btranslate\\s*\\(\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*\\)\\s*;", "");
         code = code.replaceAll("\\btranslate\\s*\\(\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*\\)\\s*;", "");
-        code = invoke(build, "stripRawStringLiterals", code);
+        code = invoke(b, "stripRawStringLiterals", code);
         code = code.replaceAll("(?<=[0-9a-fA-FxXbB])'(?=[0-9a-fA-F])", "");
-        code = invoke(build, "javaToC", code);
-        code = invoke(build, "stripNamespaceProcessing", code);
-        code = invoke(build, "preprocessMacros", code);
+        code = invoke(b, "javaToC", code);
+        code = invoke(b, "stripNamespaceProcessing", code);
+        code = invoke(b, "preprocessMacros", code);
 
         boolean hasSetup = code.contains("void setup(");
         boolean hasDraw  = code.contains("void draw(");
 
+        StringBuilder out = new StringBuilder();
         StringBuilder preNs = new StringBuilder();
-        StringBuilder header = new StringBuilder();
-        appendHeader(header);
+        appendHeader(out);
 
         if (hasSetup || hasDraw) {
-            try {
-                String result = runFullPipeline(code, preNs);
-                System.out.print(preNs.toString());
-                System.out.print(header.toString());
-                System.out.print(result);
-                System.out.print("\nint main() { Processing::_PSketch sketch; sketch.run(); return 0; }\n");
-            } catch (Exception e) {
-                System.err.println(e.getMessage());
-                System.exit(1);
-            }
+            String result = runPipeline(code, preNs);
+            System.out.print(preNs);
+            System.out.print(out);
+            System.out.print(result);
+            System.out.print("\nint main() { Processing::_PSketch sketch; sketch.run(); return 0; }\n");
+            return "";
         } else {
-            System.out.print(header.toString());
-            System.out.print("\nnamespace Processing {\n\n");
-            System.out.print(code);
-            System.out.print("\n} // namespace Processing\n\n");
-            System.out.print("int main() { Processing::_PSketch sketch; sketch.run(); return 0; }\n");
+            out.append("\nnamespace Processing {\n\n");
+            out.append(code);
+            out.append("\n} // namespace Processing\n\n");
+            out.append("int main() { Processing::_PSketch sketch; sketch.run(); return 0; }\n");
+            return out.toString();
         }
     }
 
-    private static String runFullPipeline(String code, StringBuilder preNs) throws Exception {
-        // Step 0: parse
+    private static String runPipeline(String code, StringBuilder preNs) throws Exception {
         CompilationUnit cu = Parser.parse(code);
-
-        // Step 1: enum extraction
         EnumScopeExtractor.Result enumResult = EnumScopeExtractor.extract(cu.items());
-
-        // Step 2: lifecycle rewriting
-        List<TopLevelItem> afterLifecycle = LifecycleRewriter.rewrite(enumResult.rest, LIFECYCLE_METHOD_NAMES);
-
-        // Step 3: class hoisting
+        List<TopLevelItem> afterLifecycle = LifecycleRewriter.rewrite(enumResult.rest, LIFECYCLE);
         ClassHoister.Result classResult = ClassHoister.hoist(afterLifecycle);
-
-        // Step 4: _PSketch injection
-        List<PSketchInjector.Result> injectedClasses = PSketchInjector.injectAll(classResult.hoistedClasses);
-        List<TypeDef> finalClasses = injectedClasses.stream().map(PSketchInjector.Result::typeDef).toList();
-
-        // Step 5: array hoisting
+        List<PSketchInjector.Result> injected = PSketchInjector.injectAll(classResult.hoistedClasses);
+        List<TypeDef> finalClasses = injected.stream().map(PSketchInjector.Result::typeDef).toList();
         ArrayHoister.Result arrayResult = ArrayHoister.hoist(classResult.rest);
-
-        // Step 6: dependency hoisting
-        DependencyHoister.Result depResult = DependencyHoister.hoist(arrayResult.rest, finalClasses, LIFECYCLE_METHOD_NAMES);
-
-        // Step 7: forward declarations
+        DependencyHoister.Result depResult = DependencyHoister.hoist(arrayResult.rest, finalClasses, LIFECYCLE);
         List<FunctionDecl> forwardDecls = ForwardDeclGenerator.generate(depResult.hoistedFunctions);
 
-        // Build output
         StringBuilder sb = new StringBuilder();
         sb.append("\nnamespace Processing {\n\n");
 
-        // Hoist preprocessor directives and namespaces to file scope
         List<TopLevelItem> filteredRest = new ArrayList<>();
         for (TopLevelItem item : depResult.rest) {
             if (item instanceof PreprocessorLine pl) {
-                if (pl.rawText().startsWith("#include")) {
-                    preNs.append(CodeGen.generateNode(item, 0));
-                } else {
-                    sb.append(CodeGen.generateNode(item, 0));
-                }
+                if (pl.rawText().startsWith("#include")) preNs.append(CodeGen.generateNode(item, 0));
+                else sb.append(CodeGen.generateNode(item, 0));
                 continue;
             }
             if (item instanceof NamespaceDecl || item instanceof UsingNamespaceDecl) {
-                sb.append(CodeGen.generateNode(item, 0));
-                continue;
+                sb.append(CodeGen.generateNode(item, 0)); continue;
             }
             filteredRest.add(item);
         }
 
-        // Forward decls
-        for (FunctionDecl fd : forwardDecls) {
-            sb.append(CodeGen.generateNode(fd, 0));
-        }
+        for (FunctionDecl fd : forwardDecls) sb.append(CodeGen.generateNode(fd, 0));
+        for (TopLevelItem e : enumResult.enums) sb.append(CodeGen.generateNode(e, 0));
 
-        // Enum extracted items
-        for (TopLevelItem item : enumResult.enums) {
-            sb.append(CodeGen.generateNode(item, 0));
-        }
-
-        // Hoisted functions and variables from dependency hoister
+        // Collect lifecycle bodies from hoisted functions
+        List<FunctionDecl> lifecycleBodies = new ArrayList<>();
         for (TopLevelItem item : depResult.hoistedFunctions) {
-            sb.append(CodeGen.generateNode(item, 0));
+            if (item instanceof FunctionDecl fd && LIFECYCLE.contains(fd.name()) && fd.body() != null)
+                lifecycleBodies.add(fd);
+            else sb.append(CodeGen.generateNode(item, 0));
         }
-        for (TopLevelItem item : depResult.hoistedVariables) {
-            sb.append(CodeGen.generateNode(item, 0));
-        }
+        for (TopLevelItem item : depResult.hoistedVariables) sb.append(CodeGen.generateNode(item, 0));
+        for (TopLevelItem item : arrayResult.hoistedArrays) sb.append(CodeGen.generateNode(item, 0));
+        for (TypeDef td : finalClasses) sb.append(CodeGen.generateNode(td, 0));
 
-        // Hoisted arrays
-        for (TopLevelItem item : arrayResult.hoistedArrays) {
-            sb.append(CodeGen.generateNode(item, 0));
-        }
-
-        // Final classes (_PSketch injected)
-        for (TypeDef td : finalClasses) {
-            sb.append(CodeGen.generateNode(td, 0));
-        }
-
-        // Remaining items
+        // Also collect from filteredRest
+        List<TopLevelItem> nonLifecycle = new ArrayList<>();
         for (TopLevelItem item : filteredRest) {
-            sb.append(CodeGen.generateNode(item, 0));
+            if (item instanceof FunctionDecl fd && LIFECYCLE.contains(fd.name()) && fd.body() != null)
+                lifecycleBodies.add(fd);
+            else nonLifecycle.add(item);
         }
+        for (TopLevelItem item : nonLifecycle) sb.append(CodeGen.generateNode(item, 0));
 
+        // Build _PSketch with inline lifecycle bodies
+        sb.append("class _PSketch : public PApplet {\npublic:\n");
+        Map<String,FunctionDecl> bodyMap = new LinkedHashMap<>();
+        for (FunctionDecl fd : lifecycleBodies) bodyMap.put(fd.name(), fd);
+        for (String name : LIFECYCLE) {
+            FunctionDecl fd = bodyMap.get(name);
+            if (fd == null) continue;
+            String rendered = CodeGen.generateNode(fd, 0).strip();
+            if (!rendered.contains("override"))
+                rendered = rendered.replaceFirst("(\\b" + name + "\\s*\\([^)]*\\)\\s*)", "$1 override ");
+            for (String line : rendered.split("\n", -1))
+                sb.append("    ").append(line).append("\n");
+        }
+        sb.append("};\n");
         sb.append("\n} // namespace Processing\n");
         return sb.toString();
     }
 
     private static void appendHeader(StringBuilder out) {
         out.append("#include \"Processing.h\"\n");
-        out.append("using std::vector; using std::string; using std::wstring;\n");
-        out.append("using std::pair; using std::make_pair; using std::tuple;\n");
-        out.append("using std::deque; using std::list; using std::stack; using std::queue;\n");
-        out.append("using std::unordered_map; using std::unordered_set;\n");
-        out.append("using std::sort; using std::shuffle; using std::reverse;\n");
-        out.append("using std::unique_ptr; using std::shared_ptr;\n");
-        out.append("using std::make_unique; using std::make_shared;\n");
-        out.append("using std::to_string; using std::stoi; using std::stof; using std::stod;\n");
-        out.append("using std::function;\n");
-        out.append("using std::map; using std::set;\n");
-        out.append("using std::array; using std::optional;\n");
-        out.append("using std::runtime_error; using std::logic_error; using std::exception;\n");
-        out.append("using std::numeric_limits;\n");
+        out.append("using namespace std;\n");
     }
 
-    private static String invoke(CppBuild build, String method, String code) throws Exception {
+    private static String invoke(CppBuild b, String method, String code) throws Exception {
         Method m = getMethod(CppBuild.class, method, String.class);
         m.setAccessible(true);
-        return (String) m.invoke(build, code);
+        return (String) m.invoke(b, code);
     }
 
     private static Method getMethod(Class<?> cls, String name, Class<?>... params) throws NoSuchMethodException {

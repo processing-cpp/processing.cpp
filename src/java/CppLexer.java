@@ -199,6 +199,8 @@ public final class CppLexer {
         }
         if (pos < len && peekChar() == '"') {
             sb.append(advanceChar()); // closing "
+        } else {
+            throw new ParseException("unterminated string literal", startLine, startCol);
         }
         return new CppLexerToken(CppLexerTokenType.STRING_LITERAL, sb.toString(), startLine, startCol);
     }
@@ -218,6 +220,8 @@ public final class CppLexer {
         }
         if (pos < len && peekChar() == '\'') {
             sb.append(advanceChar());
+        } else {
+            throw new ParseException("unterminated character literal", startLine, startCol);
         }
         return new CppLexerToken(CppLexerTokenType.CHAR_LITERAL, sb.toString(), startLine, startCol);
     }

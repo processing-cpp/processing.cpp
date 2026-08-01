@@ -1076,6 +1076,8 @@ public final class Parser {
         CppLexerToken start = peek();
         boolean isVirtual = matchKeyword("virtual");
         boolean isConstexprCtorMethod = matchKeyword("constexpr") || matchKeyword("consteval");
+        // "constexpr virtual ~Dtor()" -- virtual may follow constexpr
+        if (!isVirtual) isVirtual = matchKeyword("virtual");
         boolean isDestructor = matchOp("~");
         String name = expectIdentifier().text();
         if (isDestructor) name = "~" + name;
@@ -1154,7 +1156,7 @@ public final class Parser {
         else if (isPureVirtual || isDefault || isDelete) expectPunct(";");
 
         return new FunctionDecl(null, name, templateParams, params, initList, body,
-            !isDestructor, isDestructor, isVirtual, isOverride, isConst, false, isConstexprCtorMethod, isPureVirtual, isDefault, isDelete,
+            !isDestructor, isDestructor, isVirtual, isOverride, isConst, isConstexprCtorMethod, false /*isStatic*/, isPureVirtual, isDefault, isDelete,
             start.line(), start.col(), leadingComments);
     }
 
@@ -3964,6 +3966,50 @@ public final class Parser {
             }
         } else {
             advance(); // consume the bare ';'
+        }
+        // C++20 range-for with init: "for (init; auto x : range)"
+        // After consuming the init statement, check if what follows is a
+        // range-for variable declaration (type name :) rather than a condition.
+        if (!checkPunct(";") && !checkPunct(")") && looksLikeRangeFor()) {
+            TypeRef rfType = parseTypeRef();
+            boolean rfRef = false;
+            if (rfType instanceof NamedType nt && nt.isReference()) {
+                rfRef = true;
+                rfType = new NamedType(nt.baseName(), nt.templateArgs(), nt.pointerDepth(), false, nt.isConst(), false);
+            }
+            String rfName = expectIdentifier().text();
+            expectPunct(":");
+            Expr rfIterable = parseExpr();
+            expectPunct(")");
+            Statement rfBody = parseStatement(consumeLeadingComments());
+            // Wrap init + range-for: emit init as a block wrapping the range-for
+            Block wrapper = new Block(
+                List.of(init != null ? init : new ExprStatement(new Literal(Literal.Kind.INT, "0", start.line(), start.col(), List.of()), start.line(), start.col(), List.of()),
+                        new RangeForStatement(rfType, rfName, rfRef, rfIterable, rfBody, start.line(), start.col(), List.of())),
+                start.line(), start.col(), List.of());
+            return wrapper;
+        }
+        // C++20 range-for with init: "for (init; auto x : range)"
+        // After consuming the init statement, check if what follows is a
+        // range-for variable declaration (type name :) rather than a condition.
+        if (!checkPunct(";") && !checkPunct(")") && looksLikeRangeFor()) {
+            TypeRef rfType = parseTypeRef();
+            boolean rfRef = false;
+            if (rfType instanceof NamedType nt && nt.isReference()) {
+                rfRef = true;
+                rfType = new NamedType(nt.baseName(), nt.templateArgs(), nt.pointerDepth(), false, nt.isConst(), false);
+            }
+            String rfName = expectIdentifier().text();
+            expectPunct(":");
+            Expr rfIterable = parseExpr();
+            expectPunct(")");
+            Statement rfBody = parseStatement(consumeLeadingComments());
+            // Wrap init + range-for: emit init as a block wrapping the range-for
+            Block wrapper = new Block(
+                List.of(init != null ? init : new ExprStatement(new Literal(Literal.Kind.INT, "0", start.line(), start.col(), List.of()), start.line(), start.col(), List.of()),
+                        new RangeForStatement(rfType, rfName, rfRef, rfIterable, rfBody, start.line(), start.col(), List.of())),
+                start.line(), start.col(), List.of());
+            return wrapper;
         }
         Expr cond = checkPunct(";") ? null : parseExpr();
         expectPunct(";");

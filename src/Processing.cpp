@@ -587,6 +587,10 @@ void PApplet::fullScreen() {
         glfwSetWindowMonitor(gWindow, m, 0, 0, v->width, v->height, v->refreshRate);
     }
 }
+void PApplet::fullScreen(int mode) {
+    size(displayWidth, displayHeight, mode);
+    fullScreen();
+}
 void PApplet::frameRate(int fps){ targetFrameTime = 1.0/fps; }
 void PApplet::noLoop(){looping=false;}
 void PApplet::loop()  {looping=true;}

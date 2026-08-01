@@ -77,80 +77,108 @@ public final class ErrorFormatter {
     // Strip trailing " (at line N, column M)"
     msg = msg.replaceAll("\\s*\\(at line \\d+, column \\d+\\)\\s*$", "").trim();
 
-    // "expected 'X' but found 'Y'" → "expected 'X' before 'Y'"
-    msg = msg.replaceAll("expected ('.*?') but found ('.*?')", "expected $1 before $2");
-
-    // ';' before anything that can't be part of the same expression
-    if (msg.matches("expected ';' before '[a-zA-Z_][a-zA-Z0-9_]*'")
-        || msg.contains("expected ';' before '}'")
-        || msg.contains("expected ';' before '{'")
-        || msg.contains("expected ';' before ')')")) {
-      msg = "expected ';' after expression";
+    // Digit where name expected (e.g. "float 3x") — before any rewrites
+    { String _tok = msg.replaceAll(".*(?:but found|before) \'(.+?)\'.*", "$1");
+      if (_tok.length() > 0 && Character.isDigit(_tok.charAt(0)))
+        msg = "identifier '" + _tok + "' is invalid — names cannot start with a digit";
     }
+
+    // Invalid non-word token (e.g. \'@\') — before but found→before rewrite
+    if (msg.contains("expected \';\' but found \'") && msg.replaceAll(".*but found \'(.+?)\'.*", "$1").matches("[^a-zA-Z0-9_]+")) {
+      msg = "unexpected token '" + msg.replaceAll(".*but found \'(.+?)\'.*", "$1") + "'";
+    } else if (msg.matches("expected \';\' before \'[a-zA-Z_][a-zA-Z0-9_]*\'")
+        || msg.contains("expected \';\' before \'}\'")
+        || msg.contains("expected \';\' before \'{\'")
+        || msg.contains("expected \';\' before \')\'")) {
+      msg = "expected \';\' after expression";
+    }
+
+    // "expected \'X\' but found \'Y\'" → "expected \'X\' before \'Y\'"
+    msg = msg.replaceAll("expected (\'.*?\') but found (\'.*?\')", "expected $1 before $2");
 
     // Bracket/paren mismatches
-    if (msg.contains("expected ')' before")) msg = "expected ')' — missing closing parenthesis";
-    if (msg.contains("expected '}' before")) msg = "expected '}' — missing closing brace";
-    if (msg.contains("expected '>' before")) msg = "expected '>' — unmatched template bracket";
+    if (msg.contains("expected \')\' before")) msg = "expected \')\' — missing closing parenthesis";
+    if (msg.contains("expected \'}\'  before")) msg = "expected \'}\'  — missing closing brace";
+    if (msg.contains("expected \'>\'  before")) msg = "expected \'>\'  — unmatched template bracket";
 
+    // Keyword used as identifier (e.g. "int for = 10")
+    { java.util.Set<String> KW = new java.util.HashSet<>(java.util.Arrays.asList(
+        "for","while","if","else","switch","case","return","break","continue",
+        "class","struct","namespace","template","typename","auto","void",
+        "int","float","double","bool","char","long","short","unsigned","signed",
+        "const","constexpr","static","inline","virtual","override","new","delete","this"));
+      String _kw = msg.replaceAll(".*(?:but found|before) '(.+?)'.*", "$1");
+      if (KW.contains(_kw))
+        msg = "'"+_kw+"' is a reserved keyword and cannot be used as a name";
+    }
     // Identifier expected
-    if (msg.startsWith("expected identifier but found")) {
+    if (msg.startsWith("expected identifier but found"))
       msg = msg.replace("expected identifier but found", "expected a name but found");
-    }
-
-    // Type name expected
-    if (msg.startsWith("expected a type name but found")) {
-      // keep as-is, already clear
-    }
 
     // Unexpected token in expression
-    if (msg.startsWith("unexpected token") && msg.contains("while parsing an expression")) {
-      msg = msg.replaceAll("unexpected token ('.*?') while parsing an expression",
-                           "unexpected token $1 in expression");
-    }
+    if (msg.startsWith("unexpected token") && msg.contains("while parsing an expression"))
+      msg = msg.replaceAll("unexpected token (\'.*?\') while parsing an expression", "unexpected token $1 in expression");
 
     // Unclosed block/struct/namespace
-    if (msg.contains("unexpected end of input inside class/struct body")) {
-      msg = msg.replaceAll("unexpected end of input inside class/struct body for ('.*?')",
-                           "unterminated class body for $1 — missing closing '}'");
-    }
-    if (msg.contains("unexpected end of input inside namespace")) {
-      msg = msg.replaceAll("unexpected end of input inside namespace ('.*?')",
-                           "unterminated namespace $1 — missing closing '}'");
-    }
-    if (msg.contains("unexpected end of input while looking for closing '}'")) {
-      msg = "unterminated block — missing closing '}'";
-    }
+    if (msg.contains("unexpected end of input inside class/struct body"))
+      msg = msg.replaceAll("unexpected end of input inside class/struct body for (\'.*?\')", "unterminated class body for $1 — missing closing \'}\'");
+    if (msg.contains("unexpected end of input inside namespace"))
+      msg = msg.replaceAll("unexpected end of input inside namespace (\'.*?\')", "unterminated namespace $1 — missing closing \'}\'");
+    if (msg.contains("unexpected end of input while looking for closing \'}\'"))
+      msg = "unterminated block — missing closing \'}\'";
 
     // delete misuse
-    if (msg.contains("'delete' is only valid as a statement")) {
-      msg = "'delete' cannot be used inside an expression";
-    }
+    if (msg.contains("\'delete\' is only valid as a statement"))
+      msg = "\'delete\' cannot be used inside an expression";
 
     // Multiple declarators
-    if (msg.contains("multiple comma-separated declarators")) {
-      msg = "multiple declarations in a single 'if'/'for'/'while' condition are not supported — use braces or declare separately";
-    }
+    if (msg.contains("multiple comma-separated declarators"))
+      msg = "multiple declarations in a single \'if\'/\'for\'/\'while\' condition are not supported";
 
     return msg;
   }
+
 
   /** Short inline annotation shown below the caret. */
   private static String fixNote(ParseException ex) {
     String msg = ex.getMessage();
     if (msg == null) return null;
     if (msg.contains("expected ','"))              return "missing ',' here";
+    if (msg.contains("expected 'while'"))           return "do-while requires 'while (condition);' after the closing '}'";
+    if (msg.contains("expected ':'"))              return "missing ':' after 'case'/'default'";
+    { String _d = msg.replaceAll(".*(?:but found|before) '(.+?)'.*", "$1");
+      if (_d.length() > 0 && Character.isDigit(_d.charAt(0))) return "names cannot start with a digit";
+      java.util.Set<String> KW = new java.util.HashSet<>(java.util.Arrays.asList(
+        "for","while","if","else","switch","case","return","break","continue",
+        "class","struct","namespace","template","typename","auto","void",
+        "int","float","double","bool","char","long","short","unsigned","signed",
+        "const","constexpr","static","inline","virtual","override","new","delete","this"));
+      if (KW.contains(_d)) return "'"+_d+"' is a reserved keyword";
+    }
+    if (msg.contains("expected ';' but found '") && msg.replaceAll(".*but found '(.+?)'.*", "$1").matches("[^a-zA-Z0-9_]+")) { String tok = msg.replaceAll(".*but found '(.+?)'.*", "$1"); return "invalid token '" + tok + "'"; }
     if (msg.contains("expected ';'"))              return "missing ';' here";
+    if (msg.contains("expected '(' before") || msg.contains("expected '(' but found"))  return "'(' is required after 'if'/'while'/'for'/'switch'";
     if (msg.contains("expected ')'"))                               return "missing ')' to close this";
     if (msg.contains("expected '}'"))                               return "missing '}' to close block";
     if (msg.contains("expected '>'"))                               return "missing '>' here";
     if (msg.contains("unexpected end of input while looking for closing '}'")) return "block opened but never closed";
     if (msg.contains("unexpected end of input inside class/struct")) return "class body opened but never closed";
     if (msg.contains("unexpected end of input inside namespace"))    return "namespace body opened but never closed";
+    if (msg.contains("unterminated string literal"))               return "closing '\"' is missing";
+    if (msg.contains("unterminated character literal"))            return "closing \"'\" is missing";
+    if (msg.contains("unterminated character literal"))            return "closing \"'\" is missing";
     if (msg.contains("unexpected end of file"))                     return "file ended unexpectedly";
     if (msg.contains("'delete' is only valid as a statement"))      return "move 'delete' outside of the expression";
     if (msg.contains("multiple comma-separated declarators"))       return "split into separate declarations";
+    if (msg.contains("unexpected token '}'" ) && msg.contains("expression")) return "empty else body — add a statement or { }";
+    if (msg.contains("unexpected token '}'" ) && msg.contains("expression")) return "empty else body — add a statement or { }";
     if (msg.contains("unexpected token") && msg.contains("expression")) return "this token is not valid in an expression";
+    { String _tok = msg.replaceAll(".*but found '(.+?)'.*", "$1");
+      if (_tok.length() > 0 && Character.isDigit(_tok.charAt(0)))
+        return "names cannot start with a digit"; }
+    if ((msg.contains("expected ';' but found") || msg.contains("expected identifier but found"))
+        && msg.replaceAll(".*found '(.+?)'.*", "$1").matches("\\d.*"))
+      return "names cannot start with a digit";
     if (msg.contains("expected identifier"))                        return "a variable or function name is required here";
     if (msg.contains("expected a type name"))                       return "a type name (int, float, PVector, ...) is required here";
     return null;

@@ -424,10 +424,10 @@ public class CppBuild {
             catch (NumberFormatException ignored) {}
           }
         }
-        if (line.contains("error:") || line.contains("warning:")) {
-          for (String w : wordWrap(line, 120)) System.err.println(w);
+        if (line.contains("error:") || line.contains("warning:") || line.contains("note:") || line.contains("Processing::")) {
+          for (String w : wordWrap(rewriteGccError(line), 120)) System.err.println(w);
         } else if (!line.isBlank()) {
-          for (String w : wordWrap(line, 120)) System.out.println(w);
+          for (String w : wordWrap(rewriteGccError(line), 120)) System.out.println(w);
         }
       }
     }
@@ -4391,6 +4391,41 @@ public class CppBuild {
       if (tgzFile.exists()) tgzFile.delete();
       return false;
     }
+  }
+
+
+  private String rewriteGccError(String line) {
+    line = line.replace("std::__cxx11::basic_string<char>", "String");
+    line = line.replace("std::basic_string<char>", "String");
+    line = line.replace("‘std::__cxx11::basic_string<char>’", "String");
+    line = line.replace("‘std::basic_string<char>’", "String");
+    line = line.replace("{aka ‘std::__cxx11::basic_string<char>’}", "");
+    if (line.contains("std::strong_ordering") || line.contains("std::weak_ordering") || line.contains("std::partial_ordering"))
+      line = line.replaceAll("std::(strong|weak|partial)_ordering", "comparison_result") + " — note: <=> returns a comparison result, not an int; use <, >, or == instead";
+    line = line.replace("Processing::Sketch::", "");
+    line = line.replace("Processing::PApplet::", "");
+    line = line.replace("Processing::", "");
+    if (line.contains("return-statement with a value") && line.contains("returning"))
+      return line.replaceAll("return-statement with a value.*", "cannot return a value from a void function");
+    if (line.contains("too few arguments to function"))
+      return line.replaceAll("too few arguments to function .(.+?).", "too few arguments to $1");
+    return line;
+  }
+
+  public static String generateSketchOutput(String rawCode) throws Exception {
+    CppBuild b = new CppBuild(null, null);
+    String code = b.sanitize(rawCode);
+    code = b.removeUserIncludes(code);
+    code = code.replaceAll("(\\bfinal_suspend\\s*\\([^)]*\\))(\\s*\\{)", "$1 noexcept$2");
+    code = code.replaceAll("(\\binitial_suspend\\s*\\([^)]*\\))(\\s*\\{)", "$1 noexcept$2");
+    code = code.replaceAll("\\btranslate\\s*\\(\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*\\)\\s*;", "");
+    code = code.replaceAll("\\btranslate\\s*\\(\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*\\)\\s*;", "");
+    code = b.stripRawStringLiterals(code);
+    code = code.replaceAll("(?<=[0-9a-fA-FxXbB])'(?=[0-9a-fA-F])", "");
+    code = b.javaToC(code);
+    code = b.stripNamespaceProcessing(code);
+    code = b.preprocessMacros(code);
+    return code;
   }
 
 }

@@ -217,10 +217,28 @@ final class ArrayHoister {
             }
         }
 
-        // --- PHASE 2: hoist every array declaration, unconditionally ---
+        // --- PHASE 2: hoist array declarations, but only for primitive/known types ---
+        // Collect user-defined type names (structs/classes/enums) so we don't
+        // hoist arrays of those before their definition appears.
+        java.util.Set<String> userTypes = new java.util.HashSet<>();
+        java.util.Set<String> primitives = java.util.Set.of(
+            "int","float","double","bool","char","long","short","byte",
+            "color","unsigned","signed","size_t","uint8_t","uint16_t",
+            "uint32_t","int8_t","int16_t","int32_t","string","String");
+        for (TopLevelItem item : afterPhase1) {
+            if (item instanceof TypeDef td) userTypes.add(td.name());
+        }
         for (TopLevelItem item : afterPhase1) {
             if (item instanceof VariableDecl vd && !vd.arrayDims().isEmpty()) {
-                result.hoistedArrays.add(vd);
+                String baseType = vd.type() instanceof NamedType nt ? nt.baseName() : "";
+                // Only hoist if element type is a primitive -- user-defined types
+                // must stay in place so the struct definition comes first.
+                // Hoist only if primitive; keep user-defined type arrays in place
+                if (primitives.contains(baseType) && !userTypes.contains(baseType)) {
+                    result.hoistedArrays.add(vd);
+                } else {
+                    result.rest.add(item);
+                }
             } else {
                 result.rest.add(item);
             }
