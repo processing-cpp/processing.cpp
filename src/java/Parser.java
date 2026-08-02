@@ -864,7 +864,10 @@ public final class Parser {
 
         TypeDef typeDef = new TypeDef(kind, name, templateParams, baseClasses, members, start.line(), start.col(), leadingComments);
         // Trailing declarators: "class Foo { ... } *ptr;" or "} a, b, *c;"
-        if (!matchPunct(";") && !isAtEnd() && !checkPunct("}")) {
+        // Only enter if next token is an identifier or pointer star, not a keyword.
+        boolean nextIsDeclarator = checkOp("*") || checkPunct("*")
+            || peek().type() == CppLexerTokenType.IDENTIFIER;
+        if (!matchPunct(";") && !isAtEnd() && !checkPunct("}") && nextIsDeclarator) {
             List<TopLevelItem> result = new ArrayList<>();
             result.add(typeDef);
             do {
