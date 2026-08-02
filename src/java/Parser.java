@@ -797,7 +797,13 @@ public final class Parser {
             if (checkPunct("(")) { advance(); int _ad=1; while(!isAtEnd()&&_ad>0){if(checkPunct("("))_ad++;else if(checkPunct(")"))_ad--;advance();} }
         }
 
-        String name = expectIdentifier().text();
+        // Anonymous struct/class: "struct { ... } var;" -- generate synthetic name
+        String name;
+        if (checkPunct("{")) {
+            name = "_Anon_" + start.line() + "_" + start.col();
+        } else {
+            name = expectIdentifier().text();
+        }
 
         // Partial or explicit specialization: "template<typename T> struct Foo<T*>"
         // or "template<> struct TypeName<int>" -- capture the specialization arg
