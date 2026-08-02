@@ -863,21 +863,23 @@ public final class Parser {
         matchPunct(";");
 
         TypeDef typeDef = new TypeDef(kind, name, templateParams, baseClasses, members, start.line(), start.col(), leadingComments);
-        // Trailing declarator: "class Foo { ... } *ptr;" or "} instance;"
+        // Trailing declarators: "class Foo { ... } *ptr;" or "} a, b, *c;"
         if (!matchPunct(";") && !isAtEnd() && !checkPunct("}")) {
-            int ptrDepth = 0;
-            while (matchOp("*") || matchPunct("*")) ptrDepth++;
-            if (peek().type() == CppLexerTokenType.IDENTIFIER) {
+            List<TopLevelItem> result = new ArrayList<>();
+            result.add(typeDef);
+            do {
+                int ptrDepth = 0;
+                while (matchOp("*") || matchPunct("*")) ptrDepth++;
+                if (peek().type() != CppLexerTokenType.IDENTIFIER) break;
                 CppLexerToken varTok = advance();
                 Expr init = null;
                 if (matchPunct("=")) init = parseExpr();
-                expectPunct(";");
                 TypeRef varType = new NamedType(name, List.of(), ptrDepth, false, false, false);
-                VariableDecl varDecl = new VariableDecl(varType, varTok.text(), List.of(), init,
-                    false, false, varTok.line(), varTok.col(), List.of());
-                return List.of(typeDef, varDecl);
-            }
-            matchPunct(";");
+                result.add(new VariableDecl(varType, varTok.text(), List.of(), init,
+                    false, false, varTok.line(), varTok.col(), List.of()));
+            } while (matchPunct(","));
+            expectPunct(";");
+            return result;
         }
         return List.of(typeDef);
     }
