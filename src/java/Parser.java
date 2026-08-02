@@ -424,7 +424,7 @@ public final class Parser {
                     && !tokens.get(pos + 1).isKeyword("class") && !tokens.get(pos + 1).isKeyword("struct")) {
                 return parseFunctionOrVariable(leadingComments, templateParams, true);
             }
-            return List.of(parseTypeDef(leadingComments, templateParams));
+            return parseTypeDef(leadingComments, templateParams);
         }
         if (checkKeyword("enum")) {
             return List.of(parseEnumDecl(leadingComments));
@@ -775,7 +775,7 @@ public final class Parser {
      * necessary by any semantic pass; if member visibility ever matters,
      * this is the place to start tracking it).
      */
-    private TypeDef parseTypeDef(List<CppLexerToken> leadingComments, List<String> templateParams) {
+    private List<TopLevelItem> parseTypeDef(List<CppLexerToken> leadingComments, List<String> templateParams) {
         CppLexerToken start = peek();
         String kind = checkKeyword("class") ? "class" : "struct";
         advance();
@@ -830,8 +830,8 @@ public final class Parser {
         // Also handles "template<typename T = int> class Container;" with default args.
         if (checkPunct(";")) {
             advance();
-            return new TypeDef(kind, name, templateParams, List.of(), List.of(),
-                start.line(), start.col(), leadingComments);
+            return List.of(new TypeDef(kind, name, templateParams, List.of(), List.of(),
+                start.line(), start.col(), leadingComments));
         }
 
         List<String> baseClasses = new ArrayList<>();
@@ -862,7 +862,24 @@ public final class Parser {
         // hard-requiring strict C++ grammar here.
         matchPunct(";");
 
-        return new TypeDef(kind, name, templateParams, baseClasses, members, start.line(), start.col(), leadingComments);
+        TypeDef typeDef = new TypeDef(kind, name, templateParams, baseClasses, members, start.line(), start.col(), leadingComments);
+        // Trailing declarator: "class Foo { ... } *ptr;" or "} instance;"
+        if (!matchPunct(";") && !isAtEnd() && !checkPunct("}")) {
+            int ptrDepth = 0;
+            while (matchOp("*") || matchPunct("*")) ptrDepth++;
+            if (peek().type() == CppLexerTokenType.IDENTIFIER) {
+                CppLexerToken varTok = advance();
+                Expr init = null;
+                if (matchPunct("=")) init = parseExpr();
+                expectPunct(";");
+                TypeRef varType = new NamedType(name, List.of(), ptrDepth, false, false, false);
+                VariableDecl varDecl = new VariableDecl(varType, varTok.text(), List.of(), init,
+                    false, false, varTok.line(), varTok.col(), List.of());
+                return List.of(typeDef, varDecl);
+            }
+            matchPunct(";");
+        }
+        return List.of(typeDef);
     }
 
     /** "public BaseName" / "private BaseName" / "protected BaseName" / bare "BaseName". */
@@ -981,7 +998,7 @@ public final class Parser {
                     && tokens.get(pos + 2).type() == CppLexerTokenType.IDENTIFIER) {
                 return parseFunctionOrVariable(leadingComments, templateParams, false);
             }
-            return List.of(parseTypeDef(leadingComments, templateParams));
+            return parseTypeDef(leadingComments, templateParams);
         }
         if (checkKeyword("enum")) {
             return List.of(parseEnumDecl(leadingComments));
@@ -3693,7 +3710,7 @@ public final class Parser {
                     new Identifier("", sk.line(), sk.col(), List.of()),
                     sk.line(), sk.col(), leadingComments));
             }
-            TypeDef td = parseTypeDef(leadingComments, List.of());
+            List<TopLevelItem> _tdItems = parseTypeDef(leadingComments, List.of()); TypeDef td = (TypeDef) _tdItems.get(0);
             matchPunct(";");
             // Emit struct as verbatim text via CodeGen
             String structCode = processing.mode.cpp.CodeGen.generateNode(td, 0).stripTrailing();
@@ -3802,7 +3819,7 @@ public final class Parser {
                 && pos + 1 < tokens.size()
                 && (tokens.get(pos + 1).type() == CppLexerTokenType.IDENTIFIER
                     || tokens.get(pos + 1).isPunct("{"))) {
-            TypeDef td = parseTypeDef(leadingComments, List.of());
+            List<TopLevelItem> _tdItems = parseTypeDef(leadingComments, List.of()); TypeDef td = (TypeDef) _tdItems.get(0);
             matchPunct(";");
             return new ExprStatement(new Identifier("", td.line(), td.col(), List.of()), td.line(), td.col(), leadingComments);
         }
