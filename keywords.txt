@@ -18,8 +18,21 @@ signed	KEYWORD5
 short	KEYWORD5
 bool	KEYWORD5
 string	KEYWORD5
-mouseDX KEYWORD4
-mouseDY KEYWORD4
+mouseDX	KEYWORD4
+mouseDY	KEYWORD4
+frameCount	KEYWORD4
+frameRate	KEYWORD4
+mousePressed	KEYWORD4
+keyPressed	KEYWORD4
+mouseButton	KEYWORD4
+keyCode	KEYWORD4
+key	KEYWORD4
+focused	KEYWORD4
+displayWidth	KEYWORD4
+displayHeight	KEYWORD4
+pixelWidth	KEYWORD4
+pixelHeight	KEYWORD4
+pixelDensity	KEYWORD4
 
 
 # processing-cpp keywords.txt
@@ -391,6 +404,7 @@ static	KEYWORD6
 const	KEYWORD6
 auto	KEYWORD6
 struct	KEYWORD6
+union	KEYWORD6
 enum	KEYWORD6
 namespace	KEYWORD6
 using	KEYWORD6

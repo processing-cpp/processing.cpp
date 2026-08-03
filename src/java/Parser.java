@@ -414,7 +414,7 @@ public final class Parser {
             // This is handled in parseTemplateParamName already.
         }
 
-        if (checkKeyword("class") || checkKeyword("struct")) {
+        if (checkKeyword("class") || checkKeyword("struct") || checkKeyword("union")) {
             // Partial specialization: "template<typename T> struct Foo<T*> { ... }"
             // After parsing the class/struct, check for a specialization arg list.
             // BUT: "struct TypeName funcName(...)" is a function with elaborated return type
@@ -777,7 +777,7 @@ public final class Parser {
      */
     private List<TopLevelItem> parseTypeDef(List<CppLexerToken> leadingComments, List<String> templateParams) {
         CppLexerToken start = peek();
-        String kind = checkKeyword("class") ? "class" : "struct";
+        String kind = checkKeyword("class") ? "class" : checkKeyword("union") ? "union" : "struct";
         advance();
         // alignas specifier: "struct alignas(64) CacheLine"
         if (checkKeyword("alignas") && pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("(")) {
@@ -982,7 +982,7 @@ public final class Parser {
                 consumeLeadingComments();
             }
         }
-        if (checkKeyword("class") || checkKeyword("struct")) {
+        if (checkKeyword("class") || checkKeyword("struct") || checkKeyword("union")) {
             // Anonymous struct: "struct { float x, y; } position;"
             if (pos + 1 < tokens.size() && tokens.get(pos + 1).isPunct("{")) {
                 int anonStart = pos;
