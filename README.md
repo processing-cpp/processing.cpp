@@ -2,6 +2,9 @@
 
 C++ Mode for Processing. Write sketches with `setup()` and `draw()` inside the Processing IDE, or drop the engine into your own C++ project and use the same API from your own editor and build system.
 
+[![License: LGPL v2.1](https://img.shields.io/badge/License-LGPL%20v2.1-blue.svg)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-processing--cpp.github.io-orange)](https://processing-cpp.github.io)
+
 ---
 
 ## Two ways to use it
@@ -11,6 +14,7 @@ C++ Mode for Processing. Write sketches with `setup()` and `draw()` inside the P
 If you know Processing, this is the fastest way in. Install C++ Mode through the Contribution Manager, select it from the mode dropdown, and write sketches exactly like you normally would. They compile to native C++ instead of Java, but the workflow is identical.
 
 **Install:**
+
 1. Open Processing
 2. Click the mode dropdown (top right, says **Java** by default) → **Add Mode...**
 3. Search for **C++ Mode** and click Install
@@ -78,6 +82,7 @@ Get the latest release from the [releases page](https://github.com/processing-cp
 ## Requirements
 
 ### Windows
+
 MSYS2 with MinGW 64-bit. Install once:
 
 ```bash
@@ -87,6 +92,7 @@ pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-glfw mingw-w64-x86_64-g
 Always build from the **MSYS2 MinGW 64-bit** terminal, not PowerShell or Command Prompt.
 
 ### macOS
+
 Xcode command line tools and Homebrew:
 
 ```bash
@@ -95,6 +101,7 @@ brew install glfw glew
 ```
 
 ### Linux
+
 ```bash
 # Ubuntu / Debian
 sudo apt install g++ libglfw3-dev libglew-dev
@@ -114,6 +121,12 @@ Full reference and tutorials at [processing-cpp.github.io](https://processing-cp
 - [CMake Setup](https://processing-cpp.github.io/downloads/cmake-setup.html) — full Windows/macOS/Linux walkthrough
 - [Reference](https://processing-cpp.github.io/reference) — full API reference
 - [Examples](https://processing-cpp.github.io/examples) — 100+ example sketches
+
+---
+
+## Contributing
+
+Contributions are welcome. Open an issue or pull request on [GitHub](https://github.com/processing-cpp/processing.cpp).
 
 ---
 
