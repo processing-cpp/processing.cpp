@@ -90,13 +90,13 @@ def generate(out_dir: Path) -> None:
 README_MD = '''\
 # processing-cpp (CMake package)
 
-This is [Processing](https://processing.org)'s API -- `size()`, `ellipse()`,
-`mouseX`, `draw()`, and the rest of it -- implemented natively in C++,
+This is [Processing](https://processing.org)'s API — `size()`, `ellipse()`,
+`mouseX`, `draw()`, and the rest of it — implemented natively in C++,
 packaged as a normal CMake target. There's no Processing IDE involved, no
 `.pde` files, and no transpiler.
 
 If you're not using CMake, there's a separate drag-and-drop release built
-for that instead -- look for `processing-cpp-dragdrop.zip` on the same
+for that instead — look for `processing-cpp-dragdrop.zip` on the same
 page you got this from, or check the project's repository. That one
 needs no build system at all; this one assumes you already have CMake.
 
@@ -125,10 +125,10 @@ int main() {
 You inherit from `PApplet`, override whichever lifecycle methods you need,
 and call `.run()` in `main()`. Everything in the
 [Processing reference](https://processing.org/reference) is available as
-a member you inherit, so it's unqualified inside your overrides -- no
+a member you inherit, so it's unqualified inside your overrides, no
 `Processing::` prefix needed there. A helper class that *isn't* a
 `PApplet` (e.g. a `Particle`) needs one `using namespace Processing;` near
-the top of its own file to call these -- `examples/embedding/` shows this.
+the top of its own file to call these — `examples/embedding/` shows this.
 
 ## Adding it to your project
 
@@ -136,7 +136,7 @@ Pick whichever of these matches how you manage dependencies. All three
 end up giving you the same `processing_cpp` CMake target, with
 GLFW/GLEW/OpenGL discovery and every platform-specific link flag
 (`-framework OpenGL` on macOS, `-mwindows` on Windows, and so on) already
-attached to it -- so the rest of your `CMakeLists.txt` doesn't need to
+attached to it, so the rest of your `CMakeLists.txt` doesn't need to
 know any of that exists.
 
 ### Vendored: copy this folder into your repo
@@ -161,7 +161,7 @@ target_link_libraries(my_sketch PRIVATE processing_cpp)
 ```
 
 This only works once this package's contents live in a git repo somewhere
-reachable by URL -- FetchContent clones it the same way `git clone` would.
+reachable by URL — FetchContent clones it the same way `git clone` would.
 If this folder hasn't been pushed anywhere yet, use one of the other two
 options below instead in the meantime.
 
@@ -178,12 +178,12 @@ find_package(processing_cpp REQUIRED)
 target_link_libraries(my_sketch PRIVATE processing_cpp::processing_cpp)
 ```
 
-Note the `processing_cpp::` prefix here -- it's different from the other
+Note the `processing_cpp::` prefix here, it's different from the other
 two methods above, which both use the bare `processing_cpp` name. That's
 intentional, not an inconsistency to work around: CMake convention
 namespaces targets that come from an installed, `find_package`-located
 package specifically so they can't collide with some other unrelated
-package's target of the same name on your system; `add_subdirectory` and
+package's target of the same name on your system. `add_subdirectory` and
 `FetchContent` build the target directly in your own project, where that
 collision risk doesn't apply, so the plain name is fine there.
 
@@ -214,14 +214,14 @@ because building two extra libraries from source on someone's first
 `cmake configure` can be a surprising thing to have happen silently.
 
 Worth knowing before relying on this: building GLFW from source still
-needs *something* installed on Linux -- either the X11 development
+needs *something* installed on Linux, either the X11 development
 headers (e.g. Ubuntu/Debian's `xorg-dev` package, which pulls in
 `libxrandr-dev`, `libxinerama-dev`, `libxcursor-dev`, `libxi-dev`) or, if
 you set `-DGLFW_BUILD_WAYLAND=ON` yourself, the Wayland equivalents
 (`libwayland-dev`, `libxkbcommon-dev`, `wayland-protocols`). This
 `CMakeLists.txt` builds for X11 by default when fetching from source,
 since it's the more universally available baseline on Linux, but X11's
-own dev headers are still a real, separate thing to have installed --
+own dev headers are still a real, separate thing to have installed.
 `PROCESSING_CPP_FETCH_DEPS=ON` fetches GLFW's *source*, not a magic
 zero-dependency build. If you hit a build error inside `_deps/glfw3_fetched-src`,
 installing the prebuilt `libglfw3-dev`/`libglew-dev` packages directly
@@ -236,7 +236,7 @@ cmake --build build -j
 ```
 
 - **`examples/bouncing_ball.cpp`** is the sketch shown above, with a
-  little more in it -- an orange ball bouncing around the window.
+  little more in it — an orange ball bouncing around the window.
 - **`examples/embedding/`** shows how to drop a sketch into a project
   that already exists, without the rest of that project ever needing to
   know GLFW, GLEW, or `PApplet` exist. The `PApplet` subclass and the
@@ -248,26 +248,26 @@ cmake --build build -j
 
 The engine is licensed under the **GNU Lesser General Public License
 v2.1** (see `LICENSE`). LGPL is meant to allow linking from proprietary
-software, unlike plain GPL, but it does come with real obligations --
-notably around static linking. `processing_cpp` is a `STATIC` library in
+software, unlike plain GPL, but it comes with real obligations, notably
+around static linking. `processing_cpp` is a `STATIC` library in
 this `CMakeLists.txt`, meaning it gets compiled into your sketch's
 binary directly rather than loaded as a separate shared library. LGPL
 2.1 requires that anyone you distribute that binary to be able to relink
-it against a modified version of the engine -- in practice, that means
+it against a modified version of the engine, in practice, that means
 making the engine's object files (or this source) available alongside
 your binary, not just the binary itself. Building `processing_cpp` as a
-`SHARED` library instead would change this; that's not how this
+`SHARED` library instead would change this. That's not how this
 `CMakeLists.txt` is currently set up, but it's a legitimate way to avoid
 the static-linking obligation if it matters for your project.
 
 This isn't legal advice, and the specifics depend on how you're
-distributing your project -- read `LICENSE` itself, and talk to an actual
+distributing your project. Read `LICENSE` itself, and talk to an actual
 lawyer if it matters for what you're shipping. It's flagged here mainly
 so it doesn't come as a surprise after the fact.
 
 `include/stb_image.h`, `stb_image_write.h`, and `stb_truetype.h` are
 bundled third-party libraries (by Sean Barrett and contributors), not
-part of the engine -- they're each dual-licensed under MIT or public
+part of the engine. They're each dual-licensed under MIT or public
 domain (your choice), which is unrestricted enough that it doesn't add
 anything beyond what's already true of the LGPL 2.1 engine itself. Their
 full license text is included at the bottom of each of those files.
@@ -276,7 +276,7 @@ full license text is included at the bottom of each of those files.
 
 This release is built by `scripts/generate_cmake.py` in the main CppMode
 repo, and it's generated directly from that repo's real engine source
-(`src/Processing.h`, `src/Processing.cpp`) -- the very same code CppMode's
+(`src/Processing.h`, `src/Processing.cpp`), the very same code CppMode's
 Processing IDE plugin compiles your sketches against.
 '''
 
