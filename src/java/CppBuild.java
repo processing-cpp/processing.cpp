@@ -460,9 +460,10 @@ public class CppBuild {
         try { macGpp = Runtime.getRuntime().exec(new String[]{"g++","--version"}).waitFor()==0; }
         catch (Exception ignored) {}
         String macArch = System.getProperty("os.arch","").contains("aarch64") ? "arm64" : "x64";
-        File macLibsDir = new File(System.getProperty("user.home") +
-            "/Library/Application Support/Processing/modes/CppMode/libs/macos-" + macArch);
-        // Also check relative to the mode's own directory
+        File macLibsDir = (runtimeDir != null)
+            ? new File(runtimeDir.getParentFile(), "libs/macos-" + macArch)
+            : new File(System.getProperty("user.home") +
+                "/Library/Application Support/Processing/modes/CppMode/libs/macos-" + macArch);
         boolean hasBundledGlfw = new File(macLibsDir, "libglfw.3.dylib").exists();
         boolean hasBundledGlew = new File(macLibsDir, "libGLEW.dylib").exists();
         boolean macGlfw = hasBundledGlfw
@@ -635,6 +636,18 @@ public class CppBuild {
       File dest = new File(sketch.getFolder(), "default.ttf");
       if (!dest.exists())
         java.nio.file.Files.copy(font.toPath(), dest.toPath());
+    }
+    // Copy bundled macOS dylibs to sketch folder so the binary finds them at runtime.
+    if (isMac) {
+      String macArch2 = System.getProperty("os.arch","").contains("aarch64") ? "arm64" : "x64";
+      File macLibsDir2 = new File(runtimeDir.getParentFile(), "libs/macos-" + macArch2);
+      if (macLibsDir2.exists()) {
+        for (File dylib : macLibsDir2.listFiles((d,n) -> n.endsWith(".dylib"))) {
+          File destDylib = new File(sketch.getFolder(), dylib.getName());
+          if (!destDylib.exists())
+            java.nio.file.Files.copy(dylib.toPath(), destDylib.toPath());
+        }
+      }
     }
     listener.statusNotice("Built: " + binary.getName());
 

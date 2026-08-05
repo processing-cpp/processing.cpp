@@ -392,12 +392,18 @@ public class InstallWizard {
     boolean haveCompiler = commandExists("xcrun", "-find", "g++")
                         || commandExists("g++", "--version");
     // Check headers (needed at compile time) not just dylibs (needed at link time).
-    boolean glfwOk = new File("/opt/homebrew/include/GLFW/glfw3.h").exists()
+    // Check bundled dylibs first (shipped with the mode, no Homebrew needed)
+    String macArch = System.getProperty("os.arch","").contains("aarch64") ? "arm64" : "x64";
+    String home = System.getProperty("user.home");
+    File bundledLibs = new File(home + "/Library/Application Support/Processing/modes/CppMode/libs/macos-" + macArch);
+    boolean glfwOk = new File(bundledLibs, "libglfw.3.dylib").exists()
+                  || new File("/opt/homebrew/include/GLFW/glfw3.h").exists()
                   || new File("/usr/local/include/GLFW/glfw3.h").exists()
                   || new File("/opt/homebrew/lib/libglfw.dylib").exists()
                   || new File("/usr/local/lib/libglfw.dylib").exists()
                   || commandExists("pkg-config", "--exists", "glfw3");
-    boolean glewOk = new File("/opt/homebrew/include/GL/glew.h").exists()
+    boolean glewOk = new File(bundledLibs, "libGLEW.dylib").exists()
+                  || new File("/opt/homebrew/include/GL/glew.h").exists()
                   || new File("/usr/local/include/GL/glew.h").exists()
                   || new File("/opt/homebrew/lib/libGLEW.dylib").exists()
                   || new File("/usr/local/lib/libGLEW.dylib").exists()
