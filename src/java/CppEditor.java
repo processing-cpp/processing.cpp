@@ -9,6 +9,7 @@ import javax.swing.text.BadLocationException;
 import processing.app.*;
 import processing.app.syntax.*;
 import processing.app.ui.*;
+import java.util.List;
 
 
 public class CppEditor extends Editor {
@@ -16,10 +17,33 @@ public class CppEditor extends Editor {
   private CppRunner currentRunner;
   private final Set<Integer> errorLines = new HashSet<>();
   private ErrorOverlay overlay;
+  private CppLinter linter;
 
   public CppEditor(Base base, String path,
                    EditorState state, CppMode mode) throws EditorException {
     super(base, path, state, mode);
+    linter = new CppLinter(mode, this::setProblemList);
+    // Hook into text area changes for live linting
+    javax.swing.SwingUtilities.invokeLater(() -> {
+      textarea.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+        public void insertUpdate(javax.swing.event.DocumentEvent e)  { scheduleLint(); }
+        public void removeUpdate(javax.swing.event.DocumentEvent e)  { scheduleLint(); }
+        public void changedUpdate(javax.swing.event.DocumentEvent e) { scheduleLint(); }
+      });
+      scheduleLint(); // initial lint on open
+    });
+  }
+
+  private void scheduleLint() {
+    if (linter == null) return;
+    // Pass sketch for tab metadata, plus live text for the current tab
+    linter.scheduleCheck(sketch, sketch.getCurrentCodeIndex(), getText());
+  }
+
+  @Override
+  public void dispose() {
+    if (linter != null) linter.shutdown();
+    super.dispose();
   }
 
   // ── Bug report link (placed in the footer's tab bar, just left of the

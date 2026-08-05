@@ -220,8 +220,14 @@ public class InstallWizard {
 
   private boolean commandExists(String... cmd) {
     try {
-      Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-      // Drain output so the process doesn't block on a full pipe.
+      ProcessBuilder pb = new ProcessBuilder(cmd);
+      pb.redirectErrorStream(true);
+      // On Apple Silicon, Homebrew lives in /opt/homebrew/bin which may
+      // not be in the PATH when Processing is launched from the GUI.
+      String path = System.getenv("PATH");
+      if (path != null && !path.contains("/opt/homebrew/bin"))
+        pb.environment().put("PATH", "/opt/homebrew/bin:/usr/local/bin:" + path);
+      Process p = pb.start();
       try (InputStream is = p.getInputStream()) { is.readAllBytes(); }
       return p.waitFor() == 0;
     } catch (Exception e) {
@@ -385,12 +391,17 @@ public class InstallWizard {
   private java.util.List<String> detectMacMissing() {
     boolean haveCompiler = commandExists("xcrun", "-find", "g++")
                         || commandExists("g++", "--version");
-    boolean glfwOk = new File("/opt/homebrew/lib/libglfw.dylib").exists()
+    // Check headers (needed at compile time) not just dylibs (needed at link time).
+    boolean glfwOk = new File("/opt/homebrew/include/GLFW/glfw3.h").exists()
+                  || new File("/usr/local/include/GLFW/glfw3.h").exists()
+                  || new File("/opt/homebrew/lib/libglfw.dylib").exists()
                   || new File("/usr/local/lib/libglfw.dylib").exists()
-                  || commandExists("pkg-config", "glfw3");
-    boolean glewOk = new File("/opt/homebrew/lib/libGLEW.dylib").exists()
+                  || commandExists("pkg-config", "--exists", "glfw3");
+    boolean glewOk = new File("/opt/homebrew/include/GL/glew.h").exists()
+                  || new File("/usr/local/include/GL/glew.h").exists()
+                  || new File("/opt/homebrew/lib/libGLEW.dylib").exists()
                   || new File("/usr/local/lib/libGLEW.dylib").exists()
-                  || commandExists("pkg-config", "glew");
+                  || commandExists("pkg-config", "--exists", "glew");
 
     java.util.List<String> missing = new java.util.ArrayList<>();
     if (!haveCompiler) missing.add("g++ (Xcode Command Line Tools)");
@@ -446,20 +457,59 @@ public class InstallWizard {
       }
 
       if (!commandExists("brew", "--version")) {
-        appendLog("Missing: " + String.join(", ", missingLibs)
-          + " — install Homebrew from https://brew.sh, then run:");
-        appendLog("  brew install " + String.join(" ", missingLibs));
-        finishDialog(false, "g++ is ready, but " + String.join(", ", missingLibs)
-          + " still need Homebrew — see log above.");
-        return;
+        setStep("Installing Homebrew...");
+        appendLog("Homebrew not found — installing it now.");
+        appendLog("This downloads and runs the official Homebrew installer.");
+        appendLog("You may be asked for your password in a separate prompt.");
+        try {
+          // Official Homebrew install script -- same as what brew.sh runs.
+          // We pipe it to /bin/bash so no browser or manual step is needed.
+          String installScript =
+            "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"";
+          ProcessBuilder pb = new ProcessBuilder("/bin/bash", "-c", installScript);
+          pb.redirectErrorStream(true);
+          // Homebrew installer needs a real HOME and USER to set up paths.
+          pb.environment().put("NONINTERACTIVE", "1"); // skip interactive prompts
+          Process brewInstall = pb.start();
+          streamToLog(brewInstall);
+          int brewCode = brewInstall.waitFor();
+          if (cancelled.get()) return;
+          if (brewCode != 0) {
+            finishDialog(false, "Homebrew installation failed — see log above.");
+            return;
+          }
+          // Homebrew on Apple Silicon installs to /opt/homebrew; add to PATH.
+          String brewPath = new File("/opt/homebrew/bin/brew").exists()
+              ? "/opt/homebrew/bin" : "/usr/local/bin";
+          pb.environment().put("PATH", brewPath + ":" + System.getenv("PATH"));
+          appendLog("Homebrew installed successfully.");
+        } catch (Exception e) {
+          appendLog("Error installing Homebrew: " + e.getMessage());
+          finishDialog(false, "Couldn't install Homebrew — see log above.");
+          return;
+        }
+        // Verify brew is now available
+        if (!commandExists("brew", "--version")) {
+          finishDialog(false,
+            "Homebrew was installed but couldn't be found. Please restart Processing and try again.");
+          return;
+        }
       }
 
       setStep("Installing: " + String.join(", ", missingLibs));
       try {
         java.util.List<String> brewCmd = new java.util.ArrayList<>();
-        brewCmd.add("brew"); brewCmd.add("install");
+        // Resolve brew path explicitly for Apple Silicon
+        String brewBin = new File("/opt/homebrew/bin/brew").exists()
+            ? "/opt/homebrew/bin/brew" : "brew";
+        brewCmd.add(brewBin); brewCmd.add("install");
         brewCmd.addAll(missingLibs);
-        Process p = new ProcessBuilder(brewCmd).redirectErrorStream(true).start();
+        ProcessBuilder brewPb = new ProcessBuilder(brewCmd);
+        String brewPath = System.getenv("PATH");
+        if (brewPath != null && !brewPath.contains("/opt/homebrew/bin"))
+            brewPb.environment().put("PATH", "/opt/homebrew/bin:/usr/local/bin:" + brewPath);
+        brewPb.redirectErrorStream(true);
+        Process p = brewPb.start();
         streamToLog(p);
         int code = p.waitFor();
         if (cancelled.get()) return;

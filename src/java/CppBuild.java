@@ -54,6 +54,176 @@ public class CppBuild {
       "BufferedReader", "PrintWriter"
   );
 
+  /** No-arg constructor for allocate()-based CLI usage -- fields set via reflection. */
+  @SuppressWarnings("unused")
+  private CppBuild() {
+    this.sketch = null;
+    this.mode = null;
+    this.buildDir = null;
+    this.runtimeDir = null;
+  }
+
+  /**
+   * Result of the pre-AST string-transform pipeline.
+   * code: transformed sketch text with __has_include blocks removed.
+   * hasIncludeBlocks: extracted blocks to emit at file scope, keyed by original line index.
+   */
+  public static final class PreparedCode {
+    public final String code;
+    public final java.util.Map<Integer, String> hasIncludeBlocks;
+    public PreparedCode(String code, java.util.Map<Integer, String> hasIncludeBlocks) {
+      this.code = code;
+      this.hasIncludeBlocks = hasIncludeBlocks;
+    }
+  }
+
+  /**
+   * Single source of truth for the pre-AST string-transform pipeline.
+   * Used by both writeSketchImpl() and CppCLI.
+   */
+  public static PreparedCode prepareCode(String rawCode) throws Exception {
+    CppBuild b = new CppBuild();
+    String code = b.sanitize(rawCode);
+    code = b.removeUserIncludes(code);
+    code = code.replaceAll("(\\bfinal_suspend\\s*\\([^)]*\\))(\\s*\\{)", "$1 noexcept$2");
+    code = code.replaceAll("(\\binitial_suspend\\s*\\([^)]*\\))(\\s*\\{)", "$1 noexcept$2");
+    code = code.replaceAll("\\btranslate\\s*\\(\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*\\)\\s*;", "");
+    code = code.replaceAll("\\btranslate\\s*\\(\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*\\)\\s*;", "");
+    code = b.stripRawStringLiterals(code);
+    code = code.replaceAll("(?<=[0-9a-fA-FxXbB])'(?=[0-9a-fA-F])", "");
+    code = b.javaToC(code);
+    code = b.stripNamespaceProcessing(code);
+    // Extract #if __has_include blocks before g++ -E so they survive intact.
+    String[] rawLines = code.split("\n", -1);
+    java.util.Map<Integer, String> hasIncludeBlocks = new java.util.LinkedHashMap<>();
+    {
+      StringBuilder stripped = new StringBuilder();
+      int depth = 0; int blockStart = -1; StringBuilder block = new StringBuilder();
+      for (int li = 0; li < rawLines.length; li++) {
+        String t = rawLines[li].strip();
+        boolean isHI = t.startsWith("#if __has_include") || t.startsWith("#elif __has_include");
+        boolean isIf = !isHI && (t.startsWith("#if ") || t.startsWith("#ifdef ") || t.startsWith("#ifndef "));
+        boolean isEndif = t.equals("#endif");
+        if (isHI && depth == 0) {
+          blockStart = li; block = new StringBuilder();
+          block.append(rawLines[li]).append("\n"); depth = 1; stripped.append("\n");
+        } else if (depth > 0) {
+          if (isHI || isIf) depth++;
+          block.append(rawLines[li]).append("\n");
+          if (isEndif) { depth--; if (depth == 0) { hasIncludeBlocks.put(blockStart, block.toString()); blockStart = -1; } }
+          stripped.append("\n");
+        } else { stripped.append(rawLines[li]).append("\n"); }
+      }
+      code = stripped.toString();
+    }
+    code = b.preprocessMacros(code);
+    return new PreparedCode(code, hasIncludeBlocks);
+  }
+
+  /** Backwards-compatible wrapper. */
+  public static String translateCode(String code) throws Exception {
+    return prepareCode(code).code;
+  }
+
+  /**
+   * Decides where a PreprocessorLine node should be emitted:
+   * true  → file scope (preNs, before namespace Processing)
+   * false → namespace body (out, inside namespace Processing)
+   *
+   * Used by both writeSketchImpl() and CppCLI.runPipeline() to keep
+   * routing behaviour identical without duplicating the if/else chain.
+   */
+  public static boolean isFileScopePreprocessorLine(PreprocessorLine pl) {
+    String rt = pl.rawText().trim();
+    return rt.startsWith("#include")
+        || rt.startsWith("#if") || rt.startsWith("#else")
+        || rt.startsWith("#elif") || rt.startsWith("#endif")
+        || rt.startsWith("#define") || rt.startsWith("#undef")
+        || rt.startsWith("#pragma")
+        || (rt.startsWith("using ") && !rt.contains("=") && !rt.contains("namespace"));
+  }
+
+  /**
+   * Result of the shared AST pipeline (steps 1-7 + auto-hoisting).
+   * Both writeSketchImpl() and CppCLI.runPipeline() run these same steps;
+   * they differ only in how they assemble the final output from the results.
+   */
+  public static final class AstPipelineResult {
+    public final EnumScopeExtractor.Result enumResult;
+    public final ClassHoister.Result classResult;
+    public final List<TypeDef> finalClasses;
+    public final ArrayHoister.Result arrayResult;
+    public final DependencyHoister.Result depResult;
+    public final List<FunctionDecl> forwardDecls;
+    public final List<TopLevelItem> autoHoisted;
+    public final List<TopLevelItem> filteredRest;
+    public AstPipelineResult(
+        EnumScopeExtractor.Result enumResult,
+        ClassHoister.Result classResult,
+        List<TypeDef> finalClasses,
+        ArrayHoister.Result arrayResult,
+        DependencyHoister.Result depResult,
+        List<FunctionDecl> forwardDecls,
+        List<TopLevelItem> autoHoisted,
+        List<TopLevelItem> filteredRest) {
+      this.enumResult   = enumResult;
+      this.classResult  = classResult;
+      this.finalClasses = finalClasses;
+      this.arrayResult  = arrayResult;
+      this.depResult    = depResult;
+      this.forwardDecls = forwardDecls;
+      this.autoHoisted  = autoHoisted;
+      this.filteredRest = filteredRest;
+    }
+  }
+
+  /**
+   * Shared AST pipeline: parse → enum extraction → lifecycle rewrite →
+   * class hoisting → PSketch injection → array hoisting → dependency
+   * hoisting → forward decls → auto-hoisting.
+   *
+   * Both writeSketchImpl() and CppCLI.runPipeline() call this and then
+   * assemble their own output format from the result.
+   */
+  public static AstPipelineResult runAstPipeline(CompilationUnit cu) {
+    EnumScopeExtractor.Result enumResult = EnumScopeExtractor.extract(cu.items());
+    List<TopLevelItem> afterLifecycle = LifecycleRewriter.rewrite(enumResult.rest, LIFECYCLE_METHOD_NAMES);
+    ClassHoister.Result classResult = ClassHoister.hoist(afterLifecycle);
+    List<PSketchInjector.Result> injectedClasses = PSketchInjector.injectAll(classResult.hoistedClasses);
+    List<TypeDef> finalClasses = injectedClasses.stream().map(PSketchInjector.Result::typeDef).toList();
+    ArrayHoister.Result arrayResult = ArrayHoister.hoist(classResult.rest);
+    DependencyHoister.Result depResult = DependencyHoister.hoist(arrayResult.rest, finalClasses, LIFECYCLE_METHOD_NAMES);
+    List<FunctionDecl> forwardDecls = ForwardDeclGenerator.generate(depResult.hoistedFunctions);
+
+    // Auto-hoist items that cannot legally be struct members.
+    List<TopLevelItem> autoHoisted  = new ArrayList<>();
+    List<TopLevelItem> filteredRest = new ArrayList<>();
+    for (TopLevelItem item : depResult.rest) {
+      if (item instanceof VariableDecl vd
+              && vd.type() instanceof NamedType nt
+              && (nt.baseName().equals("auto") || nt.baseName().startsWith("std::function"))) {
+        autoHoisted.add(item);
+      } else if (item instanceof FunctionDecl fd
+              && fd.name().startsWith("operator")
+              && fd.params().size() >= 2) {
+        autoHoisted.add(item);
+      } else if (item instanceof FunctionDecl fdce && fdce.isConstexpr()) {
+        autoHoisted.add(item);
+      } else if (item instanceof VariableDecl vdq && vdq.name().contains("::")) {
+        autoHoisted.add(item);
+      } else if (item instanceof FunctionDecl fdoc && fdoc.name().contains("::")) {
+        autoHoisted.add(item);
+      } else {
+        filteredRest.add(item);
+      }
+    }
+    return new AstPipelineResult(enumResult, classResult, finalClasses,
+        arrayResult, depResult, forwardDecls, autoHoisted, filteredRest);
+  }
+
+
+
+
   public CppBuild(Sketch sketch, CppMode mode) {
     this.sketch     = sketch;
     this.mode       = mode;
@@ -283,9 +453,17 @@ public class CppBuild {
       listener.statusError("g++ not found â install MSYS2 to use C++ Mode");
       throw new Exception("g++ not found");
     } else {
-      try { if (Runtime.getRuntime().exec(new String[]{"g++","--version"}).waitFor()==0) return; }
-      catch (Exception ignored) {}
       if (isMac) {
+        // On macOS, check both compiler AND libraries before deciding to skip
+        // the wizard. g++ may be present but GLFW/GLEW headers missing.
+        boolean macGpp = false;
+        try { macGpp = Runtime.getRuntime().exec(new String[]{"g++","--version"}).waitFor()==0; }
+        catch (Exception ignored) {}
+        boolean macGlfw = new File("/opt/homebrew/include/GLFW/glfw3.h").exists()
+                       || new File("/usr/local/include/GLFW/glfw3.h").exists();
+        boolean macGlew = new File("/opt/homebrew/include/GL/glew.h").exists()
+                       || new File("/usr/local/include/GL/glew.h").exists();
+        if (macGpp && macGlfw && macGlew) return; // everything present, skip wizard
         // Try the guided installer first (Xcode Command Line Tools, then
         // GLFW/GLEW via Homebrew if present). A cancel throws and stops
         // the build; only a genuine failure falls through to the dialog.
@@ -877,7 +1055,7 @@ public class CppBuild {
   // override-marking and dependency-exclusion rules. Same list as the
   // original's local "lifecycleMethods" array, just hoisted to a
   // constant since both LifecycleRewriter and DependencyHoister need it.
-  private static final java.util.Set<String> LIFECYCLE_METHOD_NAMES = java.util.Set.of(
+  public static final java.util.Set<String> LIFECYCLE_METHOD_NAMES = java.util.Set.of(
       "setup", "draw", "settings",
       "mousePressed", "mouseReleased", "mouseClicked",
       "mouseMoved", "mouseDragged", "mouseWheel",
@@ -1014,6 +1192,38 @@ public class CppBuild {
    * unhandled crash, even though "an internal error occurred" is
    * necessarily less specific than a real syntax-error message can be.
    */
+  /** Set by CppCLI to bypass sketch.getCode() -- raw PDE code to translate. */
+  String cliRawCode = null;
+
+  /** Entry point for CppCLI: translate raw PDE code to C++ string. */
+  public static String generateSketchOutput(String rawCode) throws Exception {
+    java.io.File tmpDir = java.nio.file.Files.createTempDirectory("cppmode_cli").toFile();
+    try {
+      // Allocate without constructor (no Sketch/Mode needed)
+      Class<?> uc = Class.forName("sun.misc.Unsafe");
+      java.lang.reflect.Field uf = uc.getDeclaredField("theUnsafe");
+      uf.setAccessible(true);
+      sun.misc.Unsafe unsafe = (sun.misc.Unsafe) uf.get(null);
+      CppBuild b = (CppBuild) unsafe.allocateInstance(CppBuild.class);
+      b.cliRawCode = rawCode;
+      // Set buildDir so writeSketchImpl can write Sketch_run.cpp
+      java.lang.reflect.Field bd = null;
+      for (Class<?> c = CppBuild.class; c != null; c = c.getSuperclass()) {
+        try { bd = c.getDeclaredField("buildDir"); break; } catch (NoSuchFieldException e) {}
+      }
+      if (bd != null) { bd.setAccessible(true); bd.set(b, tmpDir); }
+      java.lang.reflect.Method ws = CppBuild.class.getDeclaredMethod("writeSketchImpl",
+          processing.app.RunnerListener.class);
+      ws.setAccessible(true);
+      java.io.File out = (java.io.File) ws.invoke(b, (Object) null);
+      return java.nio.file.Files.readString(out.toPath());
+    } finally {
+      java.io.File[] fs = tmpDir.listFiles();
+      if (fs != null) for (java.io.File f : fs) f.delete();
+      tmpDir.delete();
+    }
+  }
+
   private File writeSketch(RunnerListener listener) throws IOException {
     try {
       return writeSketchImpl(listener);
@@ -1030,7 +1240,7 @@ public class CppBuild {
   private File writeSketchImpl(RunnerListener listener) throws IOException {
     StringBuilder prefix = new StringBuilder();
     StringBuilder suffix = new StringBuilder();
-    for (int i = 0; i < sketch.getCodeCount(); i++) {
+    for (int i = 0; i < (cliRawCode != null ? 0 : sketch.getCodeCount()); i++) {
       String prog = sketch.getCode(i).getProgram();
       boolean hasLifecycle = prog.contains("void setup(") || prog.contains("void draw(");
       // Non-lifecycle tabs (class definitions etc.) go before lifecycle tabs,
@@ -1043,7 +1253,8 @@ public class CppBuild {
       else suffix.append(prog).append("\n");
     }
     StringBuilder raw = new StringBuilder();
-    raw.append(prefix).append(suffix);
+    if (cliRawCode != null) { raw.append(cliRawCode); }
+    else { raw.append(prefix).append(suffix); }
 
     String code = sanitize(raw.toString());
     code = removeUserIncludes(code);
@@ -1231,102 +1442,34 @@ public class CppBuild {
       // ââ Normal sketch (has setup/draw) âââââââââââââââââââââââââââââââââââ
       CompilationUnit cu = parseOrReportError(code, listener);
 
-      // Step 1: enum extraction (before anything else touches the list) --
-      // see EnumScopeExtractor's javadoc for the known constexpr/
-      // static_assert/using-alias gap, carried over unchanged.
-      EnumScopeExtractor.Result enumResult = EnumScopeExtractor.extract(cu.items());
-
-      // Step 2: lifecycle rewriting (override + nullptr defaulting).
-      List<TopLevelItem> afterLifecycle = LifecycleRewriter.rewrite(enumResult.rest, LIFECYCLE_METHOD_NAMES);
-
-      // Step 3: class hoisting.
-      ClassHoister.Result classResult = ClassHoister.hoist(afterLifecycle);
-
-      // Step 4: _PSketch injection.
-      List<PSketchInjector.Result> injectedClasses = PSketchInjector.injectAll(classResult.hoistedClasses);
-      List<TypeDef> finalClasses = injectedClasses.stream().map(PSketchInjector.Result::typeDef).toList();
-
-      // Step 5: array hoisting.
-      ArrayHoister.Result arrayResult = ArrayHoister.hoist(classResult.rest);
-
-      // Step 6: dependency hoisting (functions + plain variables that
-      // hoisted classes reference).
-      DependencyHoister.Result depResult = DependencyHoister.hoist(arrayResult.rest, finalClasses, LIFECYCLE_METHOD_NAMES);
-
-      // Step 7: forward-declare hoisted functions.
-      List<FunctionDecl> forwardDecls = ForwardDeclGenerator.generate(depResult.hoistedFunctions);
-
-      // Preprocessor directives, namespace blocks, and using-namespace
-      // declarations can never be valid INSIDE a struct body --
-      // #include/namespace/using-namespace are only legal at true file
-      // scope. Found as a real bug via PipelineCompositionTest against a
-      // fixture with top-level "#include <functional>"/"#include
-      // <string>" lines, which an earlier version of this method placed
-      // inside struct Sketch, producing invalid C++. Extracted here and
-      // emitted at the very FRONT of the remaining output (before even
-      // forward decls), since a forward-declared function's signature
-      // could in principle reference something from one of these
-      // includes too -- "before the Sketch struct" alone isn't a strong
-      // enough guarantee; "before everything else generated" is.
-      // Hoist "auto" variables to namespace scope -- auto on non-static members is invalid.
-      List<TopLevelItem> autoHoisted = new ArrayList<>();
-      List<TopLevelItem> filteredRest = new ArrayList<>();
-      for (TopLevelItem item : depResult.rest) {
-        if (item instanceof VariableDecl vd
-                && vd.type() instanceof NamedType nt
-                && (nt.baseName().equals("auto") || nt.baseName().startsWith("std::function"))) {
-          autoHoisted.add(item);
-        } else if (item instanceof FunctionDecl fd
-                && fd.name().startsWith("operator")
-                && fd.params().size() >= 2) {
-          // Free binary operator: must be at namespace scope, not struct member
-          autoHoisted.add(item);
-        } else if (item instanceof FunctionDecl fdce && fdce.isConstexpr()) {
-          // constexpr functions must be at namespace scope for static_assert to use them
-          autoHoisted.add(item);
-        } else if (item instanceof VariableDecl vdq && vdq.name().contains("::")) {
-          // Out-of-class static member definition: "int Agent::totalAgents = 0"
-          // must be at namespace scope, never inside struct Sketch
-          autoHoisted.add(item);
-        } else if (item instanceof FunctionDecl fdoc && fdoc.name().contains("::")) {
-          // Out-of-class function definition: "Generator17 GeneratorPromise17::get_return_object()"
-          // must be at namespace scope, never inside struct Sketch
-          autoHoisted.add(item);
-        } else {
-          filteredRest.add(item);
-        }
-      }
-      // Replace depResult.rest with filtered version
-      List<TopLevelItem> effectiveRest = filteredRest;
+      // Steps 1-7 + auto-hoisting: delegate to shared pipeline.
+      AstPipelineResult pipe = runAstPipeline(cu);
+      EnumScopeExtractor.Result enumResult = pipe.enumResult;
+      ClassHoister.Result classResult      = pipe.classResult;
+      List<TypeDef> finalClasses           = pipe.finalClasses;
+      ArrayHoister.Result arrayResult      = pipe.arrayResult;
+      DependencyHoister.Result depResult   = pipe.depResult;
+      List<FunctionDecl> forwardDecls      = pipe.forwardDecls;
+      List<TopLevelItem> autoHoisted       = pipe.autoHoisted;
+      List<TopLevelItem> effectiveRest     = pipe.filteredRest;
       List<TopLevelItem> sketchMembers = new ArrayList<>();
       List<TopLevelItem> deferredAliases = new ArrayList<>();
       for (TopLevelItem item : effectiveRest) {
-        if (item instanceof PreprocessorLine pl && pl.rawText().startsWith("#include")) {
-          preNs.append(CodeGen.generateNode(item, 0)); // hoist before namespace
-        } else if (item instanceof PreprocessorLine pl2) {
-          // Defer "using X = ..." type aliases (including template aliases) until after struct definitions
-          String rt = pl2.rawText().trim();
-          // Defer "using X = ..." type aliases and deduction guides after struct definitions
+        if (item instanceof PreprocessorLine pl) {
+          String rt = pl.rawText().trim();
           boolean isTypeAlias = (rt.startsWith("using ") || rt.contains(" using ")) && !rt.contains("using namespace") && rt.contains("=");
-          // Deduction guide: "Name(params) -> Name<params>;" -- NOT concepts with requires { } -> 
-          // Distinguish by checking -> appears before any { (deduction guides have no braces)
           boolean isDeductionGuide = rt.contains("->") && rt.contains("(") && !rt.startsWith("#")
               && !rt.contains("concept") && !rt.contains("requires") && (rt.indexOf("{") < 0 || rt.indexOf("->") < rt.indexOf("{"));
           if (isTypeAlias || isDeductionGuide) {
             deferredAliases.add(item);
           } else if (rt.startsWith("template ") && !rt.startsWith("template<") && !rt.startsWith("template <")) {
-            // Explicit template instantiation: must be outside namespace Processing
             preNs.append(CodeGen.generateNode(item, 0));
           } else if (rt.startsWith("extern template ")) {
-            // Explicit instantiation declaration: "extern template class std::vector<float>;"
-            // Must also be outside namespace Processing -- same constraint as above.
             preNs.append(CodeGen.generateNode(item, 0));
           } else if (rt.startsWith("namespace ") && rt.contains(" = ")) {
-            // Namespace alias: "namespace Short = Long::Name;"
-            // Must be emitted AFTER the namespaces it references are defined,
-            // but within the same namespace scope (namespace Processing).
-            // Defer until after struct definitions like type aliases.
             deferredAliases.add(item);
+          } else if (isFileScopePreprocessorLine(pl)) {
+            preNs.append(CodeGen.generateNode(item, 0));
           } else {
             out.append(CodeGen.generateNode(item, 0));
           }
@@ -3102,7 +3245,9 @@ public class CppBuild {
           noIncludes.append(line).append("\n");
         }
       }
-      File scratch = new File(buildDir, "_macro_preprocess_input.cpp");
+      File scratch = (buildDir != null)
+          ? new File(buildDir, "_macro_preprocess_input.cpp")
+          : Files.createTempFile("cppmode_preprocess_", ".cpp").toFile();
       Files.writeString(scratch.toPath(), noIncludes.toString());
 
       boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
@@ -3113,7 +3258,7 @@ public class CppBuild {
       // them (omit -P) since downstream code already re-stamps its own
       // #line directive, and keeping g++'s markers costs nothing here.
       ProcessBuilder pb = new ProcessBuilder(gpp, "-E", "-std=c++2c", "-x", "c++", scratch.getAbsolutePath());
-      pb.directory(buildDir);
+      pb.directory(buildDir != null ? buildDir : scratch.getParentFile());
       pb.redirectErrorStream(false);
       Process proc = pb.start();
 
@@ -4394,7 +4539,7 @@ public class CppBuild {
   }
 
 
-  private String rewriteGccError(String line) {
+  public static String rewriteGccError(String line) {
     line = line.replace("std::__cxx11::basic_string<char>", "String");
     line = line.replace("std::basic_string<char>", "String");
     line = line.replace("‘std::__cxx11::basic_string<char>’", "String");
@@ -4412,20 +4557,5 @@ public class CppBuild {
     return line;
   }
 
-  public static String generateSketchOutput(String rawCode) throws Exception {
-    CppBuild b = new CppBuild(null, null);
-    String code = b.sanitize(rawCode);
-    code = b.removeUserIncludes(code);
-    code = code.replaceAll("(\\bfinal_suspend\\s*\\([^)]*\\))(\\s*\\{)", "$1 noexcept$2");
-    code = code.replaceAll("(\\binitial_suspend\\s*\\([^)]*\\))(\\s*\\{)", "$1 noexcept$2");
-    code = code.replaceAll("\\btranslate\\s*\\(\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*\\)\\s*;", "");
-    code = code.replaceAll("\\btranslate\\s*\\(\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*,\\s*0+\\.?0*f?\\s*\\)\\s*;", "");
-    code = b.stripRawStringLiterals(code);
-    code = code.replaceAll("(?<=[0-9a-fA-FxXbB])'(?=[0-9a-fA-F])", "");
-    code = b.javaToC(code);
-    code = b.stripNamespaceProcessing(code);
-    code = b.preprocessMacros(code);
-    return code;
-  }
 
 }
