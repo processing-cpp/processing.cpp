@@ -459,9 +459,17 @@ public class CppBuild {
         boolean macGpp = false;
         try { macGpp = Runtime.getRuntime().exec(new String[]{"g++","--version"}).waitFor()==0; }
         catch (Exception ignored) {}
-        boolean macGlfw = new File("/opt/homebrew/include/GLFW/glfw3.h").exists()
+        String macArch = System.getProperty("os.arch","").contains("aarch64") ? "arm64" : "x64";
+        File macLibsDir = new File(System.getProperty("user.home") +
+            "/Library/Application Support/Processing/modes/CppMode/libs/macos-" + macArch);
+        // Also check relative to the mode's own directory
+        boolean hasBundledGlfw = new File(macLibsDir, "libglfw.3.dylib").exists();
+        boolean hasBundledGlew = new File(macLibsDir, "libGLEW.dylib").exists();
+        boolean macGlfw = hasBundledGlfw
+                       || new File("/opt/homebrew/include/GLFW/glfw3.h").exists()
                        || new File("/usr/local/include/GLFW/glfw3.h").exists();
-        boolean macGlew = new File("/opt/homebrew/include/GL/glew.h").exists()
+        boolean macGlew = hasBundledGlew
+                       || new File("/opt/homebrew/include/GL/glew.h").exists()
                        || new File("/usr/local/include/GL/glew.h").exists();
         if (macGpp && macGlfw && macGlew) return; // everything present, skip wizard
         // Try the guided installer first (Xcode Command Line Tools, then
@@ -3164,10 +3172,17 @@ public class CppBuild {
         "-lcomdlg32", "-lshell32", "-lole32", "-luuid",
         "-mwindows", "-pthread", "-D_USE_MATH_DEFINES");
     } else if (mac) {
-      // macOS has no separate libGL/libGLU â OpenGL is a system framework,
-      // bundled with Xcode Command Line Tools (no extra install needed).
-      // GLFW/GLEW come from Homebrew, so link against its lib directory too.
-      if (homebrewPrefix != null) {
+      // macOS: prefer bundled dylibs shipped with the mode (libs/macos-arm64
+      // or libs/macos-x64) so users need no Homebrew install at all.
+      String arch = System.getProperty("os.arch","").contains("aarch64") ? "arm64" : "x64";
+      File macLibsDir = new File(runtimeDir.getParentFile(), "libs/macos-" + arch);
+      boolean hasBundled = new File(macLibsDir, "libglfw.3.dylib").exists()
+                        && new File(macLibsDir, "libGLEW.dylib").exists();
+      if (hasBundled) {
+        cmd.add("-L" + macLibsDir.getAbsolutePath());
+        cmd.add("-Wl,-rpath," + macLibsDir.getAbsolutePath());
+        cmd.add("-Wl,-rpath,@executable_path");
+      } else if (homebrewPrefix != null) {
         cmd.add("-L" + homebrewPrefix + "/lib");
       }
       Collections.addAll(cmd, "-lglfw", "-lGLEW", "-lm", "-pthread");
