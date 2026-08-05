@@ -49,7 +49,10 @@ jobs:
       - name: Install GLFW and GLEW
         run: |
           export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
-          brew install glfw glew
+          export NONINTERACTIVE=1
+          brew untap aws/tap 2>/dev/null || true
+          brew install --quiet glfw glew
+        timeout-minutes: 15
 
       - name: Collect and fix dylib install names
         run: |
