@@ -238,6 +238,64 @@ public class InstallWizard {
   // ── Windows ────────────────────────────────────────────────────────────
 
   /** Pure detection, no dialog — used by run() before showing anything. */
+  private static final String WINLIBS_URL =
+    "https://github.com/brechtsanders/winlibs_mingw/releases/download/" +
+    "14.2.0posix-19.1.1-12.0.0-ucrt-r2/" +
+    "winlibs-x86_64-posix-seh-gcc-14.2.0-mingw-w64ucrt-12.0.0-r2.zip";
+
+  public static File getPortableGccDir() {
+    return new File(System.getenv("APPDATA") + "\\CppMode\\gcc\\mingw64\\bin");
+  }
+
+  public static File getPortableGpp() {
+    return new File(getPortableGccDir(), "g++.exe");
+  }
+
+  private boolean installPortableGcc() {
+    File gccDir = new File(System.getenv("APPDATA") + "\\CppMode\\gcc");
+    gccDir.mkdirs();
+    File zipFile = new File(gccDir, "winlibs-gcc.zip");
+    try {
+      setStep("Downloading portable g++ (WinLibs GCC 14.2)...");
+      appendLog("Source: " + WINLIBS_URL);
+      appendLog("Destination: " + gccDir.getAbsolutePath());
+      appendLog("Size: ~130 MB — please wait...");
+      try (java.io.InputStream in = new java.net.URI(WINLIBS_URL).toURL().openStream();
+           java.io.OutputStream out = new java.io.FileOutputStream(zipFile)) {
+        byte[] buf = new byte[64 * 1024];
+        long total = 0; int n;
+        while ((n = in.read(buf)) != -1) {
+          if (cancelled.get()) return false;
+          out.write(buf, 0, n);
+          total += n;
+          if (total % (5 * 1024 * 1024) < buf.length)
+            appendLog("Downloaded " + (total / (1024 * 1024)) + " MB...");
+        }
+      }
+      setStep("Extracting gcc...");
+      appendLog("Extracting to " + gccDir.getAbsolutePath());
+      // Use PowerShell Expand-Archive (available on all modern Windows)
+      Process extract = new ProcessBuilder(
+        "powershell", "-NoProfile", "-Command",
+        "Expand-Archive -Force -Path '" + zipFile.getAbsolutePath() +
+        "' -DestinationPath '" + gccDir.getAbsolutePath() + "'")
+        .redirectErrorStream(true).start();
+      streamToLog(extract);
+      int code = extract.waitFor();
+      zipFile.delete(); // clean up zip after extraction
+      if (code != 0) { appendLog("Extraction failed."); return false; }
+      if (!getPortableGpp().exists()) {
+        appendLog("g++.exe not found after extraction -- unexpected zip structure.");
+        return false;
+      }
+      appendLog("Portable g++ installed: " + getPortableGpp().getAbsolutePath());
+      return true;
+    } catch (Exception e) {
+      appendLog("Error: " + e.getMessage());
+      return false;
+    }
+  }
+
   private java.util.List<String> detectWindowsMissing() {
     String pacman = findWindowsPacman();
     boolean haveGpp = pacman != null ? false : commandExists("g++", "--version");
@@ -321,6 +379,13 @@ public class InstallWizard {
    */
   private boolean installWindowsToolchain(String existingPacman) {
     try {
+      // Prefer portable gcc (no MSYS2 needed) unless MSYS2 already installed.
+      if (existingPacman == null && !getPortableGpp().exists()) {
+        if (!installPortableGcc()) return false;
+        if (cancelled.get()) return false;
+        // Portable gcc bundles everything -- no pacman step needed.
+        return true;
+      }
       String pacman = existingPacman;
       if (pacman == null) {
         File installer = File.createTempFile("msys2-installer", ".exe");

@@ -417,14 +417,18 @@ public class CppBuild {
     boolean isMac = os.contains("mac");
     if (isWin) {
       for (String p : new String[]{
+          // Portable gcc (downloaded by InstallWizard, no MSYS2 needed)
+          System.getenv("APPDATA") + "\\CppMode\\gcc\\mingw64\\bin\\g++.exe",
           "C:\\msys64\\mingw64\\bin\\g++.exe",
           "C:\\msys2\\mingw64\\bin\\g++.exe",
           System.getProperty("user.home") + "\\msys64\\mingw64\\bin\\g++.exe",
           "C:\\msys64\\ucrt64\\bin\\g++.exe"})
         if (new File(p).exists()) return;
-      // Do NOT fall back to PATH g++ -- it won't have GLFW/GLEW and will
-      // produce linker errors. Only MSYS2 mingw64 g++ is accepted on Windows.
-      // Run the wizard unconditionally if MSYS2 g++ not found at known paths.
+      // Try PATH g++ as final fallback (bundled DLLs cover GLFW/GLEW)
+      try {
+        if (Runtime.getRuntime().exec(new String[]{"g++","--version"}).waitFor()==0) return;
+      } catch (Exception ignored) {}
+      // No g++ found anywhere -- run the install wizard.
       if (InstallWizard.run(listener)) return;
 
       Object[] opts = { "Install Automatically", "Download MSYS2", "Cancel" };
@@ -3340,6 +3344,8 @@ public class CppBuild {
   private String findGpp(boolean win) {
     if (win) {
       for (String p : new String[]{
+            // Portable gcc (downloaded by InstallWizard, no MSYS2 needed)
+            System.getenv("APPDATA") + "\\CppMode\\gcc\\mingw64\\bin\\g++.exe",
             "C:\\msys64\\mingw64\\bin\\g++.exe",
             "C:\\msys2\\mingw64\\bin\\g++.exe",
             System.getProperty("user.home") + "\\msys64\\mingw64\\bin\\g++.exe"})
