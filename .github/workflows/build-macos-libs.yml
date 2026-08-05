@@ -3,6 +3,9 @@ name: Build macOS bundled libs (GLFW + GLEW)
 on:
   workflow_dispatch:  # manual trigger only
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-latest  # arm64 runner
