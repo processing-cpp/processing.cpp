@@ -3197,7 +3197,9 @@ public class CppBuild {
     // main() is now emitted inside Sketch_run.cpp by writeSketch() -- don't link main.cpp
     // Use precompiled header if available -- cuts sketch compile time significantly.
     if (processingPch.exists() && !needsPch) {
-      cmd.add("-include-pch"); cmd.add(processingPch.getAbsolutePath());
+      // GCC automatically uses Processing.h.gch when the directory
+      // containing it appears before the src dir in the include path.
+      cmd.add("-I"); cmd.add(processingPch.getParentFile().getAbsolutePath());
     }
     cmd.add("-I" + runtimeDir.getAbsolutePath());
     cmd.add("-o"); cmd.add(bin.getAbsolutePath());
