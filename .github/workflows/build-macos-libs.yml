@@ -7,92 +7,60 @@ permissions:
   contents: write
 
 jobs:
-  build-arm64:
-    runs-on: macos-latest  # arm64
+  build:
+    runs-on: macos-latest  # arm64 runner only -- we lipo universal binaries
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install GLFW and GLEW
-        run: |
-          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
-          brew install glfw glew
-
-      - name: Collect and fix dylib install names
-        run: |
-          mkdir -p libs/macos-arm64
-
-          GLFW=$(brew --prefix glfw)/lib/libglfw.3.dylib
-          cp "$GLFW" libs/macos-arm64/libglfw.3.dylib
-          install_name_tool -id @rpath/libglfw.3.dylib libs/macos-arm64/libglfw.3.dylib
-
-          GLEW_VER=$(ls $(brew --prefix glew)/lib/libGLEW.*.dylib | head -1)
-          GLEW_BASE=$(basename "$GLEW_VER")
-          cp "$GLEW_VER" libs/macos-arm64/$GLEW_BASE
-          install_name_tool -id @rpath/$GLEW_BASE libs/macos-arm64/$GLEW_BASE
-          cp "$GLEW_VER" libs/macos-arm64/libGLEW.dylib
-          install_name_tool -id @rpath/libGLEW.dylib libs/macos-arm64/libGLEW.dylib
-
-          echo "=== arm64 libs ==="
-          file libs/macos-arm64/*.dylib
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-arm64-libs
-          path: libs/macos-arm64/
-
-  build-x64:
-    runs-on: macos-13  # last Intel runner
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install GLFW and GLEW
+      - name: Install GLFW and GLEW (arm64)
         run: |
           export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
           export NONINTERACTIVE=1
-          brew untap aws/tap 2>/dev/null || true
-          brew install --quiet glfw glew
-        timeout-minutes: 15
+          brew install glfw glew
 
-      - name: Collect and fix dylib install names
+      - name: Install x86_64 GLFW and GLEW via Rosetta homebrew
         run: |
-          mkdir -p libs/macos-x64
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+          export NONINTERACTIVE=1
+          # Install x86_64 homebrew if not present
+          if [ ! -f /usr/local/bin/brew ]; then
+            arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          fi
+          arch -x86_64 /usr/local/bin/brew install glfw glew
 
-          GLFW=$(brew --prefix glfw)/lib/libglfw.3.dylib
-          cp "$GLFW" libs/macos-x64/libglfw.3.dylib
+      - name: Build universal dylibs
+        run: |
+          mkdir -p libs/macos-arm64 libs/macos-x64
+
+          ARM_PREFIX=$(brew --prefix)
+          X64_PREFIX=/usr/local
+
+          # GLFW
+          cp "$ARM_PREFIX/lib/libglfw.3.dylib" libs/macos-arm64/libglfw.3.dylib
+          install_name_tool -id @rpath/libglfw.3.dylib libs/macos-arm64/libglfw.3.dylib
+
+          cp "$X64_PREFIX/lib/libglfw.3.dylib" libs/macos-x64/libglfw.3.dylib
           install_name_tool -id @rpath/libglfw.3.dylib libs/macos-x64/libglfw.3.dylib
 
-          GLEW_VER=$(ls $(brew --prefix glew)/lib/libGLEW.*.dylib | head -1)
-          GLEW_BASE=$(basename "$GLEW_VER")
-          cp "$GLEW_VER" libs/macos-x64/$GLEW_BASE
+          # GLEW
+          GLEW_ARM=$(ls "$ARM_PREFIX/lib/libGLEW".*.dylib | head -1)
+          GLEW_X64=$(ls "$X64_PREFIX/lib/libGLEW".*.dylib | head -1)
+          GLEW_BASE=$(basename "$GLEW_ARM")
+
+          cp "$GLEW_ARM" libs/macos-arm64/$GLEW_BASE
+          install_name_tool -id @rpath/$GLEW_BASE libs/macos-arm64/$GLEW_BASE
+          cp "$GLEW_ARM" libs/macos-arm64/libGLEW.dylib
+          install_name_tool -id @rpath/libGLEW.dylib libs/macos-arm64/libGLEW.dylib
+
+          cp "$GLEW_X64" libs/macos-x64/$GLEW_BASE
           install_name_tool -id @rpath/$GLEW_BASE libs/macos-x64/$GLEW_BASE
-          cp "$GLEW_VER" libs/macos-x64/libGLEW.dylib
+          cp "$GLEW_X64" libs/macos-x64/libGLEW.dylib
           install_name_tool -id @rpath/libGLEW.dylib libs/macos-x64/libGLEW.dylib
 
-          echo "=== x64 libs ==="
+          echo "=== arm64 ==="
+          file libs/macos-arm64/*.dylib
+          echo "=== x64 ==="
           file libs/macos-x64/*.dylib
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-x64-libs
-          path: libs/macos-x64/
-
-  commit:
-    needs: [build-arm64, build-x64]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: macos-arm64-libs
-          path: libs/macos-arm64/
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: macos-x64-libs
-          path: libs/macos-x64/
 
       - name: Commit to repo
         run: |

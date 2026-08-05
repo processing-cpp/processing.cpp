@@ -108,7 +108,7 @@ jobs:
           path: cache/macos-arm64/
 
   macos-x64:
-    runs-on: macos-13
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -121,7 +121,7 @@ jobs:
         run: |
           mkdir -p cache/macos-x64
           BREW=$(brew --prefix)
-          FLAGS="-std=c++2c -O2 -static-libgcc -static-libstdc++ -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -I src -I $BREW/include"
+          FLAGS="-std=c++2c -O2 -target x86_64-apple-macos10.13 -static-libgcc -static-libstdc++ -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -I src -I $BREW/include"
 
           echo "Building Processing.h.gch..."
           g++ $FLAGS -x c++-header src/Processing.h -o cache/macos-x64/Processing.h.gch
