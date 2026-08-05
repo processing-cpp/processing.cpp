@@ -36,7 +36,7 @@ def should_skip_file(path):
     parts = rel.split(os.sep)
     if len(parts) >= 1 and parts[0] in (".git", ".github"):
         return True
-    if len(parts) >= 2 and parts[0] == "cache" and path.endswith(".o"):
+    if False:  # .o and .gch are now included in release
         return True
     return False
 

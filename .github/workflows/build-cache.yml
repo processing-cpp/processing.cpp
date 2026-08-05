@@ -1,0 +1,170 @@
+name: Build precompiled cache (Processing.o + PCH)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'src/Processing.cpp'
+      - 'src/Processing.h'
+      - 'src/Processing_defaults.cpp'
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install gcc
+        run: sudo apt-get install -y g++ libglfw3-dev libglew-dev
+
+      - name: Build cache
+        run: |
+          mkdir -p cache/linux-x64
+          FLAGS="-std=c++2c -O2 -march=x86-64 -static-libgcc -static-libstdc++ -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -I src"
+
+          echo "Building Processing.h.gch..."
+          g++ $FLAGS -x c++-header src/Processing.h -o cache/linux-x64/Processing.h.gch
+
+          echo "Building Processing.o..."
+          g++ $FLAGS -c src/Processing.cpp -o cache/linux-x64/Processing.o
+
+          echo "Building Processing_defaults.o..."
+          g++ $FLAGS -c src/Processing_defaults.cpp -o cache/linux-x64/Processing_defaults.o
+
+          echo "Done:"
+          ls -lh cache/linux-x64/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cache-linux-x64
+          path: cache/linux-x64/
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MinGW
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-glfw mingw-w64-x86_64-glew
+
+      - name: Build cache
+        shell: msys2 {0}
+        run: |
+          mkdir -p cache/windows-x64
+          FLAGS="-std=c++2c -O2 -march=x86-64 -static-libgcc -static-libstdc++ -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -I src"
+
+          echo "Building Processing.h.gch..."
+          g++ $FLAGS -x c++-header src/Processing.h -o cache/windows-x64/Processing.h.gch
+
+          echo "Building Processing.o..."
+          g++ $FLAGS -c src/Processing.cpp -o cache/windows-x64/Processing.o
+
+          echo "Building Processing_defaults.o..."
+          g++ $FLAGS -c src/Processing_defaults.cpp -o cache/windows-x64/Processing_defaults.o
+
+          ls -lh cache/windows-x64/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cache-windows-x64
+          path: cache/windows-x64/
+
+  macos-arm64:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: brew install glfw glew
+
+      - name: Build cache
+        run: |
+          mkdir -p cache/macos-arm64
+          BREW=$(brew --prefix)
+          FLAGS="-std=c++2c -O2 -static-libgcc -static-libstdc++ -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -I src -I $BREW/include"
+
+          echo "Building Processing.h.gch..."
+          g++ $FLAGS -x c++-header src/Processing.h -o cache/macos-arm64/Processing.h.gch
+
+          echo "Building Processing.o..."
+          g++ $FLAGS -c src/Processing.cpp -o cache/macos-arm64/Processing.o
+
+          echo "Building Processing_defaults.o..."
+          g++ $FLAGS -c src/Processing_defaults.cpp -o cache/macos-arm64/Processing_defaults.o
+
+          ls -lh cache/macos-arm64/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cache-macos-arm64
+          path: cache/macos-arm64/
+
+  macos-x64:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: brew install glfw glew
+
+      - name: Build cache
+        run: |
+          mkdir -p cache/macos-x64
+          BREW=$(brew --prefix)
+          FLAGS="-std=c++2c -O2 -static-libgcc -static-libstdc++ -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -I src -I $BREW/include"
+
+          echo "Building Processing.h.gch..."
+          g++ $FLAGS -x c++-header src/Processing.h -o cache/macos-x64/Processing.h.gch
+
+          echo "Building Processing.o..."
+          g++ $FLAGS -c src/Processing.cpp -o cache/macos-x64/Processing.o
+
+          echo "Building Processing_defaults.o..."
+          g++ $FLAGS -c src/Processing_defaults.cpp -o cache/macos-x64/Processing_defaults.o
+
+          ls -lh cache/macos-x64/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cache-macos-x64
+          path: cache/macos-x64/
+
+  commit:
+    needs: [linux, windows, macos-arm64, macos-x64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cache-linux-x64
+          path: cache/linux-x64/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cache-windows-x64
+          path: cache/windows-x64/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cache-macos-arm64
+          path: cache/macos-arm64/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cache-macos-x64
+          path: cache/macos-x64/
+
+      - name: Commit cache files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add cache/
+          git diff --staged --quiet || git commit -m "ci: update precompiled cache (Processing.o + PCH) for all platforms"
+          git push

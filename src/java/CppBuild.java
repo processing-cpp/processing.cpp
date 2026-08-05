@@ -3096,6 +3096,9 @@ public class CppBuild {
 
     // ââ Cached precompiled objects ââââââââââââââââââââââââââââââââââââââââââ
     // Processing.cpp takes ~9s to compile. Cache the .o and reuse it.
+    // Declared outside try so they are visible after the catch block.
+    File processingPch = null;
+    boolean needsPch = true;
     try {
     String osName = System.getProperty("os.name","").toLowerCase();
     String cacheSubDir = osName.contains("win")  ? "cache/windows-x64"
@@ -3103,18 +3106,35 @@ public class CppBuild {
                         : "cache/linux-x64";
     File cacheDir = new File(runtimeDir.getParentFile(), cacheSubDir);
     cacheDir.mkdirs();
+    File processingH = new File(runtimeDir, "Processing.h");
+    processingPch = new File(cacheDir, "Processing.h.gch");
+    needsPch = !processingPch.exists()
+      || (processingH.exists() && processingH.lastModified() > processingPch.lastModified());
     File processingO  = new File(cacheDir, "Processing.o");
     File defaultsO    = new File(cacheDir, "Processing_defaults.o");
     File processingCpp = new File(runtimeDir, "Processing.cpp");
     File defaultsCpp   = new File(runtimeDir, "Processing_defaults.cpp");
-
-    File processingH = new File(runtimeDir, "Processing.h");
     boolean needsProcessing = !processingO.exists()
       || processingCpp.lastModified() > processingO.lastModified()
       || (processingH.exists() && processingH.lastModified() > processingO.lastModified());
     boolean needsDefaults   = !defaultsO.exists()
       || defaultsCpp.lastModified() > defaultsO.lastModified();
 
+    if (needsPch) {
+      List<String> pchCmd = new ArrayList<>();
+      pchCmd.add(gpp); pchCmd.add("-std=c++2c"); pchCmd.add("-O2");
+      if (!mac) pchCmd.add("-march=x86-64");
+      if (homebrewPrefix != null) pchCmd.add("-I" + homebrewPrefix + "/include");
+      pchCmd.add("-I" + runtimeDir.getAbsolutePath());
+      pchCmd.add("-DPROCESSING_HAS_STB_IMAGE");
+      pchCmd.add("-DPROCESSING_HAS_STB_TRUETYPE");
+      pchCmd.add("-x"); pchCmd.add("c++-header");
+      pchCmd.add(processingH.getAbsolutePath());
+      pchCmd.add("-o"); pchCmd.add(processingPch.getAbsolutePath());
+      ProcessBuilder pchPb = new ProcessBuilder(pchCmd);
+      pchPb.redirectErrorStream(true);
+      pchPb.start().waitFor();
+    }
     if (needsProcessing) {
       List<String> preCmd = new ArrayList<>();
       preCmd.add(gpp); preCmd.add("-std=c++2c"); preCmd.add("-O2");
@@ -3175,6 +3195,10 @@ public class CppBuild {
 
     cmd.add(src.getAbsolutePath());
     // main() is now emitted inside Sketch_run.cpp by writeSketch() -- don't link main.cpp
+    // Use precompiled header if available -- cuts sketch compile time significantly.
+    if (processingPch.exists() && !needsPch) {
+      cmd.add("-include-pch"); cmd.add(processingPch.getAbsolutePath());
+    }
     cmd.add("-I" + runtimeDir.getAbsolutePath());
     cmd.add("-o"); cmd.add(bin.getAbsolutePath());
     // Enable stb_image if present in mode's src/ folder
