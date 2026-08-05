@@ -13,7 +13,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install GLFW and GLEW
-        run: brew install glfw glew
+        run: |
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+          brew install glfw glew
 
       - name: Collect and fix dylib install names
         run: |
@@ -45,7 +47,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install GLFW and GLEW
-        run: brew install glfw glew
+        run: |
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+          brew install glfw glew
 
       - name: Collect and fix dylib install names
         run: |

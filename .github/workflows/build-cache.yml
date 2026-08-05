@@ -81,7 +81,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install deps
-        run: brew install glfw glew
+        run: |
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+          brew install glfw glew
 
       - name: Build cache
         run: |
@@ -111,7 +113,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install deps
-        run: brew install glfw glew
+        run: |
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+          brew install glfw glew
 
       - name: Build cache
         run: |
