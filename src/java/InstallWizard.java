@@ -456,7 +456,13 @@ public class InstallWizard {
         return;
       }
 
-      if (!commandExists("brew", "--version")) {
+      // Check for brew at known locations -- Processing may launch without
+      // /opt/homebrew/bin in PATH on Apple Silicon Macs.
+      String brewExe = null;
+      if (new File("/opt/homebrew/bin/brew").exists()) brewExe = "/opt/homebrew/bin/brew";
+      else if (new File("/usr/local/bin/brew").exists()) brewExe = "/usr/local/bin/brew";
+      else if (commandExists("brew", "--version")) brewExe = "brew";
+      if (brewExe == null) {
         setStep("Installing Homebrew...");
         appendLog("Homebrew not found — installing it now.");
         appendLog("This downloads and runs the official Homebrew installer.");
@@ -488,21 +494,24 @@ public class InstallWizard {
           finishDialog(false, "Couldn't install Homebrew — see log above.");
           return;
         }
-        // Verify brew is now available
-        if (!commandExists("brew", "--version")) {
+        // Verify brew is now available after install
+        if (!new File("/opt/homebrew/bin/brew").exists()
+                && !new File("/usr/local/bin/brew").exists()
+                && !commandExists("brew", "--version")) {
           finishDialog(false,
             "Homebrew was installed but couldn't be found. Please restart Processing and try again.");
           return;
         }
+        // Re-resolve brewExe after install
+        if (new File("/opt/homebrew/bin/brew").exists()) brewExe = "/opt/homebrew/bin/brew";
+        else if (new File("/usr/local/bin/brew").exists()) brewExe = "/usr/local/bin/brew";
       }
 
       setStep("Installing: " + String.join(", ", missingLibs));
       try {
         java.util.List<String> brewCmd = new java.util.ArrayList<>();
         // Resolve brew path explicitly for Apple Silicon
-        String brewBin = new File("/opt/homebrew/bin/brew").exists()
-            ? "/opt/homebrew/bin/brew" : "brew";
-        brewCmd.add(brewBin); brewCmd.add("install");
+        brewCmd.add(brewExe); brewCmd.add("install");
         brewCmd.addAll(missingLibs);
         ProcessBuilder brewPb = new ProcessBuilder(brewCmd);
         String brewPath = System.getenv("PATH");
