@@ -423,121 +423,104 @@ public class InstallWizard {
     if (missing.contains("glew")) missingLibs.add("glew");
 
     Thread worker = new Thread(() -> {
-      if (needsCompiler) {
-        setStep("Installing: g++ (Xcode Command Line Tools)");
-        try {
-          new ProcessBuilder("xcode-select", "--install").start();
-        } catch (Exception e) {
-          appendLog("Could not launch the installer: " + e.getMessage());
-          finishDialog(false, "Couldn't start the Xcode Command Line Tools installer.");
-          return;
-        }
-
-        // Poll for completion since xcode-select --install returns
-        // immediately while the GUI installer runs separately.
-        boolean installed = false;
-        for (int i = 0; i < 180; i++) { // up to ~15 minutes
-          if (cancelled.get()) return;
-          try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
-          if (commandExists("xcrun", "-find", "g++")) { installed = true; break; }
-        }
-
-        if (!installed) {
-          finishDialog(false,
-            "Still waiting on Xcode Command Line Tools — finish the install, then try again.");
-          return;
-        }
-      }
-
-      if (cancelled.get()) return;
-
-      if (missingLibs.isEmpty()) {
-        finishDialog(true, "Setup complete.");
-        return;
-      }
-
-      // Check for brew at known locations -- Processing may launch without
+      // Resolve brew at known locations first -- Processing may launch without
       // /opt/homebrew/bin in PATH on Apple Silicon Macs.
       String brewExe = null;
       if (new File("/opt/homebrew/bin/brew").exists()) brewExe = "/opt/homebrew/bin/brew";
       else if (new File("/usr/local/bin/brew").exists()) brewExe = "/usr/local/bin/brew";
       else if (commandExists("brew", "--version")) brewExe = "brew";
-      if (brewExe == null) {
-        setStep("Installing Homebrew...");
-        appendLog("Homebrew not found — installing it now.");
-        appendLog("This downloads and runs the official Homebrew installer.");
-        appendLog("You may be asked for your password in a separate prompt.");
-        try {
-          // Official Homebrew install script -- same as what brew.sh runs.
-          // We pipe it to /bin/bash so no browser or manual step is needed.
-          String installScript =
-            "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"";
-          ProcessBuilder pb = new ProcessBuilder("/bin/bash", "-c", installScript);
-          pb.redirectErrorStream(true);
-          // Homebrew installer needs a real HOME and USER to set up paths.
-          pb.environment().put("NONINTERACTIVE", "1"); // skip interactive prompts
-          Process brewInstall = pb.start();
-          streamToLog(brewInstall);
-          int brewCode = brewInstall.waitFor();
-          if (cancelled.get()) return;
-          if (brewCode != 0) {
-            finishDialog(false, "Homebrew installation failed — see log above.");
+
+      // ── Step 1: compiler ────────────────────────────────────────────────
+      if (needsCompiler) {
+        if (brewExe != null) {
+          // Homebrew present: install gcc fully in-app, no GUI popup needed.
+          setStep("Installing: g++ (via Homebrew)");
+          appendLog("Installing gcc via Homebrew...");
+          try {
+            ProcessBuilder pb = new ProcessBuilder(brewExe, "install", "gcc");
+            pb.redirectErrorStream(true);
+            Process proc = pb.start();
+            streamToLog(proc);
+            int code = proc.waitFor();
+            if (cancelled.get()) return;
+            if (code != 0) { finishDialog(false, "Failed to install gcc — see log above."); return; }
+          } catch (Exception e) {
+            finishDialog(false, "Couldn't run Homebrew: " + e.getMessage()); return;
+          }
+        } else {
+          // No Homebrew: fall back to Xcode Command Line Tools GUI.
+          setStep("Installing: g++ (Xcode Command Line Tools)");
+          appendLog("Opening the Xcode Command Line Tools installer...");
+          appendLog("Please complete the popup window, then wait here.");
+          try { new ProcessBuilder("xcode-select", "--install").start(); }
+          catch (Exception e) { finishDialog(false, "Couldn't start Xcode CLT installer."); return; }
+          boolean installed = false;
+          for (int i = 0; i < 180; i++) {
+            if (cancelled.get()) return;
+            try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
+            appendLog("Waiting for Xcode CLT... (" + ((i+1)*5) + "s)");
+            if (commandExists("xcrun", "-find", "g++")) { installed = true; break; }
+          }
+          if (!installed) {
+            finishDialog(false, "Xcode CLT not detected — finish the install and try again.");
             return;
           }
-          // Homebrew on Apple Silicon installs to /opt/homebrew; add to PATH.
-          String brewPath = new File("/opt/homebrew/bin/brew").exists()
-              ? "/opt/homebrew/bin" : "/usr/local/bin";
-          pb.environment().put("PATH", brewPath + ":" + System.getenv("PATH"));
-          appendLog("Homebrew installed successfully.");
+        }
+      }
+      if (cancelled.get()) return;
+      if (missingLibs.isEmpty()) { finishDialog(true, "Setup complete."); return; }
+
+      // ── Step 2: GLFW / GLEW ─────────────────────────────────────────────
+      if (brewExe == null) {
+        // Still no Homebrew -- install it now.
+        setStep("Installing Homebrew...");
+        appendLog("Homebrew not found — installing it now (you may be asked for your password).");
+        try {
+          String script = "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"";
+          ProcessBuilder pb = new ProcessBuilder("/bin/bash", "-c", script);
+          pb.redirectErrorStream(true);
+          pb.environment().put("NONINTERACTIVE", "1");
+          Process proc = pb.start();
+          streamToLog(proc);
+          int code = proc.waitFor();
+          if (cancelled.get()) return;
+          if (code != 0) { finishDialog(false, "Homebrew installation failed — see log above."); return; }
+          if (new File("/opt/homebrew/bin/brew").exists()) brewExe = "/opt/homebrew/bin/brew";
+          else if (new File("/usr/local/bin/brew").exists()) brewExe = "/usr/local/bin/brew";
+          if (brewExe == null) {
+            finishDialog(false, "Homebrew installed but not found — restart Processing and try again.");
+            return;
+          }
         } catch (Exception e) {
-          appendLog("Error installing Homebrew: " + e.getMessage());
-          finishDialog(false, "Couldn't install Homebrew — see log above.");
-          return;
+          finishDialog(false, "Couldn't install Homebrew: " + e.getMessage()); return;
         }
-        // Verify brew is now available after install
-        if (!new File("/opt/homebrew/bin/brew").exists()
-                && !new File("/usr/local/bin/brew").exists()
-                && !commandExists("brew", "--version")) {
-          finishDialog(false,
-            "Homebrew was installed but couldn't be found. Please restart Processing and try again.");
-          return;
-        }
-        // Re-resolve brewExe after install
-        if (new File("/opt/homebrew/bin/brew").exists()) brewExe = "/opt/homebrew/bin/brew";
-        else if (new File("/usr/local/bin/brew").exists()) brewExe = "/usr/local/bin/brew";
       }
 
       setStep("Installing: " + String.join(", ", missingLibs));
       try {
-        java.util.List<String> brewCmd = new java.util.ArrayList<>();
-        // Resolve brew path explicitly for Apple Silicon
-        brewCmd.add(brewExe); brewCmd.add("install");
-        brewCmd.addAll(missingLibs);
-        ProcessBuilder brewPb = new ProcessBuilder(brewCmd);
-        String brewPath = System.getenv("PATH");
-        if (brewPath != null && !brewPath.contains("/opt/homebrew/bin"))
-            brewPb.environment().put("PATH", "/opt/homebrew/bin:/usr/local/bin:" + brewPath);
-        brewPb.redirectErrorStream(true);
-        Process p = brewPb.start();
-        streamToLog(p);
-        int code = p.waitFor();
+        java.util.List<String> cmd = new java.util.ArrayList<>();
+        cmd.add(brewExe); cmd.add("install"); cmd.addAll(missingLibs);
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.redirectErrorStream(true);
+        Process proc = pb.start();
+        streamToLog(proc);
+        int code = proc.waitFor();
         if (cancelled.get()) return;
         if (code == 0) {
-          finishDialog(true, "Setup complete.");
+          finishDialog(true, "Setup complete! Restart Processing if needed.");
         } else {
           finishDialog(false, "Homebrew install exited with code " + code + " — see log above.");
         }
       } catch (Exception e) {
-        appendLog("Error: " + e.getMessage());
-        finishDialog(false, "Couldn't run Homebrew — see log above.");
+        finishDialog(false, "Couldn't run Homebrew: " + e.getMessage());
       }
     });
     worker.setDaemon(true);
     worker.start();
-
     showDialogAndWaitForClose();
     return succeeded.get();
   }
+
 
   // ── Linux ──────────────────────────────────────────────────────────────
 
