@@ -1,56 +1,96 @@
 name: Build macOS bundled libs (GLFW + GLEW)
 
 on:
-  workflow_dispatch:  # manual trigger only
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: macos-latest  # arm64 runner
-
+  build-arm64:
+    runs-on: macos-latest  # arm64
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install GLFW and GLEW via Homebrew
+      - name: Install GLFW and GLEW
         run: brew install glfw glew
 
       - name: Collect and fix dylib install names
         run: |
           mkdir -p libs/macos-arm64
 
-          # GLFW
           GLFW=$(brew --prefix glfw)/lib/libglfw.3.dylib
           cp "$GLFW" libs/macos-arm64/libglfw.3.dylib
           install_name_tool -id @rpath/libglfw.3.dylib libs/macos-arm64/libglfw.3.dylib
 
-          # GLEW
-          GLEW=$(brew --prefix glew)/lib/libGLEW.dylib
-          # Get actual versioned name
           GLEW_VER=$(ls $(brew --prefix glew)/lib/libGLEW.*.dylib | head -1)
           GLEW_BASE=$(basename "$GLEW_VER")
           cp "$GLEW_VER" libs/macos-arm64/$GLEW_BASE
           install_name_tool -id @rpath/$GLEW_BASE libs/macos-arm64/$GLEW_BASE
-          # Also create libGLEW.dylib symlink-equivalent copy
           cp "$GLEW_VER" libs/macos-arm64/libGLEW.dylib
           install_name_tool -id @rpath/libGLEW.dylib libs/macos-arm64/libGLEW.dylib
 
           echo "=== arm64 libs ==="
           file libs/macos-arm64/*.dylib
-          otool -L libs/macos-arm64/libglfw.3.dylib
-          otool -L libs/macos-arm64/libGLEW.dylib
 
-      - name: Upload as artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-arm64-libs
           path: libs/macos-arm64/
 
+  build-x64:
+    runs-on: macos-13  # last Intel runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GLFW and GLEW
+        run: brew install glfw glew
+
+      - name: Collect and fix dylib install names
+        run: |
+          mkdir -p libs/macos-x64
+
+          GLFW=$(brew --prefix glfw)/lib/libglfw.3.dylib
+          cp "$GLFW" libs/macos-x64/libglfw.3.dylib
+          install_name_tool -id @rpath/libglfw.3.dylib libs/macos-x64/libglfw.3.dylib
+
+          GLEW_VER=$(ls $(brew --prefix glew)/lib/libGLEW.*.dylib | head -1)
+          GLEW_BASE=$(basename "$GLEW_VER")
+          cp "$GLEW_VER" libs/macos-x64/$GLEW_BASE
+          install_name_tool -id @rpath/$GLEW_BASE libs/macos-x64/$GLEW_BASE
+          cp "$GLEW_VER" libs/macos-x64/libGLEW.dylib
+          install_name_tool -id @rpath/libGLEW.dylib libs/macos-x64/libGLEW.dylib
+
+          echo "=== x64 libs ==="
+          file libs/macos-x64/*.dylib
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-x64-libs
+          path: libs/macos-x64/
+
+  commit:
+    needs: [build-arm64, build-x64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-arm64-libs
+          path: libs/macos-arm64/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-x64-libs
+          path: libs/macos-x64/
+
       - name: Commit to repo
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add libs/macos-arm64/
-          git diff --staged --quiet || git commit -m "ci: add bundled macOS arm64 GLFW+GLEW dylibs"
+          git add libs/macos-arm64/ libs/macos-x64/
+          git diff --staged --quiet || git commit -m "ci: update bundled macOS arm64+x64 GLFW+GLEW dylibs"
           git push
