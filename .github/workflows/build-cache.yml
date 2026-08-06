@@ -17,8 +17,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install gcc
-        run: sudo apt-get install -y g++ libglfw3-dev libglew-dev
+      - name: Install gcc-14
+        run: |
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
+          sudo apt-get update -q
+          sudo apt-get install -y gcc-14 g++-14 libglfw3-dev libglew-dev
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
 
       - name: Build cache
         run: |
@@ -89,7 +93,7 @@ jobs:
         run: |
           mkdir -p cache/macos-arm64
           BREW=$(brew --prefix)
-          FLAGS="-std=c++2c -O2 -static-libgcc -static-libstdc++ -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -I src -I $BREW/include"
+          FLAGS="-std=c++2c -O2 -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -I src -I $BREW/include"
 
           echo "Building Processing.h.gch..."
           g++ $FLAGS -x c++-header src/Processing.h -o cache/macos-arm64/Processing.h.gch
@@ -121,7 +125,7 @@ jobs:
         run: |
           mkdir -p cache/macos-x64
           BREW=$(brew --prefix)
-          FLAGS="-std=c++2c -O2 -target x86_64-apple-macos10.13 -static-libgcc -static-libstdc++ -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -I src -I $BREW/include"
+          FLAGS="-std=c++2c -O2 -target x86_64-apple-macos10.13 -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -I src -I $BREW/include"
 
           echo "Building Processing.h.gch..."
           g++ $FLAGS -x c++-header src/Processing.h -o cache/macos-x64/Processing.h.gch
