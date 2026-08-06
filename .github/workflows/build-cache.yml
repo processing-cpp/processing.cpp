@@ -173,6 +173,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add cache/
+          git add -f cache/
           git diff --staged --quiet || git commit -m "ci: update precompiled cache (Processing.o + PCH) for all platforms"
           git push

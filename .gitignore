@@ -1,2 +1,5 @@
 .zip
-cache/
+# Allow prebuilt platform cache files (committed by CI)
+cache/**/*.tmp
+cache/**/_macro_preprocess_input.cpp
+
