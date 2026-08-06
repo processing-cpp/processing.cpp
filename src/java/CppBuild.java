@@ -3145,6 +3145,9 @@ public class CppBuild {
     if (stbTTF.exists()) cmd.add("-DPROCESSING_HAS_STB_TRUETYPE");
 
     if (win) {
+      // Link against bundled import libs in libs/windows-x64/
+      File winLibs = new File(runtimeDir.getParentFile(), "libs/windows-x64");
+      if (winLibs.exists()) cmd.add("-L" + winLibs.getAbsolutePath());
       Collections.addAll(cmd,
         "-lglfw3", "-lglew32", "-lopengl32", "-lglu32",
         "-lcomdlg32", "-lshell32", "-lole32", "-luuid",
