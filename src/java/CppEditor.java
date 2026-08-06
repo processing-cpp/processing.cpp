@@ -109,15 +109,17 @@ public class CppEditor extends Editor {
       prefs.put(PREF_KEY, (String) stdCombo.getSelectedItem());
     });
 
-    JPanel wrapper = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
-    wrapper.setOpaque(false);
-    wrapper.add(stdCombo);
-
+    // Insert combo + small gap directly before the version label in the Box.
     int versionIdx = -1;
     for (int i = 0; i < tabBar.getComponentCount(); i++)
       if (tabBar.getComponent(i) == versionLabel) { versionIdx = i; break; }
-    if (versionIdx >= 0) tabBar.add(wrapper, versionIdx);
-    else tabBar.add(wrapper);
+    if (versionIdx >= 0) {
+      tabBar.add(javax.swing.Box.createHorizontalStrut(6), versionIdx);
+      tabBar.add(stdCombo, versionIdx);
+      tabBar.add(javax.swing.Box.createHorizontalStrut(4), versionIdx);
+    } else {
+      tabBar.add(stdCombo);
+    }
     tabBar.revalidate();
     tabBar.repaint();
   }
