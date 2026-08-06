@@ -27,7 +27,8 @@ jobs:
       - name: Build cache
         run: |
           mkdir -p cache/linux-x64
-          CFLAGS="-std=c++2c -O2 -march=x86-64 -static-libgcc -static-libstdc++"
+          CFLAGS="-std=c++2c -O2 -march=x86-64"
+          LFLAGS="-static-libgcc -static-libstdc++"
           DEFS="-DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE"
           INC="-I src"
 
@@ -35,10 +36,10 @@ jobs:
           g++ $CFLAGS $DEFS $INC -x c++-header src/Processing.h -o cache/linux-x64/Processing.h.gch
 
           echo "Building Processing.o..."
-          g++ $CFLAGS $DEFS $INC -c src/Processing.cpp -o cache/linux-x64/Processing.o
+          g++ $CFLAGS $LFLAGS $DEFS $INC -c src/Processing.cpp -o cache/linux-x64/Processing.o
 
           echo "Building Processing_defaults.o..."
-          g++ $CFLAGS $DEFS $INC -c src/Processing_defaults.cpp -o cache/linux-x64/Processing_defaults.o
+          g++ $CFLAGS $LFLAGS $DEFS $INC -c src/Processing_defaults.cpp -o cache/linux-x64/Processing_defaults.o
 
           echo "Done:"
           ls -lh cache/linux-x64/
@@ -63,16 +64,19 @@ jobs:
         shell: msys2 {0}
         run: |
           mkdir -p cache/windows-x64
-          FLAGS="-std=c++2c -O2 -march=x86-64 -static-libgcc -static-libstdc++ -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -I src"
+          CFLAGS="-std=c++2c -O2 -march=x86-64"
+          LFLAGS="-static-libgcc -static-libstdc++"
+          DEFS="-DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE"
+          INC="-I src"
 
           echo "Building Processing.h.gch..."
-          g++ $FLAGS -x c++-header src/Processing.h -o cache/windows-x64/Processing.h.gch
+          g++ $CFLAGS $DEFS $INC -x c++-header src/Processing.h -o cache/windows-x64/Processing.h.gch
 
           echo "Building Processing.o..."
-          g++ $FLAGS -c src/Processing.cpp -o cache/windows-x64/Processing.o
+          g++ $CFLAGS $LFLAGS $DEFS $INC -c src/Processing.cpp -o cache/windows-x64/Processing.o
 
           echo "Building Processing_defaults.o..."
-          g++ $FLAGS -c src/Processing_defaults.cpp -o cache/windows-x64/Processing_defaults.o
+          g++ $CFLAGS $LFLAGS $DEFS $INC -c src/Processing_defaults.cpp -o cache/windows-x64/Processing_defaults.o
 
           ls -lh cache/windows-x64/
 
