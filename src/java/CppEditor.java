@@ -71,44 +71,57 @@ public class CppEditor extends Editor {
     Container tabBar = (versionLabel != null) ? versionLabel.getParent() : null;
     if (tabBar == null) return;
 
-    // Load saved preference or detect from g++
     Preferences prefs = Preferences.userNodeForPackage(CppEditor.class);
-    String savedStd = prefs.get(PREF_KEY, null);
-    String currentStd = (savedStd != null) ? savedStd
-        : processing.mode.cpp.CppBuild.bestCppStd("g++");
+    String gpp = "g++";
+    String bestStd = processing.mode.cpp.CppBuild.bestCppStd(gpp);
+    String savedStd = prefs.get(PREF_KEY, bestStd);
+
+    int bestIdx = 0;
+    for (int i = 0; i < CPP_STDS.length; i++)
+      if (CPP_STDS[i].equals(bestStd)) { bestIdx = i; break; }
+    final int maxIdx = bestIdx;
 
     stdCombo = new JComboBox<>(CPP_STDS);
-    stdCombo.setSelectedItem(currentStd);
-    stdCombo.setFont(versionLabel.getFont());
-    stdCombo.setFocusable(false);
-    stdCombo.setToolTipText("C++ standard version");
-    stdCombo.addActionListener(e -> {
-      String selected = (String) stdCombo.getSelectedItem();
-      prefs.put(PREF_KEY, selected);
-    });
-
-    // Position just left of the version label
-    tabBar.setLayout(null);
-    tabBar.add(stdCombo);
-    tabBar.addComponentListener(new java.awt.event.ComponentAdapter() {
-      @Override public void componentResized(java.awt.event.ComponentEvent e) {
-        positionStdCombo(tabBar, versionLabel);
+    stdCombo.setRenderer(new javax.swing.DefaultListCellRenderer() {
+      @Override
+      public java.awt.Component getListCellRendererComponent(
+          JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+        super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+        int checkIdx = index < 0 ? stdCombo.getSelectedIndex() : index;
+        boolean supported = checkIdx <= maxIdx;
+        setEnabled(supported);
+        setForeground(supported ? list.getForeground() : java.awt.Color.GRAY);
+        return this;
       }
     });
-    SwingUtilities.invokeLater(() -> positionStdCombo(tabBar, versionLabel));
+
+    String toSelect = bestStd;
+    for (int i = 0; i <= bestIdx; i++)
+      if (CPP_STDS[i].equals(savedStd)) { toSelect = savedStd; break; }
+    stdCombo.setSelectedItem(toSelect);
+    stdCombo.setFont(versionLabel.getFont());
+    stdCombo.setFocusable(false);
+    stdCombo.setToolTipText("C++ standard — grayed out = not supported by your g++");
+
+    stdCombo.addActionListener(e -> {
+      int sel = stdCombo.getSelectedIndex();
+      if (sel > maxIdx) { stdCombo.setSelectedIndex(maxIdx); return; }
+      prefs.put(PREF_KEY, (String) stdCombo.getSelectedItem());
+    });
+
+    JPanel wrapper = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
+    wrapper.setOpaque(false);
+    wrapper.add(stdCombo);
+
+    int versionIdx = -1;
+    for (int i = 0; i < tabBar.getComponentCount(); i++)
+      if (tabBar.getComponent(i) == versionLabel) { versionIdx = i; break; }
+    if (versionIdx >= 0) tabBar.add(wrapper, versionIdx);
+    else tabBar.add(wrapper);
+    tabBar.revalidate();
+    tabBar.repaint();
   }
 
-  private void positionStdCombo(Container tabBar, JLabel versionLabel) {
-    if (stdCombo == null || !versionLabel.isShowing()) return;
-    Point vpos = SwingUtilities.convertPoint(versionLabel, 0, 0, tabBar);
-    Dimension pref = stdCombo.getPreferredSize();
-    int h = tabBar.getHeight();
-    int y = (h - pref.height) / 2;
-    int x = vpos.x - pref.width - 8;
-    if (x > 0) stdCombo.setBounds(x, y, pref.width, pref.height);
-  }
-
-  /** Returns the selected C++ standard for use in CppBuild. */
   public String getSelectedCppStd() {
     if (stdCombo != null) return (String) stdCombo.getSelectedItem();
     Preferences prefs = Preferences.userNodeForPackage(CppEditor.class);
