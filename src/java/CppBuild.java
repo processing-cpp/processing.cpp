@@ -508,6 +508,12 @@ public class CppBuild {
     File    binary    = new File(buildDir, sketch.getName() + ext);
     String  gpp       = findGpp(isWindows);
 
+    int gppVer = gppMajorVersion(gpp);
+    if (gppVer > 0 && gppVer < 7) {
+      listener.statusError("g++ " + gppVer + " is too old. CppMode requires GCC 7+ for C++17.");
+      throw new Exception("g++ too old: " + gppVer);
+    }
+
     String stdOverride = (listener instanceof CppEditor ce) ? ce.getSelectedCppStd() : null;
     List<String> cmd = buildCommand(gpp, sketchSrc, binary, isWindows, isMac, stdOverride);
     listener.statusNotice("$ " + String.join(" ", cmd));
@@ -3340,6 +3346,19 @@ public class CppBuild {
       System.err.println("[CppMode] macro preprocessing exception, using original code: " + e);
       return code;
     }
+  }
+
+  /** Returns the major version of the given g++ binary, or 0 if unknown. */
+  static int gppMajorVersion(String gpp) {
+    try {
+      Process proc = new ProcessBuilder(gpp, "--version").redirectErrorStream(true).start();
+      String out = new String(proc.getInputStream().readAllBytes());
+      proc.waitFor();
+      // Output: "g++ (GCC) 13.2.0 ..." or "Apple clang version 15.0.0 ..."
+      java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\d+)\.\d+\.\d+").matcher(out);
+      if (m.find()) return Integer.parseInt(m.group(1));
+    } catch (Exception ignored) {}
+    return 0;
   }
 
   private String findGpp(boolean win) {
