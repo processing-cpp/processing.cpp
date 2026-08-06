@@ -1,71 +1,51 @@
-name: Build macOS bundled libs (GLFW + GLEW)
+name: Build macOS bundled dylibs
 
 on:
-  workflow_dispatch:
-
-permissions:
-  contents: write
+  workflow_dispatch:  # manual trigger only
 
 jobs:
   build:
-    runs-on: macos-latest  # arm64 runner only -- we lipo universal binaries
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install GLFW and GLEW (arm64)
+      - name: Install GLFW and GLEW via Homebrew
+        run: brew install glfw glew
+
+      - name: Collect dylibs (arm64)
         run: |
-          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
-          export NONINTERACTIVE=1
-          brew install glfw glew
-
-      - name: Install x86_64 GLFW and GLEW via Rosetta homebrew
-        run: |
-          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
-          export NONINTERACTIVE=1
-          # Install x86_64 homebrew if not present
-          if [ ! -f /usr/local/bin/brew ]; then
-            arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          fi
-          arch -x86_64 /usr/local/bin/brew install glfw glew
-
-      - name: Build universal dylibs
-        run: |
-          mkdir -p libs/macos-arm64 libs/macos-x64
-
-          ARM_PREFIX=$(brew --prefix)
-          X64_PREFIX=/usr/local
-
+          mkdir -p libs/macos-arm64
           # GLFW
-          cp "$ARM_PREFIX/lib/libglfw.3.dylib" libs/macos-arm64/libglfw.3.dylib
-          install_name_tool -id @rpath/libglfw.3.dylib libs/macos-arm64/libglfw.3.dylib
-
-          cp "$X64_PREFIX/lib/libglfw.3.dylib" libs/macos-x64/libglfw.3.dylib
-          install_name_tool -id @rpath/libglfw.3.dylib libs/macos-x64/libglfw.3.dylib
-
+          cp $(brew --prefix glfw)/lib/libglfw.3.dylib libs/macos-arm64/
           # GLEW
-          GLEW_ARM=$(ls "$ARM_PREFIX/lib/libGLEW".*.dylib | head -1)
-          GLEW_X64=$(ls "$X64_PREFIX/lib/libGLEW".*.dylib | head -1)
-          GLEW_BASE=$(basename "$GLEW_ARM")
-
-          cp "$GLEW_ARM" libs/macos-arm64/$GLEW_BASE
-          install_name_tool -id @rpath/$GLEW_BASE libs/macos-arm64/$GLEW_BASE
-          cp "$GLEW_ARM" libs/macos-arm64/libGLEW.dylib
+          cp $(brew --prefix glew)/lib/libGLEW.dylib libs/macos-arm64/
+          # Fix install names so the binary finds them via @rpath
+          install_name_tool -id @rpath/libglfw.3.dylib libs/macos-arm64/libglfw.3.dylib
           install_name_tool -id @rpath/libGLEW.dylib libs/macos-arm64/libGLEW.dylib
-
-          cp "$GLEW_X64" libs/macos-x64/$GLEW_BASE
-          install_name_tool -id @rpath/$GLEW_BASE libs/macos-x64/$GLEW_BASE
-          cp "$GLEW_X64" libs/macos-x64/libGLEW.dylib
-          install_name_tool -id @rpath/libGLEW.dylib libs/macos-x64/libGLEW.dylib
-
-          echo "=== arm64 ==="
+          ls -la libs/macos-arm64/
           file libs/macos-arm64/*.dylib
-          echo "=== x64 ==="
+
+      - name: Also build x64 slice (lipo from universal if available)
+        run: |
+          mkdir -p libs/macos-x64
+          # GitHub's macos-latest runners are arm64; extract x86_64 slice if universal
+          for f in libs/macos-arm64/*.dylib; do
+            name=$(basename $f)
+            if lipo -info $f 2>/dev/null | grep -q x86_64; then
+              lipo $f -thin x86_64 -output libs/macos-x64/$name
+            else
+              # arm64 only -- copy as-is for now, x64 users need Homebrew
+              cp $f libs/macos-x64/$name
+            fi
+          done
+          ls -la libs/macos-x64/
           file libs/macos-x64/*.dylib
 
-      - name: Commit to repo
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add libs/macos-arm64/ libs/macos-x64/
-          git diff --staged --quiet || git commit -m "ci: update bundled macOS arm64+x64 GLFW+GLEW dylibs"
-          git push
+      - name: Upload as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dylibs
+          path: |
+            libs/macos-arm64/
+            libs/macos-x64/
+          retention-days: 30
