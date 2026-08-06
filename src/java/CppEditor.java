@@ -52,7 +52,7 @@ public class CppEditor extends Editor {
   private static final String BUG_REPORT_URL =
     "https://github.com/processing-cpp/processing.cpp/issues";
 
-  private static final String[] CPP_STDS = {"c++17", "c++20", "c++23", "c++2c"};
+  private static final String[] CPP_STDS = {"c++98", "c++11", "c++14", "c++17", "c++20", "c++23", "c++2c"};
   private static final String PREF_KEY = "cppmode.std";
   private JComboBox<String> stdCombo;
 
