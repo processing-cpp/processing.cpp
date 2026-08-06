@@ -294,10 +294,10 @@ public:
     // widening -- eliminates narrowing-conversion warnings from expressions like
     // PVector(width/2, height/2) where width/height are int.
     template<typename A, typename B,
-        typename = std::enable_if_t<std::is_arithmetic_v<A> && std::is_arithmetic_v<B>>>
+        typename = ::std::enable_if_t<::std::is_arithmetic_v<A> && ::std::is_arithmetic_v<B>>>
     PVector(A x, B y)          : x((float)x), y((float)y), z(0)   {}
     template<typename A, typename B, typename C,
-        typename = std::enable_if_t<std::is_arithmetic_v<A> && std::is_arithmetic_v<B> && std::is_arithmetic_v<C>>>
+        typename = ::std::enable_if_t<::std::is_arithmetic_v<A> && ::std::is_arithmetic_v<B> && ::std::is_arithmetic_v<C>>>
     PVector(A x, B y, C z)     : x((float)x), y((float)y), z((float)z) {}
 
     // Setters
@@ -1682,67 +1682,67 @@ namespace _api {
 // from mixed calls like fill(int, int, float) or stroke(float, int, float).
 // ---------------------------------------------------------------------------
 template<typename A, typename B,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
 inline void fill(A gray, B a)
     { _api::fill((float)gray,(float)a); }
 
 template<typename A, typename B, typename C,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
 inline void fill(A r, B g, C b)
     { _api::fill((float)r,(float)g,(float)b); }
 
 template<typename A, typename B, typename C, typename D,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
 inline void fill(A r, B g, C b, D a)
     { _api::fill((float)r,(float)g,(float)b,(float)a); }
 
 template<typename A,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
 inline void stroke(A gray)
     { _api::stroke((float)gray); }
 
 template<typename A, typename B,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
 inline void stroke(A gray, B a)
     { _api::stroke((float)gray,(float)a); }
 
 template<typename A, typename B, typename C,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
 inline void stroke(A r, B g, C b)
     { _api::stroke((float)r,(float)g,(float)b); }
 
 template<typename A, typename B, typename C, typename D,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
 inline void stroke(A r, B g, C b, D a)
     { _api::stroke((float)r,(float)g,(float)b,(float)a); }
 
 template<typename A,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
 inline void strokeWeight(A w)
     { _api::strokeWeight((float)w); }
 
 template<typename A,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
 inline void fill(A gray)
     { _api::fill((float)gray); }
 
 template<typename A,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
 inline void background(A gray)
     { _api::background((float)gray); }
 
 template<typename A, typename B,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
 inline void background(A gray, B a)
     { _api::background((float)gray,(float)a); }
 
 template<typename A, typename B, typename C,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
 inline void background(A r, B g, C b)
     { _api::background((float)r,(float)g,(float)b); }
 
 template<typename A, typename B, typename C, typename D,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
 inline void background(A r, B g, C b, D a)
     { _api::background((float)r,(float)g,(float)b,(float)a); }
 
@@ -1750,22 +1750,22 @@ inline void background(A r, B g, C b, D a)
 // Integer-only templates: these cast int args to float and call the float overloads.
 // Constrained to non-float types so float calls go directly to the float overload
 // above and don't recurse back into the template.
-template<typename A, typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+template<typename A, typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
 inline void tint(A gray)
     { _api::tint((float)gray); }
 
 template<typename A, typename B,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
 inline void tint(A gray, B a)
     { _api::tint((float)gray,(float)a); }
 
 template<typename A, typename B, typename C,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
 inline void tint(A r, B g, C b)
     { _api::tint((float)r,(float)g,(float)b); }
 
 template<typename A, typename B, typename C, typename D,
-         typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+         typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
 inline void tint(A r, B g, C b, D a)
     { _api::tint((float)r,(float)g,(float)b,(float)a); }
 
@@ -2902,9 +2902,9 @@ Array<T> subset(const Array<T>& arr, int start, int count) {
 class Integer; class Float; class Double; class Long; class Byte; class Character;
 template<typename T>
 struct IsJavaValueType : std::integral_constant<bool,
-    std::is_arithmetic<T>::value ||      // int, float, double, bool, char, etc.
-    std::is_same<T, std::string>::value ||
-    std::is_same<T, String>::value ||
+    ::std::is_arithmetic<T>::value ||      // int, float, double, bool, char, etc.
+    ::std::is_same<T, std::string>::value ||
+    ::std::is_same<T, String>::value ||
     // BUG FIX: the new Integer/Float/Double/Long/Byte/Character wrapper
     // classes are NOT std::is_arithmetic (they're classes wrapping a
     // primitive, not primitives themselves), so without this explicit
@@ -2914,12 +2914,12 @@ struct IsJavaValueType : std::integral_constant<bool,
     // wrapper classes are specifically designed to be lightweight,
     // copyable stand-ins for primitives (unlike PImage/PGraphics, which
     // genuinely own unique GPU resources and must stay reference-like).
-    std::is_same<T, Integer>::value ||
-    std::is_same<T, Float>::value ||
-    std::is_same<T, Double>::value ||
-    std::is_same<T, Long>::value ||
-    std::is_same<T, Byte>::value ||
-    std::is_same<T, Character>::value
+    ::std::is_same<T, Integer>::value ||
+    ::std::is_same<T, Float>::value ||
+    ::std::is_same<T, Double>::value ||
+    ::std::is_same<T, Long>::value ||
+    ::std::is_same<T, Byte>::value ||
+    ::std::is_same<T, Character>::value
 > {};
 
 template<typename T, bool IsRefLike = !IsJavaValueType<T>::value>
@@ -3436,101 +3436,101 @@ inline PVector createVector(float x, float y, float z=0) { return PVector(x, y, 
 
 // line()
 template<typename A,typename B,typename C,typename D,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
 inline void size(int w, int h){ _api::size(w,h); }
 inline void size(int w, int h, int mode){ _api::size(w,h,mode); }
 inline void fullScreen(){ _api::fullScreen(); }
 inline void fullScreen(int mode){ _api::fullScreen(mode); }
 template<typename A,typename B,typename C,typename D,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
 inline void line(A x1,B y1,C x2,D y2){ _api::line((float)x1,(float)y1,(float)x2,(float)y2); }
 template<typename A,typename B,typename C,typename D,typename E,typename F,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>&&::std::is_arithmetic_v<E>&&::std::is_arithmetic_v<F>>>
 inline void line(A x1,B y1,C z1,D x2,E y2,F z2){ _api::line((float)x1,(float)y1,(float)z1,(float)x2,(float)y2,(float)z2); }
 
 // rect()
 template<typename A,typename B,typename C,typename D,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
 inline void rect(A x,B y,C w,D h2){ _api::rect((float)x,(float)y,(float)w,(float)h2); }
 template<typename A,typename B,typename C,typename D,typename E,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>&&::std::is_arithmetic_v<E>>>
 inline void rect(A x,B y,C w,D h2,E r){ _api::rect((float)x,(float)y,(float)w,(float)h2,(float)r); }
 
 // ellipse() / circle()
 template<typename A,typename B,typename C,typename D,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
 inline void ellipse(A x,B y,C w,D h2){ _api::ellipse((float)x,(float)y,(float)w,(float)h2); }
 template<typename A,typename B,typename C,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
 inline void circle(A x,B y,C d){ _api::circle((float)x,(float)y,(float)d); }
 
 // point()
 template<typename A,typename B,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
 inline void point(A x,B y){ _api::point((float)x,(float)y); }
 template<typename A,typename B,typename C,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
 inline void point(A x,B y,C z){ _api::point((float)x,(float)y,(float)z); }
 
 // triangle()
 template<typename A,typename B,typename C,typename D,typename E,typename F,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>&&::std::is_arithmetic_v<E>&&::std::is_arithmetic_v<F>>>
 inline void triangle(A x1,B y1,C x2,D y2,E x3,F y3){ _api::triangle((float)x1,(float)y1,(float)x2,(float)y2,(float)x3,(float)y3); }
 
 // quad()
 template<typename A,typename B,typename C,typename D,typename E,typename F,typename G,typename H,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>&&std::is_arithmetic_v<G>&&std::is_arithmetic_v<H>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>&&::std::is_arithmetic_v<E>&&::std::is_arithmetic_v<F>&&::std::is_arithmetic_v<G>&&::std::is_arithmetic_v<H>>>
 inline void quad(A x1,B y1,C x2,D y2,E x3,F y3,G x4,H y4){ _api::quad((float)x1,(float)y1,(float)x2,(float)y2,(float)x3,(float)y3,(float)x4,(float)y4); }
 
 // arc()
 template<typename A,typename B,typename C,typename D,typename E,typename F,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>&&::std::is_arithmetic_v<E>&&::std::is_arithmetic_v<F>>>
 inline void arc(A x,B y,C w,D h2,E start,F stop){ _api::arc((float)x,(float)y,(float)w,(float)h2,(float)start,(float)stop); }
 template<typename A,typename B,typename C,typename D,typename E,typename F,typename G,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>&&std::is_arithmetic_v<G>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>&&::std::is_arithmetic_v<E>&&::std::is_arithmetic_v<F>&&::std::is_arithmetic_v<G>>>
 inline void arc(A x,B y,C w,D h2,E start,F stop,G mode){ _api::arc((float)x,(float)y,(float)w,(float)h2,(float)start,(float)stop,(int)mode); }
 
 // translate() / rotate() / scale()
 template<typename A,typename B,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
 inline void translate(A x,B y){ _api::translate((float)x,(float)y); }
 template<typename A,typename B,typename C,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
 inline void translate(A x,B y,C z){ _api::translate((float)x,(float)y,(float)z); }
 template<typename A,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
 inline void rotate(A a){ _api::rotate((float)a); }
 template<typename A,typename B,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
 inline void scale(A s1,B s2){ _api::scale((float)s1,(float)s2); }
 
 // vertex()
 template<typename A,typename B,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
 inline void vertex(A x,B y){ _api::vertex((float)x,(float)y); }
 template<typename A,typename B,typename C,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
 inline void vertex(A x,B y,C z){ _api::vertex((float)x,(float)y,(float)z); }
 template<typename A,typename B,typename C,typename D,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
 inline void vertex(A x,B y,C u,D v2){ _api::vertex((float)x,(float)y,(float)u,(float)v2); }
 
 // text() position
 template<typename A,typename B,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
 inline void text(const std::string& s,A x,B y){ text(s,(float)x,(float)y); }
 template<typename A,typename B,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
 inline void text(const char* s,A x,B y){ text(std::string(s),(float)x,(float)y); }
 
 // text with bounding box -- mixed arithmetic types
 template<typename A,typename B,typename C,typename D,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
 inline void text(const std::string& s,A x,B y,C w,D h2){ text(s,(float)x,(float)y,(float)w,(float)h2); }
 template<typename A,typename B,typename C,typename D,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
 inline void text(const char* s,A x,B y,C w,D h2){ text(std::string(s),(float)x,(float)y,(float)w,(float)h2); }template<typename V,typename A,typename B,
-    typename=std::enable_if_t<std::is_arithmetic_v<V>&&std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<V>&&::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
 inline void text(V val,A x,B y){ text((float)val,(float)x,(float)y); }
 // char overload -- display as character not number
 template<typename A,typename B>
@@ -3540,28 +3540,28 @@ inline void text(char c,A x,B y,C w,D h2){ text(std::string(1,c),(float)x,(float
 
 // map() -- extremely common source of ambiguity
 template<typename V,typename A,typename B,typename C,typename D,
-    typename=std::enable_if_t<std::is_arithmetic_v<V>&&std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<V>&&::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
 inline float map(V value,A start1,B stop1,C start2,D stop2){
     return _api::map((float)value,(float)start1,(float)stop1,(float)start2,(float)stop2);
 }
 
 // constrain()
 template<typename V,typename A,typename B,
-    typename=std::enable_if_t<std::is_arithmetic_v<V>&&std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<V>&&::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
 inline float constrain(V val,A lo,B hi){ return _api::constrain((float)val,(float)lo,(float)hi); }
 
 // lerp()
 template<typename A,typename B,typename C,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
 inline float lerp(A a,B b2,C t){ return _api::lerp((float)a,(float)b2,(float)t); }
 
 // bezier() -- 8 arithmetic params
 template<typename A,typename B,typename C,typename D,
          typename E,typename F,typename G,typename H,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&
-                               std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&
-                               std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>&&
-                               std::is_arithmetic_v<G>&&std::is_arithmetic_v<H>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&
+                               ::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>&&
+                               ::std::is_arithmetic_v<E>&&::std::is_arithmetic_v<F>&&
+                               ::std::is_arithmetic_v<G>&&::std::is_arithmetic_v<H>>>
 inline void bezier(A x1,B y1,C cx1,D cy1,E cx2,F cy2,G x2,H y2){
     bezier((float)x1,(float)y1,(float)cx1,(float)cy1,
            (float)cx2,(float)cy2,(float)x2,(float)y2);
@@ -3569,16 +3569,16 @@ inline void bezier(A x1,B y1,C cx1,D cy1,E cx2,F cy2,G x2,H y2){
 
 // bezierPoint / bezierTangent / curvePoint / curveTangent -- mixed types
 template<typename A,typename B,typename C,typename D,typename T,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&
-                               std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&
-                               std::is_arithmetic_v<T>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&
+                               ::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>&&
+                               ::std::is_arithmetic_v<T>>>
 inline float bezierPoint(A a,B b,C c,D d,T t){
     return bezierPoint((float)a,(float)b,(float)c,(float)d,(float)t);
 }
 template<typename A,typename B,typename C,typename D,typename T,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&
-                               std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&
-                               std::is_arithmetic_v<T>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&
+                               ::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>&&
+                               ::std::is_arithmetic_v<T>>>
 inline float bezierTangent(A a,B b,C c,D d,T t){
     return bezierTangent((float)a,(float)b,(float)c,(float)d,(float)t);
 }
@@ -3586,10 +3586,10 @@ inline float bezierTangent(A a,B b,C c,D d,T t){
 // curve() -- 8 params
 template<typename A,typename B,typename C,typename D,
          typename E,typename F,typename G,typename H,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&
-                               std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&
-                               std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>&&
-                               std::is_arithmetic_v<G>&&std::is_arithmetic_v<H>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&
+                               ::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>&&
+                               ::std::is_arithmetic_v<E>&&::std::is_arithmetic_v<F>&&
+                               ::std::is_arithmetic_v<G>&&::std::is_arithmetic_v<H>>>
 inline void curve(A x0,B y0,C x1,D y1,E x2,F y2,G x3,H y3){
     curve((float)x0,(float)y0,(float)x1,(float)y1,
           (float)x2,(float)y2,(float)x3,(float)y3);
@@ -3605,10 +3605,10 @@ inline void curve(A x0,B y0,C x1,D y1,E x2,F y2,G x3,H y3){
 // PApplet::dist is incomplete at this point in the header so can't be used
 // here; inlining the computation directly is the cleanest fix.
 template<typename A,typename B,typename C,typename D,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
 inline float dist(A x1,B y1,C x2,D y2){ float dx=(float)x2-(float)x1,dy=(float)y2-(float)y1; return std::sqrt(dx*dx+dy*dy); }
 template<typename A,typename B,typename C,typename D,typename E,typename F,
-    typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>>>
+    typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>&&::std::is_arithmetic_v<E>&&::std::is_arithmetic_v<F>>>
 inline float dist(A x1,B y1,C z1,D x2,E y2,F z2){ float dx=(float)x2-(float)x1,dy=(float)y2-(float)y1,dz=(float)z2-(float)z1; return std::sqrt(dx*dx+dy*dy+dz*dz); }
 
 // image() -- mixed types, value and pointer variants
@@ -3817,13 +3817,13 @@ struct PApplet {
     void background(const PImage& img);
     void background(const PImage* img) { if(img) background(*img); }
     void background(const PColor& c);
-    template<typename A, typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+    template<typename A, typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
     void background(A gray) { background((float)gray); }
-    template<typename A, typename B, typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    template<typename A, typename B, typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
     void background(A gray, B a) { background((float)gray,(float)a); }
-    template<typename A, typename B, typename C, typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+    template<typename A, typename B, typename C, typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
     void background(A r, B g, C b) { background((float)r,(float)g,(float)b); }
-    template<typename A, typename B, typename C, typename D, typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    template<typename A, typename B, typename C, typename D, typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
     void background(A r, B g, C b, D a) { background((float)r,(float)g,(float)b,(float)a); }
     void clear();
 
@@ -3838,13 +3838,13 @@ struct PApplet {
     void fill(color c, int a) { fill(c,(float)a); }
     void fill(const PColor& c);
     void noFill();
-    template<typename A, typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+    template<typename A, typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
     void fill(A gray) { fill((float)gray); }
-    template<typename A, typename B, typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    template<typename A, typename B, typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
     void fill(A gray, B a) { fill((float)gray,(float)a); }
-    template<typename A, typename B, typename C, typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+    template<typename A, typename B, typename C, typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
     void fill(A r, B g, C b) { fill((float)r,(float)g,(float)b); }
-    template<typename A, typename B, typename C, typename D, typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    template<typename A, typename B, typename C, typename D, typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
     void fill(A r, B g, C b, D a) { fill((float)r,(float)g,(float)b,(float)a); }
 
     // ── Stroke ───────────────────────────────────────────────────────────────
@@ -3858,15 +3858,15 @@ struct PApplet {
     void strokeWeight(float w);
     void strokeCap(int cap);
     void strokeJoin(int join);
-    template<typename A, typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+    template<typename A, typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
     void stroke(A gray) { stroke((float)gray); }
-    template<typename A, typename B, typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    template<typename A, typename B, typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
     void stroke(A gray, B a) { stroke((float)gray,(float)a); }
-    template<typename A, typename B, typename C, typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+    template<typename A, typename B, typename C, typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
     void stroke(A r, B g, C b) { stroke((float)r,(float)g,(float)b); }
-    template<typename A, typename B, typename C, typename D, typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    template<typename A, typename B, typename C, typename D, typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
     void stroke(A r, B g, C b, D a) { stroke((float)r,(float)g,(float)b,(float)a); }
-    template<typename A, typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+    template<typename A, typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
     void strokeWeight(A w) { strokeWeight((float)w); }
 
     // ── Tint ─────────────────────────────────────────────────────────────────
@@ -3876,13 +3876,13 @@ struct PApplet {
     void tint(float r, float g, float b);
     void tint(const PColor& c);
     void noTint();
-    template<typename A, typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+    template<typename A, typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
     void tint(A gray) { tint((float)gray); }
-    template<typename A, typename B, typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    template<typename A, typename B, typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
     void tint(A gray, B a) { tint((float)gray,(float)a); }
-    template<typename A, typename B, typename C, typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+    template<typename A, typename B, typename C, typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
     void tint(A r, B g, C b) { tint((float)r,(float)g,(float)b); }
-    template<typename A, typename B, typename C, typename D, typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    template<typename A, typename B, typename C, typename D, typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
     void tint(A r, B g, C b, D a) { tint((float)r,(float)g,(float)b,(float)a); }
 
     // ── Shape attributes ─────────────────────────────────────────────────────
@@ -3903,19 +3903,19 @@ struct PApplet {
     void quad(float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4);
     void arc(float cx, float cy, float w, float h, float start, float stop);
     void arc(float cx, float cy, float w, float h, float start, float stop, int mode);
-    template<typename A,typename B,typename C,typename D,typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    template<typename A,typename B,typename C,typename D,typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
     void ellipse(A cx,B cy,C w,D h){ ellipse((float)cx,(float)cy,(float)w,(float)h); }
-    template<typename A,typename B,typename C,typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+    template<typename A,typename B,typename C,typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
     void circle(A cx,B cy,C d){ circle((float)cx,(float)cy,(float)d); }
-    template<typename A,typename B,typename C,typename D,typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    template<typename A,typename B,typename C,typename D,typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
     void rect(A x,B y,C w,D h){ rect((float)x,(float)y,(float)w,(float)h); }
-    template<typename A,typename B,typename C,typename D,typename E,typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>>>
+    template<typename A,typename B,typename C,typename D,typename E,typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>&&::std::is_arithmetic_v<E>>>
     void rect(A x,B y,C w,D h,E r){ rect((float)x,(float)y,(float)w,(float)h,(float)r); }
-    template<typename A,typename B,typename C,typename D,typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    template<typename A,typename B,typename C,typename D,typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
     void line(A x1,B y1,C x2,D y2){ line((float)x1,(float)y1,(float)x2,(float)y2); }
-    template<typename A,typename B,typename C,typename D,typename E,typename F,typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>&&std::is_arithmetic_v<E>&&std::is_arithmetic_v<F>>>
+    template<typename A,typename B,typename C,typename D,typename E,typename F,typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>&&::std::is_arithmetic_v<E>&&::std::is_arithmetic_v<F>>>
     void line(A x1,B y1,C z1,D x2,E y2,F z2){ line((float)x1,(float)y1,(float)z1,(float)x2,(float)y2,(float)z2); }
-    template<typename A,typename B,typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    template<typename A,typename B,typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
     void point(A x,B y){ point((float)x,(float)y); }
 
     // ── 3D primitives ────────────────────────────────────────────────────────
@@ -3926,11 +3926,11 @@ struct PApplet {
     void rotateX(float angle);
     void rotateY(float angle);
     void rotateZ(float angle);
-    template<typename A,typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+    template<typename A,typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
     void rotateX(A a){ rotateX((float)a); }
-    template<typename A,typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+    template<typename A,typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
     void rotateY(A a){ rotateY((float)a); }
-    template<typename A,typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+    template<typename A,typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
     void rotateZ(A a){ rotateZ((float)a); }
 
     // ── Vertex / shapes ──────────────────────────────────────────────────────
@@ -3975,19 +3975,19 @@ struct PApplet {
     float modelX(float x, float y, float z=0);
     float modelY(float x, float y, float z=0);
     float modelZ(float x, float y, float z=0);
-    template<typename A,typename B,typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    template<typename A,typename B,typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
     void translate(A x,B y){ translate((float)x,(float)y); }
-    template<typename A,typename B,typename C,typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>>>
+    template<typename A,typename B,typename C,typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>>>
     void translate(A x,B y,C z){ translate((float)x,(float)y,(float)z); }
-    template<typename A,typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+    template<typename A,typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
     void scale(A s){ scale((float)s); }
-    template<typename A,typename B,typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    template<typename A,typename B,typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
     void scale(A sx,B sy){ scale((float)sx,(float)sy); }
-    template<typename A,typename=std::enable_if_t<std::is_arithmetic_v<A>>>
+    template<typename A,typename=::std::enable_if_t<::std::is_arithmetic_v<A>>>
     void rotate(A a){ rotate((float)a); }
-    template<typename A,typename B,typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    template<typename A,typename B,typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
     void size(A w,B h){ size((int)w,(int)h); }
-    template<typename A,typename B,typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>>>
+    template<typename A,typename B,typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>>>
     void size(A w,B h,int renderer){ size((int)w,(int)h,renderer); }
 
     // ── Camera ───────────────────────────────────────────────────────────────
@@ -4032,7 +4032,7 @@ struct PApplet {
     void text(float val, float x, float y);
     void text(char c, float x, float y) { text(std::string(1,c), x, y); }
     void text(char c, float x, float y, float w, float h) { text(std::string(1,c), x, y, w, h); }
-    template<typename X,typename Y,typename=std::enable_if_t<std::is_arithmetic_v<X>&&std::is_arithmetic_v<Y>>>
+    template<typename X,typename Y,typename=::std::enable_if_t<::std::is_arithmetic_v<X>&&::std::is_arithmetic_v<Y>>>
     void text(char c, X x, Y y) { text(std::string(1,c),(float)x,(float)y); }
     void textSize(float size);
     void textAlign(int alignX, int alignY=-1);
@@ -4047,11 +4047,11 @@ struct PApplet {
     void textFont(const PFont& font, float size);
     void textFont(const PFont* font) { if(font) textFont(*font); }
     void textFont(const PFont* font, float size) { if(font) textFont(*font,size); }
-    template<typename X,typename Y,typename=std::enable_if_t<std::is_arithmetic_v<X>&&std::is_arithmetic_v<Y>>>
+    template<typename X,typename Y,typename=::std::enable_if_t<::std::is_arithmetic_v<X>&&::std::is_arithmetic_v<Y>>>
     void text(const std::string& s,X x,Y y){ text(s,(float)x,(float)y); }
-    template<typename X,typename Y,typename=std::enable_if_t<std::is_arithmetic_v<X>&&std::is_arithmetic_v<Y>>>
+    template<typename X,typename Y,typename=::std::enable_if_t<::std::is_arithmetic_v<X>&&::std::is_arithmetic_v<Y>>>
     void text(int v,X x,Y y){ text(v,(float)x,(float)y); }
-    template<typename X,typename Y,typename=std::enable_if_t<std::is_arithmetic_v<X>&&std::is_arithmetic_v<Y>>>
+    template<typename X,typename Y,typename=::std::enable_if_t<::std::is_arithmetic_v<X>&&::std::is_arithmetic_v<Y>>>
     void text(float v,X x,Y y){ text(v,(float)x,(float)y); }
 
     // ── Image ────────────────────────────────────────────────────────────────
@@ -4153,7 +4153,7 @@ struct PApplet {
     static float min(float a,float b,float c)  { float m=a<b?a:b; return m<c?m:c; }
     static bool isNaN(float v)      { return std::isnan(v); }
     static bool isInfinite(float v) { return std::isinf(v); }
-    template<typename A,typename B,typename C,typename D,typename=std::enable_if_t<std::is_arithmetic_v<A>&&std::is_arithmetic_v<B>&&std::is_arithmetic_v<C>&&std::is_arithmetic_v<D>>>
+    template<typename A,typename B,typename C,typename D,typename=::std::enable_if_t<::std::is_arithmetic_v<A>&&::std::is_arithmetic_v<B>&&::std::is_arithmetic_v<C>&&::std::is_arithmetic_v<D>>>
     static float dist(A x1,B y1,C x2,D y2){ float dx=(float)x2-(float)x1,dy=(float)y2-(float)y1; return std::sqrt(dx*dx+dy*dy); }
 
     // ── Random / noise ───────────────────────────────────────────────────────
