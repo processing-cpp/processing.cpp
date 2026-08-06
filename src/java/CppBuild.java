@@ -1251,7 +1251,10 @@ public class CppBuild {
     out.append("using std::move; using std::forward; using std::swap;\n");
     out.append("using std::begin; using std::end;\n");
     out.append("using std::accumulate; using std::transform; using std::find;\n");
-    out.append("using std::array; using std::span; using std::optional; using std::variant;\n");
+    out.append("using std::array; using std::optional; using std::variant;\n");
+    out.append("#if __cplusplus >= 202002L\n");
+    out.append("using std::span;\n");
+    out.append("#endif\n");
     out.append("using std::function;\n");
     out.append("using std::map; using std::set;\n");
     out.append("using std::initializer_list; using std::enable_if; using std::enable_if_t;\n");
