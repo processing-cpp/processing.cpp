@@ -81,16 +81,33 @@ def bump_version_files(tag):
 
 def download_cache_artifacts():
     """Download precompiled .o files from latest successful build-cache CI run."""
-    import subprocess, shutil
+    import subprocess, json
+    from pathlib import Path
     repo = "processing-cpp/processing.cpp"
     root = Path(__file__).parent.parent
     platforms = ["linux-x64", "windows-x64", "macos-arm64", "macos-x64"]
     print("Downloading precompiled cache from CI artifacts...")
+
+    # Find the latest successful build-cache run
+    r = subprocess.run(
+        ["gh", "run", "list", "--repo", repo, "--workflow", "build-cache.yml",
+         "--status", "success", "--limit", "1", "--json", "databaseId"],
+        capture_output=True, text=True
+    )
+    if r.returncode != 0 or not r.stdout.strip():
+        print("  WARNING: Could not find successful build-cache run")
+        return
+    run_id = json.loads(r.stdout)[0]["databaseId"]
+    print(f"  Using run {run_id}")
+
     for platform in platforms:
         dest = root / "cache" / platform
+        # Clear existing files so gh run download can overwrite
+        import shutil
+        if dest.exists(): shutil.rmtree(dest)
         dest.mkdir(parents=True, exist_ok=True)
         result = subprocess.run(
-            ["gh", "run", "download", "--repo", repo,
+            ["gh", "run", "download", str(run_id), "--repo", repo,
              "--name", f"cache-{platform}", "--dir", str(dest)],
             capture_output=True, text=True
         )
