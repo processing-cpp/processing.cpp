@@ -2998,9 +2998,12 @@ public class CppBuild {
     return r;
   }
 
-  /** Returns the best -std=c++XX flag supported by the given g++ binary. */
+  /** Returns the best -std=c++XX flag supported by the given g++ binary. Cached per binary. */
+  private static final java.util.concurrent.ConcurrentHashMap<String,String> _stdCache
+      = new java.util.concurrent.ConcurrentHashMap<>();
   static String bestCppStd(String gpp) {
-    for (String std : new String[]{"c++2c", "c++23", "c++20", "c++17"}) {
+    return _stdCache.computeIfAbsent(gpp, g -> {
+      for (String std : new String[]{"c++2c", "c++23", "c++20", "c++17"}) {
       try {
         ProcessBuilder pb = new ProcessBuilder(gpp, "-std=" + std, "-x", "c++", "-fsyntax-only", "-");
         pb.redirectErrorStream(true);
@@ -3013,7 +3016,8 @@ public class CppBuild {
         }
       } catch (Exception ignored) {}
     }
-    return "c++17";
+      return "c++17";
+    });
   }
 
   private List<String> buildCommand(String gpp, File src, File bin, boolean win, boolean mac) {
