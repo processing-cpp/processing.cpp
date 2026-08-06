@@ -3013,6 +3013,8 @@ public class CppBuild {
     // Intel Macs â neither is guaranteed to be on g++'s default search path,
     // so add both explicitly. Harmless if a path doesn't exist.
     String homebrewPrefix = null;
+    // Bundled headers (GLFW, GLEW) ship with the mode on all platforms.
+    File bundledInclude = new File(runtimeDir.getParentFile(), "libs/include");
     if (mac) {
       if (new File("/opt/homebrew/include").exists()) homebrewPrefix = "/opt/homebrew";
       else if (new File("/usr/local/include").exists()) homebrewPrefix = "/usr/local";
@@ -3020,6 +3022,9 @@ public class CppBuild {
         cmd.add("-I" + homebrewPrefix + "/include");
       }
     }
+    // Always add bundled headers -- takes precedence over system headers
+    // on Windows, supplements Homebrew on macOS, supplements pkg on Linux.
+    if (bundledInclude.exists()) cmd.add("-I" + bundledInclude.getAbsolutePath());
 
     // ââ Cached precompiled objects ââââââââââââââââââââââââââââââââââââââââââ
     // Processing.cpp takes ~9s to compile. Cache the .o and reuse it.
@@ -3052,6 +3057,7 @@ public class CppBuild {
       pchCmd.add(gpp); pchCmd.add("-std=c++2c"); pchCmd.add("-O2");
       if (!mac) pchCmd.add("-march=x86-64");
       if (homebrewPrefix != null) pchCmd.add("-I" + homebrewPrefix + "/include");
+      if (bundledInclude.exists()) pchCmd.add("-I" + bundledInclude.getAbsolutePath());
       pchCmd.add("-I" + runtimeDir.getAbsolutePath());
       pchCmd.add("-DPROCESSING_HAS_STB_IMAGE");
       pchCmd.add("-DPROCESSING_HAS_STB_TRUETYPE");
@@ -3067,6 +3073,7 @@ public class CppBuild {
       preCmd.add(gpp); preCmd.add("-std=c++2c"); preCmd.add("-O2");
       if (!mac) preCmd.add("-march=native");
       if (homebrewPrefix != null) preCmd.add("-I" + homebrewPrefix + "/include");
+      if (bundledInclude.exists()) preCmd.add("-I" + bundledInclude.getAbsolutePath());
       preCmd.add("-I" + runtimeDir.getAbsolutePath());
       preCmd.add("-DPROCESSING_HAS_STB_IMAGE");
       preCmd.add("-DPROCESSING_HAS_STB_TRUETYPE");
@@ -3091,6 +3098,7 @@ public class CppBuild {
       preCmd2.add(gpp); preCmd2.add("-std=c++2c"); preCmd2.add("-O2");
       if (!mac) preCmd2.add("-march=native");
       if (homebrewPrefix != null) preCmd2.add("-I" + homebrewPrefix + "/include");
+      if (bundledInclude.exists()) preCmd2.add("-I" + bundledInclude.getAbsolutePath());
       preCmd2.add("-I" + runtimeDir.getAbsolutePath());
       preCmd2.add("-DPROCESSING_HAS_STB_IMAGE");
       preCmd2.add("-DPROCESSING_HAS_STB_TRUETYPE");
