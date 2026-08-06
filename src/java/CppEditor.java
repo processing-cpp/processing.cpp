@@ -102,6 +102,10 @@ public class CppEditor extends Editor {
     stdCombo.setFont(versionLabel.getFont());
     stdCombo.setFocusable(false);
     stdCombo.setToolTipText("C++ standard — grayed out = not supported by your g++");
+    // Prevent Box layout from stretching the combo horizontally
+    Dimension comboSize = stdCombo.getPreferredSize();
+    stdCombo.setMaximumSize(comboSize);
+    stdCombo.setMinimumSize(comboSize);
 
     stdCombo.addActionListener(e -> {
       int sel = stdCombo.getSelectedIndex();
