@@ -2998,10 +2998,29 @@ public class CppBuild {
     return r;
   }
 
+  /** Returns the best -std=c++XX flag supported by the given g++ binary. */
+  static String bestCppStd(String gpp) {
+    for (String std : new String[]{"c++2c", "c++23", "c++20", "c++17"}) {
+      try {
+        ProcessBuilder pb = new ProcessBuilder(gpp, "-std=" + std, "-x", "c++", "-fsyntax-only", "-");
+        pb.redirectErrorStream(true);
+        Process proc = pb.start();
+        proc.getOutputStream().close();
+        String out = new String(proc.getInputStream().readAllBytes());
+        proc.waitFor();
+        if (!out.contains("unrecognized") && !out.contains("invalid argument") && !out.contains("note: use")) {
+          return std;
+        }
+      } catch (Exception ignored) {}
+    }
+    return "c++17";
+  }
+
   private List<String> buildCommand(String gpp, File src, File bin, boolean win, boolean mac) {
     List<String> cmd = new ArrayList<>();
     cmd.add(gpp);
-    cmd.add("-std=c++2c");
+    String cppStd = bestCppStd(gpp);
+    cmd.add("-std=" + cppStd);
     cmd.add("-O2");
     // -march=native isn't reliably supported by Apple's clang (which is
     // what g++/gcc resolve to on macOS via Xcode Command Line Tools) â
@@ -3054,7 +3073,7 @@ public class CppBuild {
 
     if (needsPch) {
       List<String> pchCmd = new ArrayList<>();
-      pchCmd.add(gpp); pchCmd.add("-std=c++2c"); pchCmd.add("-O2");
+      pchCmd.add(gpp); pchCmd.add("-std=" + cppStd); pchCmd.add("-O2");
       if (!mac) pchCmd.add("-march=x86-64");
       if (homebrewPrefix != null) pchCmd.add("-I" + homebrewPrefix + "/include");
       if (bundledInclude.exists()) pchCmd.add("-I" + bundledInclude.getAbsolutePath());
@@ -3070,7 +3089,7 @@ public class CppBuild {
     }
     if (needsProcessing) {
       List<String> preCmd = new ArrayList<>();
-      preCmd.add(gpp); preCmd.add("-std=c++2c"); preCmd.add("-O2");
+      preCmd.add(gpp); preCmd.add("-std=" + cppStd); preCmd.add("-O2");
       if (!mac) preCmd.add("-march=native");
       if (homebrewPrefix != null) preCmd.add("-I" + homebrewPrefix + "/include");
       if (bundledInclude.exists()) preCmd.add("-I" + bundledInclude.getAbsolutePath());
@@ -3095,7 +3114,7 @@ public class CppBuild {
     }
     if (needsDefaults) {
       List<String> preCmd2 = new ArrayList<>();
-      preCmd2.add(gpp); preCmd2.add("-std=c++2c"); preCmd2.add("-O2");
+      preCmd2.add(gpp); preCmd2.add("-std=" + cppStd); preCmd2.add("-O2");
       if (!mac) preCmd2.add("-march=native");
       if (homebrewPrefix != null) preCmd2.add("-I" + homebrewPrefix + "/include");
       if (bundledInclude.exists()) preCmd2.add("-I" + bundledInclude.getAbsolutePath());
@@ -3253,7 +3272,7 @@ public class CppBuild {
       // the .cpp extension's default.  -P would strip line markers; we keep
       // them (omit -P) since downstream code already re-stamps its own
       // #line directive, and keeping g++'s markers costs nothing here.
-      ProcessBuilder pb = new ProcessBuilder(gpp, "-E", "-std=c++2c", "-x", "c++", scratch.getAbsolutePath());
+      ProcessBuilder pb = new ProcessBuilder(gpp, "-E", "-std=c++23", "-x", "c++", scratch.getAbsolutePath());
       pb.directory(buildDir != null ? buildDir : scratch.getParentFile());
       pb.redirectErrorStream(false);
       Process proc = pb.start();
@@ -3791,7 +3810,7 @@ public class CppBuild {
     } else {
       cmd.add(t.compiler);
     }
-    cmd.add("-std=c++2c"); cmd.add("-O2");
+    cmd.add("-std=" + bestCppStd(t.compiler)); cmd.add("-O2");
     for (File s : sources) cmd.add(s.getAbsolutePath());
     // Use pre-built cached .o if available for this target
     String exportCacheDir = t.isWindows ? "cache/windows-x64"

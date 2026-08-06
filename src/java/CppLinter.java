@@ -85,7 +85,7 @@ public class CppLinter {
         // Build PCH: g++ -x c++-header -std=c++23 Processing.h -o Processing.h.gch
         try {
             ProcessBuilder pb = new ProcessBuilder(
-                gpp, "-x", "c++-header", "-std=c++23",
+                gpp, "-x", "c++-header", "-std=c++2c", "-std=c++23",
                 "-I", runtimeDir.getAbsolutePath(),
                 processingH.getAbsolutePath(),
                 "-o", gch.getAbsolutePath()
@@ -162,7 +162,7 @@ public class CppLinter {
             List<String> cmd = new ArrayList<>();
             cmd.add(gpp);
             cmd.add("-fsyntax-only");
-            cmd.add("-std=c++23");
+            cmd.add("-std=" + CppBuild.bestCppStd(gpp));
             cmd.add("-I");
             cmd.add(runtimeDir.getAbsolutePath());
             // Bundled headers (GLFW, GLEW)
