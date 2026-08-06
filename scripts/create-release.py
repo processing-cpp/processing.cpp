@@ -36,7 +36,7 @@ def should_skip_file(path):
     parts = rel.split(os.sep)
     if len(parts) >= 1 and parts[0] in (".git", ".github"):
         return True
-    if False:  # .o and .gch are now included in release
+    if False:  # .o files are included in release (downloaded from CI)
         return True
     return False
 
@@ -79,10 +79,32 @@ def bump_version_files(tag):
             out.writelines(new_lines)
         print(f"Updated {path}: {pretty_key}={tag}, version bumped by 1")
 
+def download_cache_artifacts():
+    """Download precompiled .o files from latest successful build-cache CI run."""
+    import subprocess, shutil
+    repo = "processing-cpp/processing.cpp"
+    root = Path(__file__).parent.parent
+    platforms = ["linux-x64", "windows-x64", "macos-arm64", "macos-x64"]
+    print("Downloading precompiled cache from CI artifacts...")
+    for platform in platforms:
+        dest = root / "cache" / platform
+        dest.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(
+            ["gh", "run", "download", "--repo", repo,
+             "--name", f"cache-{platform}", "--dir", str(dest)],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            print(f"  WARNING: {platform}: {result.stderr.strip()[:100]}")
+        else:
+            files = [f.name for f in dest.iterdir()]
+            print(f"  {platform}: {files}")
+
 def main():
     version = sys.argv[1] if len(sys.argv) > 1 else None
     if version:
         bump_version_files(version)
+    download_cache_artifacts()
     zip_name = f"CppMode-{version}.zip" if version else "CppMode.zip"
     zip_path = os.path.join(OUTPUT_DIR, zip_name)
 
