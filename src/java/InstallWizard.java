@@ -85,9 +85,14 @@ public class InstallWizard {
     final Object lock = new Object();
     SwingUtilities.invokeLater(() -> {
       Object[] options = { "Install", "Cancel" };
+      String missingMsg = isWin
+        ? "C++ Mode needs a C++ compiler (g++) to compile sketches.\n\n"
+          + "Click Install to download g++ automatically (~130 MB).\n"
+          + "GLFW and GLEW are already bundled — no extra downloads needed."
+        : "Missing: " + String.join(", ", missing) + "\n\n"
+          + "C++ Mode needs these to compile and run sketches.";
       int choice = JOptionPane.showOptionDialog(null,
-        "Missing: " + String.join(", ", missing) + "\n\n"
-          + "C++ Mode needs these to compile and run sketches.",
+        missingMsg,
         "C++ Mode — Missing Dependencies",
         JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE,
         null, options, options[0]);
@@ -126,6 +131,7 @@ public class InstallWizard {
   private JDialog dialog;
   private JTextArea log;
   private JLabel stepLabel;
+  private JProgressBar progressBar;
   private JButton cancelButton;
   private final AtomicBoolean cancelled = new AtomicBoolean(false);
   private final AtomicBoolean succeeded = new AtomicBoolean(false);
@@ -148,11 +154,17 @@ public class InstallWizard {
     stepLabel.setFont(stepLabel.getFont().deriveFont(Font.BOLD, 13f));
     root.add(stepLabel, BorderLayout.NORTH);
 
-    log = new JTextArea(14, 56);
+    progressBar = new JProgressBar(0, 100);
+    progressBar.setStringPainted(true);
+    progressBar.setString("");
+    progressBar.setValue(0);
+    root.add(progressBar, BorderLayout.CENTER);
+
+    log = new JTextArea(10, 56);
     log.setEditable(false);
     log.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
     JScrollPane scroll = new JScrollPane(log);
-    root.add(scroll, BorderLayout.CENTER);
+    root.add(scroll, BorderLayout.SOUTH);
 
     JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
     cancelButton = new JButton("Cancel");
@@ -177,6 +189,21 @@ public class InstallWizard {
     });
   }
 
+  private void setProgress(int pct) {
+    SwingUtilities.invokeLater(() -> {
+      progressBar.setValue(pct);
+      progressBar.setString(pct + "%");
+      if (pct >= 100) progressBar.setString("Done");
+    });
+  }
+
+  private void setIndeterminate(boolean b) {
+    SwingUtilities.invokeLater(() -> {
+      progressBar.setIndeterminate(b);
+      if (b) progressBar.setString("Working...");
+    });
+  }
+
   private void requestCancel() {
     cancelled.set(true);
     finishDialog(false, "Cancelled.");
@@ -186,6 +213,9 @@ public class InstallWizard {
     succeeded.set(success);
     SwingUtilities.invokeLater(() -> {
       if (finalMessage != null) setStep(finalMessage);
+      progressBar.setIndeterminate(false);
+      progressBar.setValue(success ? 100 : progressBar.getValue());
+      progressBar.setString(success ? "Done" : "Failed");
       cancelButton.setText("Close");
     });
     synchronized (doneLock) {
@@ -260,6 +290,8 @@ public class InstallWizard {
       appendLog("Source: " + WINLIBS_URL);
       appendLog("Destination: " + gccDir.getAbsolutePath());
       appendLog("Size: ~130 MB — please wait...");
+      final long WINLIBS_SIZE = 136 * 1024 * 1024L; // ~130 MB
+      setProgress(0);
       try (java.io.InputStream in = new java.net.URI(WINLIBS_URL).toURL().openStream();
            java.io.OutputStream out = new java.io.FileOutputStream(zipFile)) {
         byte[] buf = new byte[64 * 1024];
@@ -268,12 +300,16 @@ public class InstallWizard {
           if (cancelled.get()) return false;
           out.write(buf, 0, n);
           total += n;
-          if (total % (5 * 1024 * 1024) < buf.length)
+          int pct = (int) Math.min(99, total * 100 / WINLIBS_SIZE);
+          setProgress(pct);
+          if (total % (10 * 1024 * 1024) < buf.length)
             appendLog("Downloaded " + (total / (1024 * 1024)) + " MB...");
         }
       }
+      setProgress(100);
       setStep("Extracting gcc...");
       appendLog("Extracting to " + gccDir.getAbsolutePath());
+      setIndeterminate(true);
       // Use PowerShell Expand-Archive (available on all modern Windows)
       Process extract = new ProcessBuilder(
         "powershell", "-NoProfile", "-Command",
@@ -283,6 +319,8 @@ public class InstallWizard {
       streamToLog(extract);
       int code = extract.waitFor();
       zipFile.delete(); // clean up zip after extraction
+      setIndeterminate(false);
+      setProgress(100);
       if (code != 0) { appendLog("Extraction failed."); return false; }
       if (!getPortableGpp().exists()) {
         appendLog("g++.exe not found after extraction -- unexpected zip structure.");
@@ -308,8 +346,6 @@ public class InstallWizard {
         if (new File(p).exists()) { haveGpp = true; break; }
       }
     }
-    // GLFW and GLEW are bundled in libs/windows-x64/ -- no MSYS2 needed for them.
-    // Only report them missing if the bundled DLLs aren't present AND MSYS2 doesn't have them.
     java.util.List<String> missing = new java.util.ArrayList<>();
     if (!haveGpp) missing.add("g++");
     return missing;
@@ -486,8 +522,6 @@ public class InstallWizard {
     if (missing.contains("glew")) missingLibs.add("glew");
 
     Thread worker = new Thread(() -> {
-      // Resolve brew at known locations first -- Processing may launch without
-      // /opt/homebrew/bin in PATH on Apple Silicon Macs.
       String brewExe = null;
       if (new File("/opt/homebrew/bin/brew").exists()) brewExe = "/opt/homebrew/bin/brew";
       else if (new File("/usr/local/bin/brew").exists()) brewExe = "/usr/local/bin/brew";
@@ -539,6 +573,7 @@ public class InstallWizard {
       }
 
       setStep("Installing: " + String.join(", ", missingLibs));
+      setIndeterminate(true);
       try {
         java.util.List<String> cmd = new java.util.ArrayList<>();
         cmd.add(brewExe); cmd.add("install"); cmd.addAll(missingLibs);

@@ -247,84 +247,14 @@ public class CppBuild {
   }
 
   private void autoInstallWindows(RunnerListener listener) {
-    String script =
-      "$ErrorActionPreference = 'Stop'\n"
-    + "Write-Host '=== C++ Mode Auto-Installer ==='\n"
-    + "Write-Host ''\n"
-    + "$msys2Dirs = @('C:\\msys64','C:\\msys2','C:\\tools\\msys64',"
-    + "\"$env:USERPROFILE\\msys64\",\"$env:LOCALAPPDATA\\msys64\")\n"
-    + "$pacman = $null\n"
-    + "foreach ($dir in $msys2Dirs) {\n"
-    + "    $p = \"$dir\\usr\\bin\\pacman.exe\"\n"
-    + "    if (Test-Path $p) { $pacman = $p; Write-Host \"Found MSYS2 at $dir\"; break }\n"
-    + "}\n"
-    + "if (-not $pacman) {\n"
-    + "    $inPath = Get-Command pacman -ErrorAction SilentlyContinue\n"
-    + "    if ($inPath) { $pacman = $inPath.Source; Write-Host \"Found pacman on PATH\" }\n"
-    + "}\n"
-    + "if (-not $pacman) {\n"
-    + "    Write-Host 'Downloading MSYS2 installer (this may take a minute)...'\n"
-    + "    $url = 'https://github.com/msys2/msys2-installer/releases/download/nightly-x86_64/msys2-x86_64-latest.exe'\n"
-    + "    $dest = \"$env:TEMP\\msys2-installer.exe\"\n"
-    + "    $wc = New-Object System.Net.WebClient\n"
-    + "    $wc.add_DownloadProgressChanged({\n"
-    + "        param($s,$e)\n"
-    + "        $pct = $e.ProgressPercentage\n"
-    + "        $bar = '#' * [int]($pct/2)\n"
-    + "        $empty = '-' * (50 - [int]($pct/2))\n"
-    + "        Write-Host -NoNewline \"\r  [$bar$empty] $pct%  \"\n"
-    + "    })\n"
-    + "    $done = $false\n"
-    + "    $wc.add_DownloadFileCompleted({ $done = $true })\n"
-    + "    $wc.DownloadFileAsync([uri]$url, $dest)\n"
-    + "    while (-not $done) { Start-Sleep -Milliseconds 100 }\n"
-    + "    Write-Host ''\n"
-    + "    Write-Host 'Running MSYS2 installer...'\n"
-    + "    Start-Process -Wait $dest -ArgumentList 'install','--confirm-command','--accept-messages','--root','C:/msys64'\n"
-    + "    $pacman = 'C:\\msys64\\usr\\bin\\pacman.exe'\n"
-    + "    Write-Host 'MSYS2 installed.'\n"
-    + "}\n"
-    + "Write-Host ''\n"
-    + "Write-Host 'Installing g++, GLFW, GLEW...'\n"
-    + "& $pacman -S --noconfirm --needed '--overwrite=*' mingw-w64-x86_64-gcc mingw-w64-x86_64-glfw mingw-w64-x86_64-glew\n"
-    + "Write-Host 'Adding MSYS2 to system PATH...'\n"
-    + "$mingwBin = 'C:\\msys64\\mingw64\\bin'\n"
-    + "$currentPath = [Environment]::GetEnvironmentVariable('PATH','Machine')\n"
-    + "if ($currentPath -notlike \"*$mingwBin*\") {\n"
-    + "    [Environment]::SetEnvironmentVariable('PATH', \"$mingwBin;$currentPath\", 'Machine')\n"
-    + "    Write-Host 'Added to system PATH.'\n"
-    + "} else { Write-Host 'Already in PATH.' }\n"
-    + "Write-Host ''\n"
-    + "Write-Host '============================================'\n"
-    + "Write-Host 'Installation complete!'\n"
-    + "Write-Host 'Please restart Processing4 to use C++ Mode.'\n"
-    + "Write-Host '============================================'\n"
-    + "Read-Host 'Press Enter to close'\n";
+    // Delegate to InstallWizard which handles portable gcc download in-app.
+    // GLFW and GLEW are bundled in libs/windows-x64/ -- no MSYS2 needed.
     try {
-      java.io.File tmp = java.io.File.createTempFile("cpp_install_", ".ps1");
-      tmp.deleteOnExit();
-      try (java.io.PrintWriter pw = new java.io.PrintWriter(tmp)) { pw.print(script); }
-      listener.statusNotice("Launching installer...");
-      new Thread(() -> {
-        try {
-          // Run as admin so PATH can be updated system-wide
-          ProcessBuilder pb2 = new ProcessBuilder(
-            "powershell.exe", "-ExecutionPolicy", "Bypass",
-            "-Command",
-            "Start-Process powershell -Verb RunAs -ArgumentList "
-            + "'-ExecutionPolicy Bypass -NoExit -File \"" + tmp.getAbsolutePath().replace("\\", "\\\\") + "\"'");
-          pb2.start();
-          javax.swing.JOptionPane.showMessageDialog(null,
-            new javax.swing.JLabel(
-              "<html><b>Installer launched!</b><br><br>"
-              + "A PowerShell window is installing g++, GLFW, and GLEW.<br><br>"
-              + "When it says <b>Installation complete!</b>:<br>"
-              + "&nbsp;&nbsp;1. Close the installer window<br>"
-              + "&nbsp;&nbsp;2. <b>Restart Processing4</b></html>"),
-            "Installing...", javax.swing.JOptionPane.INFORMATION_MESSAGE);
-        } catch (Exception e2) { listener.statusError("Error: "+e2.getMessage()); }
-      }).start();
-    } catch (Exception e) { listener.statusError("Error: "+e.getMessage()); }
+      InstallWizard.run(listener);
+    } catch (InstallWizard.CancelledByUser ignored) {
+    } catch (Exception e) {
+      listener.statusError("Auto-install failed: " + e.getMessage());
+    }
   }
 
 
@@ -424,7 +354,6 @@ public class CppBuild {
           System.getProperty("user.home") + "\\msys64\\mingw64\\bin\\g++.exe",
           "C:\\msys64\\ucrt64\\bin\\g++.exe"})
         if (new File(p).exists()) return;
-      // Try PATH g++ as final fallback (bundled DLLs cover GLFW/GLEW)
       try {
         if (Runtime.getRuntime().exec(new String[]{"g++","--version"}).waitFor()==0) return;
       } catch (Exception ignored) {}
@@ -435,16 +364,14 @@ public class CppBuild {
       int ch = javax.swing.JOptionPane.showOptionDialog(null,
         new javax.swing.JLabel(
           "<html><b>g++ (C++ compiler) not found.</b><br><br>"
-          + "C++ Mode requires MSYS2 with g++, GLFW, and GLEW.<br><br>"
+          + "C++ Mode needs g++ to compile sketches.<br>"
+          + "GLFW and GLEW are already bundled — no extra downloads needed.<br><br>"
           + "<b>Auto-Install (recommended):</b><br>"
-          + "&nbsp;&nbsp;Click <b>Auto-Install</b> to install everything automatically.<br><br>"
+          + "&nbsp;&nbsp;Click <b>Auto-Install</b> to download g++ automatically.<br><br>"
           + "<b>Manual:</b><br>"
-          + "&nbsp;&nbsp;1. Install MSYS2 from https://www.msys2.org<br>"
-          + "&nbsp;&nbsp;2. Open <b>MSYS2 MinGW 64-bit</b> terminal<br>"
-          + "&nbsp;&nbsp;3. Run:<br>"
-          + "&nbsp;&nbsp;&nbsp;&nbsp;<code>pacman -S mingw-w64-x86_64-gcc"
-          + " mingw-w64-x86_64-glfw mingw-w64-x86_64-glew</code><br>"
-          + "&nbsp;&nbsp;4. Restart Processing</html>"),
+          + "&nbsp;&nbsp;Install MSYS2 from https://www.msys2.org and run:<br>"
+          + "&nbsp;&nbsp;<code>pacman -S mingw-w64-x86_64-gcc</code><br>"
+          + "&nbsp;&nbsp;Then restart Processing.</html>"),
         "C++ Compiler Not Found",
         javax.swing.JOptionPane.YES_NO_CANCEL_OPTION,
         javax.swing.JOptionPane.ERROR_MESSAGE,

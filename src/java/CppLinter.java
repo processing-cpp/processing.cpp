@@ -165,8 +165,10 @@ public class CppLinter {
             cmd.add("-std=c++23");
             cmd.add("-I");
             cmd.add(runtimeDir.getAbsolutePath());
+            // Bundled headers (GLFW, GLEW)
+            File bundledInc = new File(runtimeDir.getParentFile(), "libs/include");
+            if (bundledInc.exists()) { cmd.add("-I"); cmd.add(bundledInc.getAbsolutePath()); }
             if (gch != null) {
-                // Point g++ at the cache dir so it finds Processing.h.gch
                 cmd.add("-I");
                 cmd.add(gch.getParentFile().getAbsolutePath());
             }
