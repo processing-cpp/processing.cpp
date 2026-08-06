@@ -297,29 +297,21 @@ public class InstallWizard {
   }
 
   private java.util.List<String> detectWindowsMissing() {
-    String pacman = findWindowsPacman();
-    boolean haveGpp = pacman != null ? false : commandExists("g++", "--version");
-    if (pacman == null) {
+    // Check for g++ at all known locations including portable WinLibs install.
+    boolean haveGpp = commandExists("g++", "--version");
+    if (!haveGpp) {
       for (String p : new String[] {
           "C:\\msys64\\mingw64\\bin\\g++.exe",
           "C:\\msys2\\mingw64\\bin\\g++.exe",
-          System.getProperty("user.home") + "\\msys64\\mingw64\\bin\\g++.exe"}) {
+          System.getProperty("user.home") + "\\msys64\\mingw64\\bin\\g++.exe",
+          getPortableGpp().getAbsolutePath()}) {
         if (new File(p).exists()) { haveGpp = true; break; }
       }
     }
-
+    // GLFW and GLEW are bundled in libs/windows-x64/ -- no MSYS2 needed for them.
+    // Only report them missing if the bundled DLLs aren't present AND MSYS2 doesn't have them.
     java.util.List<String> missing = new java.util.ArrayList<>();
-    if (pacman == null) {
-      missing.add("MSYS2");
-      missing.add("g++");
-      missing.add("glfw");
-      missing.add("glew");
-    } else {
-      if (!haveGpp) missing.add("g++");
-      boolean[] libs = windowsLibsPresentDetailed();
-      if (!libs[0]) missing.add("glfw");
-      if (!libs[1]) missing.add("glew");
-    }
+    if (!haveGpp) missing.add("g++");
     return missing;
   }
 
