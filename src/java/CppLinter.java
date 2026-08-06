@@ -167,7 +167,16 @@ public class CppLinter {
             cmd.add(runtimeDir.getAbsolutePath());
             // Bundled headers (GLFW, GLEW)
             File bundledInc = new File(runtimeDir.getParentFile(), "libs/include");
-            if (bundledInc.exists()) { cmd.add("-I"); cmd.add(bundledInc.getAbsolutePath()); }
+            boolean isWinLint = System.getProperty("os.name","").toLowerCase().contains("win");
+            if (bundledInc.exists() && isWinLint) {
+                cmd.add("-I"); cmd.add(bundledInc.getAbsolutePath());
+            } else if (bundledInc.exists()) {
+                // Linux/macOS: only use bundled headers if system GLFW missing
+                boolean hasSystemGlfw = new java.io.File("/usr/include/GLFW/glfw3.h").exists()
+                    || new java.io.File("/usr/local/include/GLFW/glfw3.h").exists()
+                    || new java.io.File("/opt/homebrew/include/GLFW/glfw3.h").exists();
+                if (!hasSystemGlfw) { cmd.add("-I"); cmd.add(bundledInc.getAbsolutePath()); }
+            }
             if (gch != null) {
                 cmd.add("-I");
                 cmd.add(gch.getParentFile().getAbsolutePath());
