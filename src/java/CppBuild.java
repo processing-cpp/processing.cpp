@@ -1244,7 +1244,6 @@ public class CppBuild {
     out.append("using std::unordered_map; using std::unordered_set;\n");
     out.append("using std::sort; using std::shuffle; using std::reverse;\n");
     out.append("using std::unique_ptr; using std::shared_ptr;\n");
-    out.append("using std::make_unique; using std::make_shared;\n");
     out.append("using std::to_string; using std::stoi; using std::stof; using std::stod;\n");
     out.append("using std::cout; using std::cerr; using std::endl;\n");
     out.append("using std::ifstream; using std::ofstream; using std::stringstream;\n");
@@ -1252,9 +1251,6 @@ public class CppBuild {
     out.append("using std::begin; using std::end;\n");
     out.append("using std::accumulate; using std::transform; using std::find;\n");
     out.append("using std::array; using std::optional; using std::variant;\n");
-    out.append("#if __cplusplus >= 202002L\n");
-    out.append("using std::span;\n");
-    out.append("#endif\n");
     out.append("using std::function;\n");
     out.append("using std::map; using std::set;\n");
     out.append("using std::initializer_list; using std::enable_if; using std::enable_if_t;\n");
@@ -1267,6 +1263,9 @@ public class CppBuild {
     out.append("using std::make_tuple; using std::tie; using std::apply;\n");
     out.append("using std::runtime_error; using std::logic_error; using std::exception;\n");
     out.append("using std::numeric_limits;\n");
+    out.append("#if __cplusplus >= 202002L\n");
+    out.append("using std::span;\n");
+    out.append("#endif\n");
     // C++23 standard library additions -- guarded by version check
     out.append("#if __cplusplus >= 202302L\n");
     out.append("#  if __has_include(<expected>)\n");
