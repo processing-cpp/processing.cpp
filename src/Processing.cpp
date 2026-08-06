@@ -140,7 +140,7 @@ static void _doEnableDebugConsole() {
 }
 void enableDebugConsole() { _doEnableDebugConsole(); }
 
-static std::string _s_objDir; // OBJ loader scratch
+static ::std::string _s_objDir; // OBJ loader scratch
 
 static const int PERLIN_YWRAPB = 4;
 static const int PERLIN_YWRAP  = 1 << PERLIN_YWRAPB;  // 16
@@ -166,7 +166,7 @@ void PApplet::noiseDetail(int o, float f) { noiseOctaves = o; noiseFalloff = f; 
 
 // Cosine interpolation curve -- Java Processing's noise_fsc()
 static inline float noise_fsc(float i) {
-    return 0.5f * (1.0f - std::cos(i * PI));
+    return 0.5f * (1.0f - ::std::cos(i * PI));
 }
 
 float PApplet::noise(float x, float y, float z) {
@@ -220,7 +220,7 @@ float PApplet::randomGaussian(){
     if(has){has=false;return spare;}
     float u,v,s;
     do{u=_rngDist(_rng)*2-1;v=_rngDist(_rng)*2-1;s=u*u+v*v;}while(s>=1||s==0);
-    s=std::sqrt(-2*std::log(s)/s);spare=v*s;has=true;return u*s;
+    s=::std::sqrt(-2*::std::log(s)/s);spare=v*s;has=true;return u*s;
 }
 
 // =============================================================================
@@ -275,9 +275,9 @@ color PApplet::makeColor(float gray,float alpha){
     // matching Processing Java behavior -- background(v) in HSB gives gray
     if(colorModeVal==HSB){
         float br=gray/colorMaxB;
-        br=std::fmax(0.f,std::fmin(1.f,br));
+        br=::std::fmax(0.f,::std::fmin(1.f,br));
         int v=(int)(br*255);
-        unsigned int a=std::fmax(0.f,std::fmin(1.f,alpha/colorMaxA))*255;
+        unsigned int a=::std::fmax(0.f,::std::fmin(1.f,alpha/colorMaxA))*255;
         return colorVal(v,v,v,(int)a);
     }
     return makeColor(gray,gray,gray,alpha);
@@ -457,18 +457,18 @@ void PApplet::drawEllipseGeom(float cx,float cy,float rx,float ry,
         if(segs > 512) segs = 512;
     }
     float range=ea-sa;
-    bool isFullCircle = (std::fabs(range) >= TWO_PI - 0.001f);
+    bool isFullCircle = (::std::fabs(range) >= TWO_PI - 0.001f);
     if(doFill){
         applyFill();
         glBegin(GL_TRIANGLE_FAN);
         glVertex2f(cx,cy); // center
         for(int i=0;i<=segs;i++){
             float a=sa+range*i/segs;
-            glVertex2f(cx+rx*std::cos(a),cy+ry*std::sin(a));
+            glVertex2f(cx+rx*::std::cos(a),cy+ry*::std::sin(a));
         }
         if(isFullCircle){
             // close the circle back to the first arc point
-            glVertex2f(cx+rx*std::cos(sa),cy+ry*std::sin(sa));
+            glVertex2f(cx+rx*::std::cos(sa),cy+ry*::std::sin(sa));
         }
         glEnd();
     }
@@ -481,7 +481,7 @@ void PApplet::drawEllipseGeom(float cx,float cy,float rx,float ry,
         }
         for(int i=0;i<=segs;i++){
             float a=sa+range*i/segs;
-            glVertex2f(cx+rx*std::cos(a),cy+ry*std::sin(a));
+            glVertex2f(cx+rx*::std::cos(a),cy+ry*::std::sin(a));
         }
         glEnd();
     }
@@ -596,21 +596,21 @@ void PApplet::noLoop(){looping=false;}
 void PApplet::loop()  {looping=true;}
 void PApplet::redraw(){redrawOnce=true;}
 void PApplet::exit_sketch(){if(gWindow)glfwSetWindowShouldClose(gWindow,GLFW_TRUE);}
-void PApplet::windowTitle(const std::string& t){if(gWindow)glfwSetWindowTitle(gWindow,t.c_str());}
+void PApplet::windowTitle(const ::std::string& t){if(gWindow)glfwSetWindowTitle(gWindow,t.c_str());}
 void PApplet::windowMove(int x,int y){if(gWindow)glfwSetWindowPos(gWindow,x,y);}
 void PApplet::windowResize(int w,int h){size(w,h);}
 void PApplet::windowResizable(bool r){isResizable=r;if(gWindow)glfwSetWindowAttrib(gWindow,GLFW_RESIZABLE,r?GLFW_TRUE:GLFW_FALSE);}
 // ---------------------------------------------------------------------------
 // Clipboard
 // ---------------------------------------------------------------------------
-void PApplet::setClipboard(const std::string& s) {
+void PApplet::setClipboard(const ::std::string& s) {
     if (s.empty()) return;
     if (gWindow) glfwSetClipboardString(gWindow, s.c_str());
 }
-std::string PApplet::getClipboard() {
+::std::string PApplet::getClipboard() {
     if (!gWindow) return "";
     const char* cb = glfwGetClipboardString(gWindow);
-    return cb ? std::string(cb) : "";
+    return cb ? ::std::string(cb) : "";
 }
 
 // ---------------------------------------------------------------------------
@@ -619,7 +619,7 @@ std::string PApplet::getClipboard() {
 void PApplet::setWindowIcon(PImage* img) {
     if (!img || !gWindow) return;
     // Convert ARGB pixels (Processing internal) to RGBA (GLFW wants RGBA)
-    std::vector<unsigned char> rgba(img->width * img->height * 4);
+    ::std::vector<unsigned char> rgba(img->width * img->height * 4);
     for (int p = 0; p < img->width * img->height; p++) {
         unsigned int px = img->pixels[p];
         rgba[p*4+0] = (px >> 16) & 0xFF;  // R
@@ -803,7 +803,7 @@ void PApplet::fill(color c, float a) {
     fillR = (v>>16&0xFF)/255.f;
     fillG = (v>>8 &0xFF)/255.f;
     fillB = (v    &0xFF)/255.f;
-    fillA = std::min(255.f, std::max(0.f, a)) / 255.f;
+    fillA = ::std::min(255.f, ::std::max(0.f, a)) / 255.f;
     doFill = true;
 }
 void PApplet::noFill()                              {doFill=false;}
@@ -839,7 +839,7 @@ void PApplet::point(float x, float y) {
     applyStroke();
     if (!smoothing && strokeW <= 1.0f) {
         glPointSize(1.0f);
-        glBegin(GL_POINTS); glVertex2f(std::floor(x)+0.5f, std::floor(y)+0.5f); glEnd();
+        glBegin(GL_POINTS); glVertex2f(::std::floor(x)+0.5f, ::std::floor(y)+0.5f); glEnd();
     } else {
         glPointSize(strokeW);
         glBegin(GL_POINTS); glVertex2f(x, y); glEnd();
@@ -880,12 +880,12 @@ void PApplet::line(float x1, float y1, float x2, float y2) {
     }
     // Thick line: quad body + round caps using stencil to prevent double-blend
     float dx = x2-x1, dy = y2-y1;
-    float len = std::sqrt(dx*dx+dy*dy);
+    float len = ::std::sqrt(dx*dx+dy*dy);
     if(len < 0.0001f){ restoreLighting(); return; }
     float ux = dx/len, uy = dy/len;
     float r = w*0.5f;
     float px2 = -uy*r, py2 = ux*r; // perpendicular
-    int segs = std::max(16, (int)(r*4.0f));
+    int segs = ::std::max(16, (int)(r*4.0f));
     // Use stencil to draw all geometry, then fill once -- prevents double-blend
     glEnable(GL_STENCIL_TEST);
     glClearStencil(0);
@@ -912,7 +912,7 @@ void PApplet::line(float x1, float y1, float x2, float y2) {
         glVertex2f(cx2,cy2);
         for(int s=0;s<=segs;s++){
             float a=s*TWO_PI/segs;
-            glVertex2f(cx2+std::cos(a)*r, cy2+std::sin(a)*r);
+            glVertex2f(cx2+::std::cos(a)*r, cy2+::std::sin(a)*r);
         }
         glEnd();
     }
@@ -923,8 +923,8 @@ void PApplet::line(float x1, float y1, float x2, float y2) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     // Fill bounding box with stroke color
-    float minx=std::min(x1,x2)-r, maxx=std::max(x1,x2)+r;
-    float miny=std::min(y1,y2)-r, maxy=std::max(y1,y2)+r;
+    float minx=::std::min(x1,x2)-r, maxx=::std::max(x1,x2)+r;
+    float miny=::std::min(y1,y2)-r, maxy=::std::max(y1,y2)+r;
 #ifdef __EMSCRIPTEN__
     glBegin(GL_TRIANGLES);
     glVertex2f(minx,miny); glVertex2f(maxx,miny); glVertex2f(maxx,maxy);
@@ -1039,7 +1039,7 @@ void PApplet::rect(float x, float y, float w, float h, float r) {
     auto corner = [&](float cx, float cy, float sa, float ea) {
         for (int i = 0; i <= cornerSegs; i++) {
             float a = sa + (ea - sa) * i / cornerSegs;
-            glVertex2f(cx + r * std::cos(a), cy + r * std::sin(a));
+            glVertex2f(cx + r * ::std::cos(a), cy + r * ::std::sin(a));
         }
     };
 
@@ -1054,7 +1054,7 @@ void PApplet::rect(float x, float y, float w, float h, float r) {
             corner(x + w - r, y + h - r, 0,              HALF_PI     );  // bottom-right
             corner(x + r,     y + h - r, HALF_PI,        PI          );  // bottom-left
             // Close the fan back to the first arc point (avoids gap/seam)
-            glVertex2f(x + r + r * std::cos(PI), y + r + r * std::sin(PI));
+            glVertex2f(x + r + r * ::std::cos(PI), y + r + r * ::std::sin(PI));
         glEnd();
     }
 
@@ -1292,10 +1292,10 @@ void PApplet::sphere(float r){
             float a0=PI*i/stacks-HALF_PI, a1=PI*(i+1)/stacks-HALF_PI;
             for(int j=0;j<slices;j++){
                 float b0=TWO_PI*j/slices, b1=TWO_PI*(j+1)/slices;
-                float x00=std::cos(a0)*std::cos(b0),y00=std::sin(a0),z00=std::cos(a0)*std::sin(b0);
-                float x01=std::cos(a0)*std::cos(b1),y01=std::sin(a0),z01=std::cos(a0)*std::sin(b1);
-                float x10=std::cos(a1)*std::cos(b0),y10=std::sin(a1),z10=std::cos(a1)*std::sin(b0);
-                float x11=std::cos(a1)*std::cos(b1),y11=std::sin(a1),z11=std::cos(a1)*std::sin(b1);
+                float x00=::std::cos(a0)*::std::cos(b0),y00=::std::sin(a0),z00=::std::cos(a0)*::std::sin(b0);
+                float x01=::std::cos(a0)*::std::cos(b1),y01=::std::sin(a0),z01=::std::cos(a0)*::std::sin(b1);
+                float x10=::std::cos(a1)*::std::cos(b0),y10=::std::sin(a1),z10=::std::cos(a1)*::std::sin(b0);
+                float x11=::std::cos(a1)*::std::cos(b1),y11=::std::sin(a1),z11=::std::cos(a1)*::std::sin(b1);
                 glBegin(GL_TRIANGLES);
                 // tri 1
                 glNormal3f(x10,y10,z10); glVertex3f(r*x10,r*y10,r*z10);
@@ -1315,9 +1315,9 @@ void PApplet::sphere(float r){
         // Draw sphere as a wireframe of triangles -- matches Processing Java's
         // sphere appearance with diagonal lines across each quad cell.
         auto sv = [&](float lat, float lng) {
-            glVertex3f(r*std::cos(lat)*std::cos(lng),
-                       r*std::sin(lat),
-                       r*std::cos(lat)*std::sin(lng));
+            glVertex3f(r*::std::cos(lat)*::std::cos(lng),
+                       r*::std::sin(lat),
+                       r*::std::cos(lat)*::std::sin(lng));
         };
         glBegin(GL_LINES);
         for(int i=0;i<stacks;i++){
@@ -1450,7 +1450,7 @@ void PApplet::endShape(int mode){
             applyStroke(); glLineWidth(strokeW);
             int n=(int)shapeVerts.size();
             // Use 3D verts for correct depth in transformed space
-            auto lv=[&](int i)->std::array<float,3>{ return shapeVerts3D[i]; };
+            auto lv=[&](int i)->::std::array<float,3>{ return shapeVerts3D[i]; };
             switch(shapeKind){
                 case TRIANGLE_STRIP:
                     glBegin(GL_LINES);
@@ -1544,9 +1544,9 @@ void PApplet::endShape(int mode){
             float miny=shapeVerts3D[0][1], maxy=miny;
             float minz=shapeVerts3D[0][2], maxz=minz;
             for(auto& v:shapeVerts3D){
-                minx=std::min(minx,v[0]); maxx=std::max(maxx,v[0]);
-                miny=std::min(miny,v[1]); maxy=std::max(maxy,v[1]);
-                minz=std::min(minz,v[2]); maxz=std::max(maxz,v[2]);
+                minx=::std::min(minx,v[0]); maxx=::std::max(maxx,v[0]);
+                miny=::std::min(miny,v[1]); maxy=::std::max(maxy,v[1]);
+                minz=::std::min(minz,v[2]); maxz=::std::max(maxz,v[2]);
             }
             float mz=(minz+maxz)*0.5f;
 #ifdef __EMSCRIPTEN__
@@ -1627,9 +1627,9 @@ void PApplet::translate(float x,float y,float z){glTranslatef(x,y,z);}
 void PApplet::scale(float s)                    {glScalef(s,s,1);}
 void PApplet::scale(float sx,float sy)          {glScalef(sx,sy,1);}
 void PApplet::rotate(float a)                   {glRotatef(a*180.0f/PI,0,0,1);}
-void PApplet::shearX(float a)                   {float m[]={1,0,0,0,std::tan(a),1,0,0,0,0,1,0,0,0,0,1};glMultMatrixf(m);}
-void PApplet::shearY(float a)                   {float m[]={1,std::tan(a),0,0,0,1,0,0,0,0,1,0,0,0,0,1};glMultMatrixf(m);}
-void PApplet::printMatrix(){float m[16];glGetFloatv(GL_MODELVIEW_MATRIX,m);for(int i=0;i<4;i++){for(int j=0;j<4;j++)std::cout<<m[j*4+i]<<" ";std::cout<<"\n";}}
+void PApplet::shearX(float a)                   {float m[]={1,0,0,0,::std::tan(a),1,0,0,0,0,1,0,0,0,0,1};glMultMatrixf(m);}
+void PApplet::shearY(float a)                   {float m[]={1,::std::tan(a),0,0,0,1,0,0,0,0,1,0,0,0,0,1};glMultMatrixf(m);}
+void PApplet::printMatrix(){float m[16];glGetFloatv(GL_MODELVIEW_MATRIX,m);for(int i=0;i<4;i++){for(int j=0;j<4;j++)::std::cout<<m[j*4+i]<<" ";::std::cout<<"\n";}}
 
 static void projectPoint(float x,float y,float z,float& ox,float& oy,float& oz){
     float mv[16],proj[16];int vp[4];
@@ -1661,7 +1661,7 @@ float PApplet::modelZ(float x,float y,float z) {float mv[16];glGetFloatv(GL_MODE
 // Internal helper -- sets up the standard Processing Y-flipped perspective
 // camera. Called by camera() and perspective() so they stay in sync.
 void PApplet::applyDefaultCamera() {
-    float eyeZ  = ((float)logicalH / 2.0f) / std::tan(PI * 60.0f / 360.0f);
+    float eyeZ  = ((float)logicalH / 2.0f) / ::std::tan(PI * 60.0f / 360.0f);
     float near_ = eyeZ / 10.0f;
     float far_  = eyeZ * 10.0f;
     if(gWindow){int fw=logicalW,fh=logicalH;glfwGetFramebufferSize(gWindow,&fw,&fh);if(fw>0)fbW=fw;if(fh>0)fbH=fh;}
@@ -1676,7 +1676,7 @@ void PApplet::camera(){
     applyDefaultCamera();
 }
 void PApplet::camera(float ex,float ey,float ez,float cx,float cy,float cz,float ux,float uy,float uz){
-    float eyeZ = ((float)logicalH/2.0f) / std::tan(PI*60.0f/360.0f);
+    float eyeZ = ((float)logicalH/2.0f) / ::std::tan(PI*60.0f/360.0f);
     float near_ = eyeZ/10.0f, far_ = eyeZ*10.0f;
     glMatrixMode(GL_PROJECTION); glLoadIdentity();
     glScalef(1,-1,1);
@@ -1703,7 +1703,7 @@ void PApplet::perspective(float fov, float aspect, float zNear, float zFar) {
 // Processing modelview camera (eye at eyeZ looking at canvas centre,
 // Y-down screen coordinates) and enables depth test.
 void PApplet::applyStandardModelview() {
-    float eyeZ = ((float)logicalH / 2.0f) / std::tan(PI * 60.0f / 360.0f);
+    float eyeZ = ((float)logicalH / 2.0f) / ::std::tan(PI * 60.0f / 360.0f);
     glMatrixMode(GL_MODELVIEW); glLoadIdentity();
     _gluLookAt(logicalW/2.0, logicalH/2.0, eyeZ,
               logicalW/2.0, logicalH/2.0, 0,
@@ -1751,8 +1751,8 @@ void PApplet::frustum(float l, float r, float b, float t, float n, float f) {
     glFrustum(l, r, b, t, n, f);
     applyStandardModelview();
 }
-void PApplet::printCamera(){float m[16];glGetFloatv(GL_MODELVIEW_MATRIX,m);std::cout<<"Camera matrix:\n";for(int i=0;i<4;i++){for(int j=0;j<4;j++)std::cout<<m[j*4+i]<<" ";std::cout<<"\n";}}
-void PApplet::printProjection(){float m[16];glGetFloatv(GL_PROJECTION_MATRIX,m);std::cout<<"Projection matrix:\n";for(int i=0;i<4;i++){for(int j=0;j<4;j++)std::cout<<m[j*4+i]<<" ";std::cout<<"\n";}}
+void PApplet::printCamera(){float m[16];glGetFloatv(GL_MODELVIEW_MATRIX,m);::std::cout<<"Camera matrix:\n";for(int i=0;i<4;i++){for(int j=0;j<4;j++)::std::cout<<m[j*4+i]<<" ";::std::cout<<"\n";}}
+void PApplet::printProjection(){float m[16];glGetFloatv(GL_PROJECTION_MATRIX,m);::std::cout<<"Projection matrix:\n";for(int i=0;i<4;i++){for(int j=0;j<4;j++)::std::cout<<m[j*4+i]<<" ";::std::cout<<"\n";}}
 
 // =============================================================================
 // LIGHTS
@@ -1962,12 +1962,12 @@ void PApplet::spotLight(float r, float g, float b,
     // (GL_SPOT_EXPONENT caps at 128, but Java uses values like 600)
     int li = lightIndex - 1;
     lightConcentration[li] = conc;
-    lightCutoffCos[li]     = std::cos(angle); // precompute cos(cutoff)
+    lightCutoffCos[li]     = ::std::cos(angle); // precompute cos(cutoff)
 
     // Still set GL_SPOT_CUTOFF so fixed-function fallback works
-    float cutDeg = std::min(angle * 180.0f / PI, 90.0f);
+    float cutDeg = ::std::min(angle * 180.0f / PI, 90.0f);
     glLightf(lt, GL_SPOT_CUTOFF,   cutDeg);
-    glLightf(lt, GL_SPOT_EXPONENT, std::min(conc, 128.0f)); // capped for GL
+    glLightf(lt, GL_SPOT_EXPONENT, ::std::min(conc, 128.0f)); // capped for GL
     glLightf(lt, GL_CONSTANT_ATTENUATION,  1.0f);
     glLightf(lt, GL_LINEAR_ATTENUATION,    0.0f);
     glLightf(lt, GL_QUADRATIC_ATTENUATION, 0.0f);
@@ -2075,16 +2075,16 @@ static const unsigned char g_font6x8[][6] = {
 
 // -- stb_truetype font state ---------------------------------------------------
 #if PROCESSING_HAS_STB_TRUETYPE
-bool PApplet::loadTTFFile(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
+bool PApplet::loadTTFFile(const ::std::string& path) {
+    ::std::ifstream f(path, ::std::ios::binary);
     if (!f) return false;
     // Load into local vector first, then move — ensures data pointer is stable
     // before stbtt_InitFont stores a reference into it.
-    std::vector<unsigned char> tmp(
-        (std::istreambuf_iterator<char>(f)),
-         std::istreambuf_iterator<char>());
+    ::std::vector<unsigned char> tmp(
+        (::std::istreambuf_iterator<char>(f)),
+         ::std::istreambuf_iterator<char>());
     if (tmp.empty()) return false;
-    g_ttf.data = std::move(tmp);
+    g_ttf.data = ::std::move(tmp);
     g_ttf.data.shrink_to_fit(); // pin allocation before passing pointer to stbtt
     return stbtt_InitFont(&g_ttf.info, g_ttf.data.data(), 0) != 0;
 }
@@ -2092,7 +2092,7 @@ bool PApplet::loadTTFFile(const std::string& path) {
 void PApplet::bakeAtlas(float pixelSize) {
     if (!g_ttf.loaded) return;
     // Cache key: rounded to nearest 0.5px to avoid float noise
-    int cacheKey = (int)std::round(pixelSize * 2.0f);
+    int cacheKey = (int)::std::round(pixelSize * 2.0f);
     // Check cache — if already baked this size, just activate it
     auto it = g_ttf.atlasCache.find(cacheKey);
     if (it != g_ttf.atlasCache.end()) {
@@ -2105,7 +2105,7 @@ void PApplet::bakeAtlas(float pixelSize) {
     // Not cached — bake a new atlas for this size
     TTFAtlas atlas;
     g_ttf.atlasW = 1024; g_ttf.atlasH = 1024;
-    std::vector<unsigned char> bitmap(g_ttf.atlasW * g_ttf.atlasH);
+    ::std::vector<unsigned char> bitmap(g_ttf.atlasW * g_ttf.atlasH);
     int ret = stbtt_BakeFontBitmap(
         g_ttf.data.data(), 0, pixelSize,
         bitmap.data(), g_ttf.atlasW, g_ttf.atlasH,
@@ -2115,7 +2115,7 @@ void PApplet::bakeAtlas(float pixelSize) {
     glBindTexture(GL_TEXTURE_2D, atlas.texID);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    std::vector<unsigned char> rgba(g_ttf.atlasW * g_ttf.atlasH * 4);
+    ::std::vector<unsigned char> rgba(g_ttf.atlasW * g_ttf.atlasH * 4);
     for (int i = 0; i < g_ttf.atlasW * g_ttf.atlasH; i++) {
         rgba[i*4+0] = rgba[i*4+1] = rgba[i*4+2] = 255;
         rgba[i*4+3] = bitmap[i];
@@ -2124,7 +2124,7 @@ void PApplet::bakeAtlas(float pixelSize) {
                  0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
     glBindTexture(GL_TEXTURE_2D, 0);
     // Store in cache
-    g_ttf.atlasCache[cacheKey] = std::move(atlas);
+    g_ttf.atlasCache[cacheKey] = ::std::move(atlas);
     g_ttf.current = &g_ttf.atlasCache[cacheKey];
     g_ttf.texID   = g_ttf.current->texID;
     g_ttf.chars   = g_ttf.current->chars;
@@ -2138,7 +2138,7 @@ void PApplet::bakeAtlas(float pixelSize) {
 static const int BF_GW = 6;
 static const int BF_GH = 8;
 
-void PApplet::drawBitmapStr(float x, float y, const std::string& s, int scale) {
+void PApplet::drawBitmapStr(float x, float y, const ::std::string& s, int scale) {
     glColor4f(fillR, fillG, fillB, fillA);
     glDisable(GL_TEXTURE_2D);
     float cx = x;
@@ -2171,13 +2171,13 @@ void PApplet::drawBitmapStr(float x, float y, const std::string& s, int scale) {
     }
 }
 
-float PApplet::bitmapStrWidth(const std::string& s, int scale) {
+float PApplet::bitmapStrWidth(const ::std::string& s, int scale) {
     return s.size() * (BF_GW+1) * scale;
 }
 
 // -- TTF rendering -------------------------------------------------------------
 #if PROCESSING_HAS_STB_TRUETYPE
-float PApplet::ttfStrWidth(const std::string& s) {
+float PApplet::ttfStrWidth(const ::std::string& s) {
     float x = 0;
     for (char ch : s) {
         if (ch < 32 || ch > 127) continue;
@@ -2189,7 +2189,7 @@ float PApplet::ttfStrWidth(const std::string& s) {
     return x;
 }
 
-void PApplet::drawTTFStr(float x, float y, const std::string& s) {
+void PApplet::drawTTFStr(float x, float y, const ::std::string& s) {
     if (!g_ttf.loaded) return;
     bakeAtlas(g_textSize);
     // BUG FIX: same class of issue found in drawPGraphicsRect() -- if
@@ -2240,22 +2240,22 @@ void PApplet::drawTTFStr(float x, float y, const std::string& s) {
 #endif
 
 // -- Main renderText entry point -----------------------------------------------
-float PApplet::getLineWidth(const std::string& line) {
+float PApplet::getLineWidth(const ::std::string& line) {
 #if PROCESSING_HAS_STB_TRUETYPE
     if (g_ttf.loaded) return ttfStrWidth(line);
 #endif
-    int sc = std::max(1,(int)(g_textSize/8.0f));
+    int sc = ::std::max(1,(int)(g_textSize/8.0f));
     return bitmapStrWidth(line, sc);
 }
 
-void PApplet::renderText(const std::string& msg, float x, float y) {
+void PApplet::renderText(const ::std::string& msg, float x, float y) {
     if (msg.empty()) return;
 
     float leading = (g_textLeading > 0) ? g_textLeading : g_textSize * 1.25f;
 
     // Split on \n
-    std::vector<std::string> ls;
-    std::string cur;
+    ::std::vector<::std::string> ls;
+    ::std::string cur;
     for (char c : msg) { if(c=='\n'){ls.push_back(cur);cur.clear();}else cur+=c; }
     ls.push_back(cur);
 
@@ -2271,31 +2271,31 @@ void PApplet::renderText(const std::string& msg, float x, float y) {
         if (g_ttf.loaded) { drawTTFStr(dx, dy, ls[li]); continue; }
 #endif
         // Bitmap fallback
-        int sc = std::max(1,(int)(g_textSize/8.0f));
+        int sc = ::std::max(1,(int)(g_textSize/8.0f));
         // Shift so baseline sits at y (bitmap font: ascent = BF_GH-2 rows)
         float ascent = (BF_GH - 2) * sc;
         drawBitmapStr(dx, dy - ascent, ls[li], sc);
     }
 }
 
-void PApplet::text(const std::string& msg, float x, float y) { renderText(msg, x, y); }
-void PApplet::text(int   v, float x, float y) { renderText(std::to_string(v), x, y); }
+void PApplet::text(const ::std::string& msg, float x, float y) { renderText(msg, x, y); }
+void PApplet::text(int   v, float x, float y) { renderText(::std::to_string(v), x, y); }
 void PApplet::text(float v, float x, float y) {
-    std::ostringstream ss; ss << v; renderText(ss.str(), x, y);
+    ::std::ostringstream ss; ss << v; renderText(ss.str(), x, y);
 }
 
 // text(str, x, y, w, h) -- word-wrap into a bounding box, matching Processing Java.
 // Words are wrapped when they exceed width w. Lines are clipped at height h.
 // x,y is top-left corner of the box. Text starts at the baseline of the first line.
-void PApplet::text(const std::string& msg, float x, float y, float w, float h) {
+void PApplet::text(const ::std::string& msg, float x, float y, float w, float h) {
     if (msg.empty() || w <= 0) return;
     float leading = (g_textLeading > 0) ? g_textLeading : g_textSize * 1.4f;
     float maxY = (h > 0) ? y + h : 1e9f;
 
     // Split message into tokens: words and explicit newlines
-    std::vector<std::string> tokens;
+    ::std::vector<::std::string> tokens;
     {
-        std::string cur;
+        ::std::string cur;
         for (char c : msg) {
             if (c == '\n') {
                 if (!cur.empty()) { tokens.push_back(cur); cur.clear(); }
@@ -2311,7 +2311,7 @@ void PApplet::text(const std::string& msg, float x, float y, float w, float h) {
 
     // Layout: accumulate words into lines, wrap when line width exceeds w
     float cy = y;
-    std::string line;
+    ::std::string line;
 
     auto flushLine = [&](){
         if (!line.empty() && cy + g_textSize <= maxY) {
@@ -2330,7 +2330,7 @@ void PApplet::text(const std::string& msg, float x, float y, float w, float h) {
             continue;
         }
         // Try adding this word to the current line
-        std::string candidate = line.empty() ? tok : line + " " + tok;
+        ::std::string candidate = line.empty() ? tok : line + " " + tok;
         float cw = getLineWidth(candidate);
 
         if (!line.empty() && cw > w) {
@@ -2340,9 +2340,9 @@ void PApplet::text(const std::string& msg, float x, float y, float w, float h) {
             cy += leading;
             // If the word itself is wider than w, wrap it character by character
             if (getLineWidth(tok) > w) {
-                std::string charLine;
+                ::std::string charLine;
                 for (char c : tok) {
-                    std::string test2 = charLine + c;
+                    ::std::string test2 = charLine + c;
                     if (!charLine.empty() && getLineWidth(test2) > w) {
                         if (cy + g_textSize <= maxY) renderText(charLine, x, cy);
                         charLine.clear();
@@ -2356,9 +2356,9 @@ void PApplet::text(const std::string& msg, float x, float y, float w, float h) {
             }
         } else if (line.empty() && cw > w) {
             // First word on line is too wide: wrap char by char
-            std::string charLine;
+            ::std::string charLine;
             for (char c : tok) {
-                std::string test2 = charLine + c;
+                ::std::string test2 = charLine + c;
                 if (!charLine.empty() && getLineWidth(test2) > w) {
                     if (cy + g_textSize <= maxY) renderText(charLine, x, cy);
                     charLine.clear();
@@ -2399,7 +2399,7 @@ void PApplet::textAlign(int alignX, int alignY) {
 void PApplet::textLeading(float v) { g_textLeading = v; }
 void PApplet::textMode(int) {}
 
-float PApplet::textWidth(const std::string& s) { return getLineWidth(s); }
+float PApplet::textWidth(const ::std::string& s) { return getLineWidth(s); }
 
 float PApplet::textAscent() {
 #if PROCESSING_HAS_STB_TRUETYPE
@@ -2409,7 +2409,7 @@ float PApplet::textAscent() {
         return asc * sc;
     }
 #endif
-    int sc = std::max(1,(int)(g_textSize/8.0f));
+    int sc = ::std::max(1,(int)(g_textSize/8.0f));
     return (BF_GH - 2) * sc;
 }
 
@@ -2418,10 +2418,10 @@ float PApplet::textDescent() {
     if (g_ttf.loaded) {
         float sc = stbtt_ScaleForMappingEmToPixels(&g_ttf.info, g_textSize);
         int desc; stbtt_GetFontVMetrics(&g_ttf.info, nullptr, &desc, nullptr);
-        return std::fabs(desc * sc);
+        return ::std::fabs(desc * sc);
     }
 #endif
-    int sc = std::max(1,(int)(g_textSize/8.0f));
+    int sc = ::std::max(1,(int)(g_textSize/8.0f));
     return 2.0f * sc;
 }
 
@@ -2432,24 +2432,24 @@ float PApplet::textDescent() {
 PImage* PApplet::createImage(int w,int h,int mode){
     PImage* img = new PImage(w,h);
     if(mode==3/*ARGB*/) {
-        std::fill(img->pixels.begin(),img->pixels.end(),0x00000000);
+        ::std::fill(img->pixels.begin(),img->pixels.end(),0x00000000);
     }
     img->dirty=true;
     return img;
 }
 
-PImage* PApplet::loadImage(const std::string& path){
+PImage* PApplet::loadImage(const ::std::string& path){
     // Handle URLs: download with curl/wget and validate image magic bytes
     if (path.size()>7 && (path.substr(0,7)=="http://" || path.substr(0,8)=="https://")){
 #ifdef _WIN32
-        std::string tmp=std::string(getenv("TEMP")?getenv("TEMP"):"C:\\Temp")+"\\pg_img_";
+        ::std::string tmp=::std::string(getenv("TEMP")?getenv("TEMP"):"C:\\Temp")+"\\pg_img_";
 #else
-        std::string tmp="/tmp/pg_img_";
+        ::std::string tmp="/tmp/pg_img_";
 #endif
         size_t sl=path.rfind('/');
-        std::string bn=(sl!=std::string::npos)?path.substr(sl+1):"img.png";
-        { size_t q=bn.find('?'); if(q!=std::string::npos) bn=bn.substr(0,q); }
-        if(bn.empty()||bn.find('.')==std::string::npos) bn="img.png";
+        ::std::string bn=(sl!=::std::string::npos)?path.substr(sl+1):"img.png";
+        { size_t q=bn.find('?'); if(q!=::std::string::npos) bn=bn.substr(0,q); }
+        if(bn.empty()||bn.find('.')==::std::string::npos) bn="img.png";
         for(char& c:bn) if(c==':'||c=='*'||c=='<'||c=='>'||c=='|') c='_';
         tmp+=bn;
         auto isValidImg=[&]()->bool{
@@ -2486,28 +2486,28 @@ PImage* PApplet::loadImage(const std::string& path){
     }
     // Search paths: current dir, data/, files/, and sketch subdirs
     // Check PROCESSING_SKETCH_PATH env var set by IDE
-    std::string _sketchDir;
-    if (const char* _sp = std::getenv("PROCESSING_SKETCH_PATH"))
-        _sketchDir = std::string(_sp) + "/";
+    ::std::string _sketchDir;
+    if (const char* _sp = ::std::getenv("PROCESSING_SKETCH_PATH"))
+        _sketchDir = ::std::string(_sp) + "/";
     // Also get the directory of the running executable
-    std::string _exeDir;
+    ::std::string _exeDir;
     {
         char _buf[4096] = {};
 #ifdef _WIN32
         GetModuleFileNameA(nullptr, _buf, sizeof(_buf));
-        std::string _ep(_buf);
+        ::std::string _ep(_buf);
         size_t _sl = _ep.find_last_of("\\\\");
 #else
 #ifndef __EMSCRIPTEN__
         ssize_t _len = readlink("/proc/self/exe", _buf, sizeof(_buf)-1);
         if (_len > 0) _buf[_len] = 0;
 #endif
-        std::string _ep(_buf);
+        ::std::string _ep(_buf);
         size_t _sl = _ep.find_last_of("/");
 #endif
-        if (_sl != std::string::npos) _exeDir = _ep.substr(0, _sl+1);
+        if (_sl != ::std::string::npos) _exeDir = _ep.substr(0, _sl+1);
     }
-    std::vector<std::string> tries = {
+    ::std::vector<::std::string> tries = {
         path,
         "data/" + path,
         "files/" + path,
@@ -2533,8 +2533,8 @@ PImage* PApplet::loadImage(const std::string& path){
     }
 #endif
     for (auto& p : tries)
-        std::cerr << "[loadImage] not found: " << p << "\n";
-    std::cerr << "[loadImage] returning empty image -- check the path above\n";
+        ::std::cerr << "[loadImage] not found: " << p << "\n";
+    ::std::cerr << "[loadImage] returning empty image -- check the path above\n";
     return new PImage(); // return empty (not null) so -> calls are safe
 }
 
@@ -2555,7 +2555,7 @@ PGraphics* PApplet::createGraphics(int w,int h,int renderer){
 void PImage::uploadTexture() {
     if (width <= 0 || height <= 0 || pixels.empty()) return;
     if ((int)pixels.size() < width * height) return;
-    std::vector<unsigned char> rgba((size_t)width * height * 4);
+    ::std::vector<unsigned char> rgba((size_t)width * height * 4);
     for (int i = 0; i < width*height; i++) {
         unsigned int p = pixels[i];
         rgba[i*4+0] = (p>>16)&0xFF;
@@ -2698,7 +2698,7 @@ void PApplet::noTint(){doTint=false;}
 void PApplet::filter(int mode) { filter(mode, 0.5f); }
 void PApplet::filter(int mode, float /*param*/) {
     int total = winWidth * winHeight;
-    std::vector<unsigned char> buf(total * 4);
+    ::std::vector<unsigned char> buf(total * 4);
     glReadPixels(0, 0, winWidth, winHeight, GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
 
     for (int i = 0; i < total; i++) {
@@ -2740,7 +2740,7 @@ void PApplet::loadPixels() {
     int total = winWidth * winHeight;
     pixels.resize(total);
 
-    std::vector<unsigned char> rgba(total * 4);
+    ::std::vector<unsigned char> rgba(total * 4);
     glReadPixels(0, 0, winWidth, winHeight, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
 
     // glReadPixels returns rows bottom-to-top; Processing's pixels[] is
@@ -2760,7 +2760,7 @@ void PApplet::loadPixels() {
 
 void PApplet::updatePixels() {
     int total = winWidth * winHeight;
-    std::vector<unsigned char> rgba(total * 4);
+    ::std::vector<unsigned char> rgba(total * 4);
 
     // pixels[] is top-to-bottom; glDrawPixels expects bottom-to-top,
     // so flip rows on the way out.
@@ -2865,15 +2865,15 @@ void PApplet::noClip() {
 // SAVE
 // =============================================================================
 
-void PApplet::saveFrame(const std::string& filename) {
+void PApplet::saveFrame(const ::std::string& filename) {
 #ifdef __EMSCRIPTEN__
     // WASM: capture pixels and trigger browser download
     int _sw = logicalW, _sh = logicalH;
-    std::vector<unsigned char> _spx(_sw * _sh * 4);
+    ::std::vector<unsigned char> _spx(_sw * _sh * 4);
     glReadPixels(0, 0, _sw, _sh, GL_RGBA, GL_UNSIGNED_BYTE, _spx.data());
     for (int _sy = 0; _sy < _sh/2; _sy++)
         for (int _sx = 0; _sx < _sw*4; _sx++)
-            std::swap(_spx[_sy*_sw*4+_sx], _spx[(_sh-1-_sy)*_sw*4+_sx]);
+            ::std::swap(_spx[_sy*_sw*4+_sx], _spx[(_sh-1-_sy)*_sw*4+_sx]);
     int pngLen = 0;
     unsigned char* png = stbi_write_png_to_mem(_spx.data(), _sw*4, _sw, _sh, 4, &pngLen);
     if (png && pngLen > 0) {
@@ -2892,22 +2892,22 @@ void PApplet::saveFrame(const std::string& filename) {
     }
     return;
 #endif
-    std::string fn = filename;
+    ::std::string fn = filename;
     size_t pos = fn.find("####");
-    if (pos != std::string::npos) {
+    if (pos != ::std::string::npos) {
         char buf[16];
         snprintf(buf, sizeof(buf), "%04d", frameCount);
         fn.replace(pos, 4, buf);
     }
     int w = pixelWidth  > 0 ? pixelWidth  : logicalW;
     int h = pixelHeight > 0 ? pixelHeight : logicalH;
-    std::vector<unsigned char> px(w * h * 3);
+    ::std::vector<unsigned char> px(w * h * 3);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, px.data());
     for (int y = 0; y < h / 2; y++)
         for (int x = 0; x < w * 3; x++)
-            std::swap(px[y*w*3+x], px[(h-1-y)*w*3+x]);
-    std::string ext = fn.size() > 4 ? fn.substr(fn.size()-4) : "";
+            ::std::swap(px[y*w*3+x], px[(h-1-y)*w*3+x]);
+    ::std::string ext = fn.size() > 4 ? fn.substr(fn.size()-4) : "";
     for (auto& c : ext) c = tolower(c);
     int ok = 0;
     if (ext == ".png")                ok = stbi_write_png(fn.c_str(), w, h, 3, px.data(), w*3);
@@ -2916,10 +2916,10 @@ void PApplet::saveFrame(const std::string& filename) {
     else if (ext == ".tga" || ext == ".tif" || ext == ".tiff")
                                       ok = stbi_write_tga(fn.c_str(), w, h, 3, px.data());
     else { fn += ".png"; ok = stbi_write_png(fn.c_str(), w, h, 3, px.data(), w*3); }
-    if (ok) std::cout << "Saved: " << fn << "\n";
-    else    std::cout << "save: failed to write " << fn << "\n";
+    if (ok) ::std::cout << "Saved: " << fn << "\n";
+    else    ::std::cout << "save: failed to write " << fn << "\n";
 }
-void PApplet::save(const std::string& fn){saveFrame(fn);}
+void PApplet::save(const ::std::string& fn){saveFrame(fn);}
 
 // =============================================================================
 // GLFW CALLBACKS
@@ -3248,7 +3248,7 @@ void PApplet::run(){
 #endif
     // Write directly to a file since -mwindows kills stderr on Windows
     setvbuf(stdout, nullptr, _IONBF, 0);
-    std::srand((unsigned)std::time(nullptr));
+    ::std::srand((unsigned)::std::time(nullptr));
     initPerlin(0); // initialize noise table with default seed
 
     if(!glfwInit()){
@@ -3371,24 +3371,24 @@ void PApplet::run(){
     // (matches Processing Java's "a generic sans-serif font will be used")
     // Try to load default.ttf from several common locations
     {
-        std::string _homeDir;
+        ::std::string _homeDir;
 #ifdef _WIN32
-        if (const char* h = std::getenv("USERPROFILE")) _homeDir = h;
+        if (const char* h = ::std::getenv("USERPROFILE")) _homeDir = h;
 #else
-        if (const char* h = std::getenv("HOME")) _homeDir = h;
+        if (const char* h = ::std::getenv("HOME")) _homeDir = h;
 #endif
-        std::string _modePath;
-        if (const char* mp = std::getenv("PROCESSING_MODE_PATH"))
-            _modePath = std::string(mp) + "/";
+        ::std::string _modePath;
+        if (const char* mp = ::std::getenv("PROCESSING_MODE_PATH"))
+            _modePath = ::std::string(mp) + "/";
 
         // Font name used by Processing4
-        const std::string _font = "ProcessingSansPro-Regular.ttf";
+        const ::std::string _font = "ProcessingSansPro-Regular.ttf";
 
         // Check Documents/Processing on Windows (user sketchbook)
-        std::string _docsPath;
+        ::std::string _docsPath;
 #ifdef _WIN32
-        if (const char* ud = std::getenv("USERPROFILE"))
-            _docsPath = std::string(ud) + "/Documents/Processing/";
+        if (const char* ud = ::std::getenv("USERPROFILE"))
+            _docsPath = ::std::string(ud) + "/Documents/Processing/";
 #endif
 
         if (!tryLoadTTF("fonts/" + _font, g_textSize) &&
@@ -3413,7 +3413,7 @@ void PApplet::run(){
             // macOS
             !tryLoadTTF("/Applications/Processing.app/Contents/Java/core/library/" + _font, g_textSize) &&
             !tryLoadTTF(_homeDir + "/Applications/Processing.app/Contents/Java/core/library/" + _font, g_textSize)) {
-            std::cerr << "[font] ProcessingSansPro-Regular.ttf not found -- using bitmap fallback\n";
+            ::std::cerr << "[font] ProcessingSansPro-Regular.ttf not found -- using bitmap fallback\n";
         }
     }
 
@@ -3507,7 +3507,7 @@ void PApplet::run(){
     }
 
     redrawOnce = looping;
-    auto last=std::chrono::steady_clock::now();
+    auto last=::std::chrono::steady_clock::now();
 #ifndef __EMSCRIPTEN__
     // Drain Windows message queue before entering main loop.
     // On Windows, a WM_QUIT from a previous sketch run can be in the queue.
@@ -3683,12 +3683,12 @@ void PApplet::run(){
         // sleep the remainder of the target frame time, then measure
         // the full wall-clock frame duration (draw + swap + sleep) and
         // report it as _frameRate.
-        auto now = std::chrono::steady_clock::now();
-        double elapsed = std::chrono::duration<double>(now - last).count();
+        auto now = ::std::chrono::steady_clock::now();
+        double elapsed = ::std::chrono::duration<double>(now - last).count();
         double sl = targetFrameTime - elapsed;
-        if (sl > 0) std::this_thread::sleep_for(std::chrono::duration<double>(sl));
-        auto frameEnd = std::chrono::steady_clock::now();
-        double fullFrame = std::chrono::duration<double>(frameEnd - last).count();
+        if (sl > 0) ::std::this_thread::sleep_for(::std::chrono::duration<double>(sl));
+        auto frameEnd = ::std::chrono::steady_clock::now();
+        double fullFrame = ::std::chrono::duration<double>(frameEnd - last).count();
         if (fullFrame > 0) _frameRate = (float)(1.0 / fullFrame);
         last = frameEnd;
     }
@@ -3771,7 +3771,7 @@ void PGraphics::colorMode(int mode,float mx)           { if(PApplet::g_papplet) 
 void PGraphics::colorMode(int mode,float mH,float mS,float mB,float mA)
                                                        { if(PApplet::g_papplet) PApplet::g_papplet->colorMode(mode,mH,mS,mB,mA); }
 void PGraphics::textLeading(float v)                   { if(PApplet::g_papplet) PApplet::g_papplet->textLeading(v); }
-float PGraphics::textWidth(const std::string& s)       { return PApplet::g_papplet ? PApplet::g_papplet->textWidth(s) : 0; }
+float PGraphics::textWidth(const ::std::string& s)       { return PApplet::g_papplet ? PApplet::g_papplet->textWidth(s) : 0; }
 void PGraphics::push()                                 { if(PApplet::g_papplet) PApplet::g_papplet->push(); }
 void PGraphics::pop()                                  { if(PApplet::g_papplet) PApplet::g_papplet->pop(); }
 void PGraphics::scale(float sx,float sy)               { if(PApplet::g_papplet) PApplet::g_papplet->scale(sx,sy); }
@@ -3809,12 +3809,12 @@ void PGraphics::set(int x,int y,color c)               { if(PApplet::g_papplet) 
 // JSON IMPLEMENTATION
 // =============================================================================
 
-static void skipWS(const std::string& s, size_t& i){
+static void skipWS(const ::std::string& s, size_t& i){
     while(i<s.size()&&(s[i]==' '||s[i]=='\t'||s[i]=='\n'||s[i]=='\r'))i++;
 }
-static std::string parseString(const std::string& s, size_t& i){
+static ::std::string parseString(const ::std::string& s, size_t& i){
     i++;
-    std::string r;
+    ::std::string r;
     while(i<s.size()&&s[i]!='"'){
         if(s[i]=='\\'&&i+1<s.size()){i++;
             switch(s[i]){case '"':r+='"';break;case '\\':r+='\\';break;case '/':r+='/';break;
@@ -3825,13 +3825,13 @@ static std::string parseString(const std::string& s, size_t& i){
     if(i<s.size())i++;
     return r;
 }
-static JSONValue parseJSONValue(const std::string& s, size_t& i);
-static JSONObject parseJSONObj(const std::string& s, size_t& i){
+static JSONValue parseJSONValue(const ::std::string& s, size_t& i);
+static JSONObject parseJSONObj(const ::std::string& s, size_t& i){
     JSONObject obj; i++;
     skipWS(s,i);
     while(i<s.size()&&s[i]!='}'){
         skipWS(s,i); if(s[i]!='"')break;
-        std::string key=parseString(s,i);
+        ::std::string key=parseString(s,i);
         skipWS(s,i); if(i<s.size()&&s[i]==':')i++;
         skipWS(s,i);
         obj[key]=parseJSONValue(s,i);
@@ -3841,7 +3841,7 @@ static JSONObject parseJSONObj(const std::string& s, size_t& i){
     if(i<s.size())i++;
     return obj;
 }
-static JSONArray parseJSONArr(const std::string& s, size_t& i){
+static JSONArray parseJSONArr(const ::std::string& s, size_t& i){
     JSONArray arr; i++;
     skipWS(s,i);
     while(i<s.size()&&s[i]!=']'){
@@ -3853,7 +3853,7 @@ static JSONArray parseJSONArr(const std::string& s, size_t& i){
     if(i<s.size())i++;
     return arr;
 }
-static JSONValue parseJSONValue(const std::string& s, size_t& i){
+static JSONValue parseJSONValue(const ::std::string& s, size_t& i){
     skipWS(s,i);
     if(i>=s.size()) return JSONValue();
     if(s[i]=='"')  return JSONValue(parseString(s,i));
@@ -3865,28 +3865,28 @@ static JSONValue parseJSONValue(const std::string& s, size_t& i){
     size_t start=i;
     bool isFloat=false;
     if(i<s.size()&&s[i]=='-')i++;
-    while(i<s.size()&&(std::isdigit(s[i])||s[i]=='.'||s[i]=='e'||s[i]=='E'||s[i]=='+'||s[i]=='-')){
+    while(i<s.size()&&(::std::isdigit(s[i])||s[i]=='.'||s[i]=='e'||s[i]=='E'||s[i]=='+'||s[i]=='-')){
         if(s[i]=='.'||s[i]=='e'||s[i]=='E')isFloat=true; i++;
     }
-    std::string num=s.substr(start,i-start);
-    if(isFloat) return JSONValue(std::stod(num));
-    return JSONValue(std::stoi(num));
+    ::std::string num=s.substr(start,i-start);
+    if(isFloat) return JSONValue(::std::stod(num));
+    return JSONValue(::std::stoi(num));
 }
 
-JSONValue PApplet::parseJSON(const std::string& src){ size_t i=0; return parseJSONValue(src,i); }
+JSONValue PApplet::parseJSON(const ::std::string& src){ size_t i=0; return parseJSONValue(src,i); }
 
-std::string PApplet::toJSONString(const JSONValue& v, int indent){
-    std::string pad(indent*2,' ');
-    std::string pad2((indent+1)*2,' ');
+::std::string PApplet::toJSONString(const JSONValue& v, int indent){
+    ::std::string pad(indent*2,' ');
+    ::std::string pad2((indent+1)*2,' ');
     switch(v.type){
         case JSONValue::NULL_T:   return "null";
         case JSONValue::BOOL_T:   return v.b?"true":"false";
-        case JSONValue::INT_T:    return std::to_string((int)v.n);
-        case JSONValue::FLOAT_T:  { std::ostringstream ss; ss<<v.n; return ss.str(); }
+        case JSONValue::INT_T:    return ::std::to_string((int)v.n);
+        case JSONValue::FLOAT_T:  { ::std::ostringstream ss; ss<<v.n; return ss.str(); }
         case JSONValue::STRING_T: return "\""+v.s+"\"";
         case JSONValue::ARRAY_T: {
             if(v.arr->empty())return "[]";
-            std::string r="[\n";
+            ::std::string r="[\n";
             for(size_t i=0;i<v.arr->size();i++){
                 r+=pad2+toJSONString((*v.arr)[i],indent+1);
                 if(i+1<v.arr->size())r+=",";
@@ -3896,7 +3896,7 @@ std::string PApplet::toJSONString(const JSONValue& v, int indent){
         }
         case JSONValue::OBJECT_T: {
             if(v.obj->empty())return "{}";
-            std::string r="{\n";
+            ::std::string r="{\n";
             size_t n=0;
             for(auto& p:*v.obj){
                 r+=pad2+"\""+p.first+"\": "+toJSONString(p.second,indent+1);
@@ -3909,17 +3909,17 @@ std::string PApplet::toJSONString(const JSONValue& v, int indent){
     return "null";
 }
 
-static std::string readFileString(const std::string& path){
-    std::ifstream f(path); if(!f)return "";
-    return std::string((std::istreambuf_iterator<char>(f)),std::istreambuf_iterator<char>());
+static ::std::string readFileString(const ::std::string& path){
+    ::std::ifstream f(path); if(!f)return "";
+    return ::std::string((::std::istreambuf_iterator<char>(f)),::std::istreambuf_iterator<char>());
 }
 
-JSONValue PApplet::loadJSONObject(const std::string& path){ return parseJSON(readFileString(path)); }
-JSONValue PApplet::loadJSONArray(const std::string& path) { return parseJSON(readFileString(path)); }
-bool PApplet::saveJSONObject(const std::string& path,const JSONValue& v,int indent){
-    std::ofstream f(path); if(!f)return false; f<<toJSONString(v,indent); return true;
+JSONValue PApplet::loadJSONObject(const ::std::string& path){ return parseJSON(readFileString(path)); }
+JSONValue PApplet::loadJSONArray(const ::std::string& path) { return parseJSON(readFileString(path)); }
+bool PApplet::saveJSONObject(const ::std::string& path,const JSONValue& v,int indent){
+    ::std::ofstream f(path); if(!f)return false; f<<toJSONString(v,indent); return true;
 }
-bool PApplet::saveJSONArray(const std::string& path,const JSONValue& v,int indent){
+bool PApplet::saveJSONArray(const ::std::string& path,const JSONValue& v,int indent){
     return saveJSONObject(path,v,indent);
 }
 
@@ -3927,22 +3927,22 @@ bool PApplet::saveJSONArray(const std::string& path,const JSONValue& v,int inden
 // XML IMPLEMENTATION
 // =============================================================================
 
-static void xmlSkipWS(const std::string& s,size_t& i){ while(i<s.size()&&std::isspace(s[i]))i++; }
+static void xmlSkipWS(const ::std::string& s,size_t& i){ while(i<s.size()&&::std::isspace(s[i]))i++; }
 
-static XML parseXMLNode(const std::string& s, size_t& i){
+static XML parseXMLNode(const ::std::string& s, size_t& i){
     XML node;
     xmlSkipWS(s,i);
     if(i>=s.size()||s[i]!='<')return node;
     i++;
     if(i<s.size()&&s[i]=='?'){ while(i<s.size()&&!(s[i]=='>'||s.substr(i,2)=="?>"))i++; if(i<s.size())i++; return node; }
     if(i<s.size()&&s[i]=='!'){ while(i<s.size()&&s[i]!='>')i++; i++; return node; }
-    while(i<s.size()&&!std::isspace(s[i])&&s[i]!='>'&&s[i]!='/')node.name+=s[i++];
+    while(i<s.size()&&!::std::isspace(s[i])&&s[i]!='>'&&s[i]!='/')node.name+=s[i++];
     xmlSkipWS(s,i);
     while(i<s.size()&&s[i]!='>'&&s[i]!='/'){
-        std::string key; while(i<s.size()&&!std::isspace(s[i])&&s[i]!='='&&s[i]!='>'&&s[i]!='/')key+=s[i++];
+        ::std::string key; while(i<s.size()&&!::std::isspace(s[i])&&s[i]!='='&&s[i]!='>'&&s[i]!='/')key+=s[i++];
         xmlSkipWS(s,i);
         if(i<s.size()&&s[i]=='='){i++;xmlSkipWS(s,i);
-            char q=s[i++]; std::string val;
+            char q=s[i++]; ::std::string val;
             while(i<s.size()&&s[i]!=q)val+=s[i++]; if(i<s.size())i++;
             node.attributes[key]=val;
         }
@@ -3956,17 +3956,17 @@ static XML parseXMLNode(const std::string& s, size_t& i){
             i++; while(i<s.size()&&s[i]!='>')i++; if(i<s.size())i++; break;
         }
         if(i<s.size()&&s[i]=='<'){ XML child=parseXMLNode(s,i); if(!child.name.empty())node.children.push_back(child); }
-        else { std::string text; while(i<s.size()&&s[i]!='<')text+=s[i++]; auto t=text;t.erase(0,t.find_first_not_of(" \t\n\r"));t.erase(t.find_last_not_of(" \t\n\r")+1);if(!t.empty())node.content+=t; }
+        else { ::std::string text; while(i<s.size()&&s[i]!='<')text+=s[i++]; auto t=text;t.erase(0,t.find_first_not_of(" \t\n\r"));t.erase(t.find_last_not_of(" \t\n\r")+1);if(!t.empty())node.content+=t; }
     }
     return node;
 }
 
-XML PApplet::parseXML(const std::string& src){ size_t i=0; return parseXMLNode(src,i); }
-XML PApplet::loadXML(const std::string& path){ return parseXML(readFileString(path)); }
+XML PApplet::parseXML(const ::std::string& src){ size_t i=0; return parseXMLNode(src,i); }
+XML PApplet::loadXML(const ::std::string& path){ return parseXML(readFileString(path)); }
 
-std::string XML::toString(int indent) const {
-    std::string pad(indent*2,' ');
-    std::string r=pad+"<"+name;
+::std::string XML::toString(int indent) const {
+    ::std::string pad(indent*2,' ');
+    ::std::string r=pad+"<"+name;
     for(auto& a:attributes)r+=" "+a.first+"=\""+a.second+"\"";
     if(children.empty()&&content.empty()){r+="/>\n";return r;}
     r+=">";
@@ -3975,16 +3975,16 @@ std::string XML::toString(int indent) const {
     r+="</"+name+">\n";
     return r;
 }
-bool PApplet::saveXML(const std::string& path,const XML& x){ std::ofstream f(path);if(!f)return false;f<<x.toString();return true; }
+bool PApplet::saveXML(const ::std::string& path,const XML& x){ ::std::ofstream f(path);if(!f)return false;f<<x.toString();return true; }
 
 // =============================================================================
 // TABLE IMPLEMENTATION
 // =============================================================================
 
-Table* PApplet::loadTable(const std::string& path,const std::string& options){
+Table* PApplet::loadTable(const ::std::string& path,const ::std::string& options){
     Table* t=new Table();
-    bool hasHeader=options.find("header")!=std::string::npos;
-    char delim=path.find(".tsv")!=std::string::npos?'\t':',';
+    bool hasHeader=options.find("header")!=::std::string::npos;
+    char delim=path.find(".tsv")!=::std::string::npos?'\t':',';
     auto lines=loadStrings(path);
     if(lines.empty())return t;
     int start=0;
@@ -4000,8 +4000,8 @@ Table* PApplet::loadTable(const std::string& path,const std::string& options){
     }
     return t;
 }
-bool PApplet::saveTable(const std::string& path,const Table& t,const std::string& ext){
-    std::ofstream f(path);if(!f)return false;
+bool PApplet::saveTable(const ::std::string& path,const Table& t,const ::std::string& ext){
+    ::std::ofstream f(path);if(!f)return false;
     char delim=ext=="tsv"?'\t':',';
     if(!t.columns.empty()){for(size_t i=0;i<t.columns.size();i++){if(i)f<<delim;f<<t.columns[i];}f<<"\n";}
     for(auto& row:t.rows){for(size_t i=0;i<row.size();i++){if(i)f<<delim;f<<row[i];}f<<"\n";}
@@ -4018,37 +4018,37 @@ PShape PApplet::createShape(int kind){ return PShape(kind); }
 // Parses basic SVG shapes (path, rect, circle, ellipse, polygon, polyline, line)
 // into PShape children for rendering. Handles fill/stroke from style attributes.
 
-static float svgParseFloat(const std::string& s, size_t& i){
+static float svgParseFloat(const ::std::string& s, size_t& i){
     while(i<s.size()&&(s[i]==' '||s[i]==','))i++;
     size_t j=i;
     if(j<s.size()&&(s[j]=='-'||s[j]=='+'))j++;
     while(j<s.size()&&(isdigit(s[j])||s[j]=='.'||s[j]=='e'||s[j]=='E'||((s[j]=='-'||s[j]=='+')&&j>i&&(s[j-1]=='e'||s[j-1]=='E'))))j++;
-    float v=0; try{v=std::stof(s.substr(i,j-i));}catch(...){}
+    float v=0; try{v=::std::stof(s.substr(i,j-i));}catch(...){}
     i=j; return v;
 }
-static uint32_t svgParseColor(const std::string& s){
+static uint32_t svgParseColor(const ::std::string& s){
     if(s.empty()||s=="none") return 0;
     if(s[0]=='#'){
-        std::string h=s.substr(1);
+        ::std::string h=s.substr(1);
         if(h.size()==3)h={h[0],h[0],h[1],h[1],h[2],h[2]};
-        uint32_t v=0; try{v=(uint32_t)std::stoul(h,nullptr,16);}catch(...){}
+        uint32_t v=0; try{v=(uint32_t)::std::stoul(h,nullptr,16);}catch(...){}
         return v|0xFF000000u;
     }
     // Named colors (common subset)
-    static const std::unordered_map<std::string,uint32_t> nc={
+    static const ::std::unordered_map<::std::string,uint32_t> nc={
         {"black",0xFF000000},{"white",0xFFFFFFFF},{"red",0xFF0000FF},
         {"green",0xFF008000},{"blue",0xFF0000FF},{"none",0},
         {"gray",0xFF808080},{"grey",0xFF808080},{"yellow",0xFFFFFF00},
     };
     auto it=nc.find(s); return it!=nc.end()?it->second:0xFF000000;
 }
-static std::string svgAttr(const std::string& tag, const std::string& attr){
+static ::std::string svgAttr(const ::std::string& tag, const ::std::string& attr){
     // Find attr="value" -- whole-word match to avoid "id=" matching "d="
     size_t p=0;
-    std::string needle=attr+"=";
+    ::std::string needle=attr+"=";
     while(true){
         p=tag.find(needle,p);
-        if(p==std::string::npos) return "";
+        if(p==::std::string::npos) return "";
         // Must be preceded by space, tab, or start (whole attribute name)
         bool ok=(p==0||tag[p-1]==' '||tag[p-1]==9||tag[p-1]==58); // 58=':'
         if(ok) break;
@@ -4059,25 +4059,25 @@ static std::string svgAttr(const std::string& tag, const std::string& attr){
     char q=tag[p++];
     if(q!=34&&q!=39) return ""; // 34='"', 39="'"
     size_t e=tag.find(q,p);
-    return e==std::string::npos?tag.substr(p):tag.substr(p,e-p);
+    return e==::std::string::npos?tag.substr(p):tag.substr(p,e-p);
 }
-static void svgApplyStyle(PShape& sh, const std::string& tag){
+static void svgApplyStyle(PShape& sh, const ::std::string& tag){
     // Parse style="..." or individual fill/stroke/stroke-width attrs
-    std::string style=svgAttr(tag,"style");
-    auto getVal=[&](const std::string& k)->std::string{
+    ::std::string style=svgAttr(tag,"style");
+    auto getVal=[&](const ::std::string& k)->::std::string{
         // from inline style
-        size_t p=style.find(k+":"); if(p!=std::string::npos){
+        size_t p=style.find(k+":"); if(p!=::std::string::npos){
             p+=k.size()+1; while(p<style.size()&&style[p]==' ')p++;
-            size_t e=style.find(';',p); return style.substr(p,e==std::string::npos?std::string::npos:e-p);
+            size_t e=style.find(';',p); return style.substr(p,e==::std::string::npos?::std::string::npos:e-p);
         }
         // from attribute
         return svgAttr(tag,k);
     };
-    std::string fs=getVal("fill"),ss=getVal("stroke"),sw=getVal("stroke-width"),op=getVal("opacity"),fo=getVal("fill-opacity");
+    ::std::string fs=getVal("fill"),ss=getVal("stroke"),sw=getVal("stroke-width"),op=getVal("opacity"),fo=getVal("fill-opacity");
     float alpha=1.0f;
-    if(!op.empty())try{alpha=std::stof(op);}catch(...){}
+    if(!op.empty())try{alpha=::std::stof(op);}catch(...){}
     float falpha=alpha;
-    if(!fo.empty())try{falpha=std::stof(fo)*alpha;}catch(...){}
+    if(!fo.empty())try{falpha=::std::stof(fo)*alpha;}catch(...){}
     if(!fs.empty()&&fs!="none"){
         uint32_t c=svgParseColor(fs);
         sh.setFill(((c>>16)&0xFF)/255.f,((c>>8)&0xFF)/255.f,(c&0xFF)/255.f,falpha);
@@ -4088,14 +4088,14 @@ static void svgApplyStyle(PShape& sh, const std::string& tag){
         sh.setStroke(((c>>16)&0xFF)/255.f,((c>>8)&0xFF)/255.f,(c&0xFF)/255.f,alpha);
         sh.hasStroke=true;
     }
-    if(!sw.empty())try{sh.strokeW=std::stof(sw);}catch(...){}
+    if(!sw.empty())try{sh.strokeW=::std::stof(sw);}catch(...){}
 }
 
 // Parse SVG path 'd' attribute into vertices
-static PShape svgParsePath(const std::string& tag){
+static PShape svgParsePath(const ::std::string& tag){
     PShape sh; sh.kind=-1; sh.hasFill=true; sh.hasStroke=false;
     svgApplyStyle(sh,tag);
-    std::string d=svgAttr(tag,"d");
+    ::std::string d=svgAttr(tag,"d");
     if(d.empty())return sh;
     float cx=0,cy=0,sx=0,sy=0; // current pos and subpath start
     float lcx2=0,lcy2=0; // last control point (for S/T reflection)
@@ -4139,8 +4139,8 @@ static PShape svgParsePath(const std::string& tag){
             {
                 // Adaptive segments: based on chord length of control polygon
                 float dx1=x1-cx,dy1=y1-cy,dx2=x2-x1,dy2=y2-y1,dx3=x-x2,dy3=y-y2;
-                float clen=std::sqrt(dx1*dx1+dy1*dy1)+std::sqrt(dx2*dx2+dy2*dy2)+std::sqrt(dx3*dx3+dy3*dy3);
-                int seg=std::max(2,(int)(clen/2));if(seg>128)seg=128;
+                float clen=::std::sqrt(dx1*dx1+dy1*dy1)+::std::sqrt(dx2*dx2+dy2*dy2)+::std::sqrt(dx3*dx3+dy3*dy3);
+                int seg=::std::max(2,(int)(clen/2));if(seg>128)seg=128;
                 for(int s2=1;s2<=seg;s2++){
                     float t=s2/(float)seg,u=1-t;
                     sh.verts.push_back({u*u*u*cx+3*u*u*t*x1+3*u*t*t*x2+t*t*t*x,
@@ -4185,10 +4185,10 @@ static PShape svgParsePath(const std::string& tag){
             {
                 // Approximate arc chord length for adaptive segments
                 float adx=ex-cx,ady=ey-cy;
-                float chord=std::sqrt(adx*adx+ady*ady);
+                float chord=::std::sqrt(adx*adx+ady*ady);
                 // rx,ry give the arc radius -- use larger for segment count
-                float r2=std::max(rx,ry);
-                int arcSeg=std::max(4,(int)(chord/2));
+                float r2=::std::max(rx,ry);
+                int arcSeg=::std::max(4,(int)(chord/2));
                 if(r2>0){int byRadius=(int)(r2*0.5f);if(byRadius>arcSeg)arcSeg=byRadius;}
                 if(arcSeg>96)arcSeg=96;
                 for(int s2=1;s2<=arcSeg;s2++){
@@ -4210,22 +4210,22 @@ static PShape svgParsePath(const std::string& tag){
     return sh;
 }
 
-static PShape* svgLoad(const std::string& path){
+static PShape* svgLoad(const ::std::string& path){
     // Search paths
-    std::vector<std::string> tries={path,"data/"+path,"files/"+path};
-    std::string found;
+    ::std::vector<::std::string> tries={path,"data/"+path,"files/"+path};
+    ::std::string found;
     for(auto& t:tries){FILE* f=fopen(t.c_str(),"r");if(f){fclose(f);found=t;break;}}
-    if(found.empty()){std::cerr<<"loadShape: file not found: "<<path<<"\n";return new PShape();}
+    if(found.empty()){::std::cerr<<"loadShape: file not found: "<<path<<"\n";return new PShape();}
 
-    std::ifstream f(found);
-    std::string xml((std::istreambuf_iterator<char>(f)),std::istreambuf_iterator<char>());
+    ::std::ifstream f(found);
+    ::std::string xml((::std::istreambuf_iterator<char>(f)),::std::istreambuf_iterator<char>());
 
     PShape* root=new PShape();
     root->hasFill=false;
     // Extract viewBox for scaling
     float vbW=0,vbH=0;
     size_t vbp=xml.find("viewBox=");
-    if(vbp!=std::string::npos){
+    if(vbp!=::std::string::npos){
         vbp+=9;size_t i2=vbp;
         svgParseFloat(xml,i2);svgParseFloat(xml,i2); // minX minY
         vbW=svgParseFloat(xml,i2);vbH=svgParseFloat(xml,i2);
@@ -4234,14 +4234,14 @@ static PShape* svgLoad(const std::string& path){
     // Parse all shape elements
     size_t p=0;
     int maxTags=20000, tagCount=0;
-    std::string currentGroupId; // id from nearest enclosing <g id="...">
-    std::vector<std::string> groupIdStack; // stack for nested groups
+    ::std::string currentGroupId; // id from nearest enclosing <g id="...">
+    ::std::vector<::std::string> groupIdStack; // stack for nested groups
     while(p<xml.size() && tagCount++<maxTags){
-        size_t lt=xml.find('<',p); if(lt==std::string::npos)break;
+        size_t lt=xml.find('<',p); if(lt==::std::string::npos)break;
         // Skip comments <!-- ... -->
         if(lt+3<xml.size() && xml.substr(lt,4)=="<!--"){
             size_t end=xml.find("-->",lt+4);
-            p=(end==std::string::npos)?xml.size():end+3; continue;
+            p=(end==::std::string::npos)?xml.size():end+3; continue;
         }
         // Skip DOCTYPE and CDATA <! ... > (may contain > inside [...])
         if(lt+1<xml.size() && xml[lt+1]=='!'){
@@ -4268,14 +4268,14 @@ static PShape* svgLoad(const std::string& path){
             }
         }
         if(gt>=xml.size())break;
-        std::string tag=xml.substr(lt+1,gt-lt-1);
+        ::std::string tag=xml.substr(lt+1,gt-lt-1);
         p=gt+1;
         if(tag.empty()||tag[0]=='?')continue;
         if(tag[0]=='/'){
             // Closing tag
-            std::string ctag=tag.substr(1);
+            ::std::string ctag=tag.substr(1);
             size_t csp=ctag.find_first_of(" /\t");
-            if(csp!=std::string::npos) ctag=ctag.substr(0,csp);
+            if(csp!=::std::string::npos) ctag=ctag.substr(0,csp);
             if(ctag=="g"&&!groupIdStack.empty()){
                 groupIdStack.pop_back();
                 currentGroupId=groupIdStack.empty()?"":groupIdStack.back();
@@ -4286,14 +4286,14 @@ static PShape* svgLoad(const std::string& path){
         for(size_t ci2=0;ci2<tag.size();ci2++) if(tag[ci2]==10||tag[ci2]==13||tag[ci2]==9) tag[ci2]=' ';
         // get element name
         size_t sp=tag.find_first_of(" /");
-        std::string elem=(sp==std::string::npos)?tag:tag.substr(0,sp);
+        ::std::string elem=(sp==::std::string::npos)?tag:tag.substr(0,sp);
 
         PShape child;
         if(elem=="path"){
             child=svgParsePath(tag);
         } else if(elem=="rect"){
             float x=0,y=0,w=0,h=0,rx=0,ry=0;
-            auto a=[&](const std::string& k)->float{std::string v=svgAttr(tag,k);if(v.empty())return 0;try{return std::stof(v);}catch(...){return 0;}};
+            auto a=[&](const ::std::string& k)->float{::std::string v=svgAttr(tag,k);if(v.empty())return 0;try{return ::std::stof(v);}catch(...){return 0;}};
             x=a("x");y=a("y");w=a("width");h=a("height");rx=a("rx");ry=a("ry");
             child.kind=-1; svgApplyStyle(child,tag);
             child.verts.push_back({x,y,0,0,0});child.verts.push_back({x+w,y,0,0,0});
@@ -4301,7 +4301,7 @@ static PShape* svgLoad(const std::string& path){
             child.closed=true;
         } else if(elem=="circle"||elem=="ellipse"){
             float cx2=0,cy2=0,rx=0,ry=0;
-            auto a=[&](const std::string& k)->float{std::string v=svgAttr(tag,k);if(v.empty())return 0;try{return std::stof(v);}catch(...){return 0;}};
+            auto a=[&](const ::std::string& k)->float{::std::string v=svgAttr(tag,k);if(v.empty())return 0;try{return ::std::stof(v);}catch(...){return 0;}};
             cx2=a("cx");cy2=a("cy");
             if(elem=="circle"){rx=ry=a("r");}else{rx=a("rx");ry=a("ry");}
             child.kind=-1; svgApplyStyle(child,tag);
@@ -4314,7 +4314,7 @@ static PShape* svgLoad(const std::string& path){
         } else if(elem=="polygon"||elem=="polyline"){
             child.kind=-1; svgApplyStyle(child,tag);
             child.closed=(elem=="polygon");
-            std::string pts=svgAttr(tag,"points"); size_t pi=0;
+            ::std::string pts=svgAttr(tag,"points"); size_t pi=0;
             while(pi<pts.size()){
                 while(pi<pts.size()&&(pts[pi]==' '||pts[pi]==','))pi++;
                 if(pi>=pts.size())break;
@@ -4323,7 +4323,7 @@ static PShape* svgLoad(const std::string& path){
             }
         } else if(elem=="line"){
             child.kind=LINES; svgApplyStyle(child,tag);
-            auto a=[&](const std::string& k)->float{std::string v=svgAttr(tag,k);if(v.empty())return 0;try{return std::stof(v);}catch(...){return 0;}};
+            auto a=[&](const ::std::string& k)->float{::std::string v=svgAttr(tag,k);if(v.empty())return 0;try{return ::std::stof(v);}catch(...){return 0;}};
             child.verts.push_back({a("x1"),a("y1"),0,0,0});
             child.verts.push_back({a("x2"),a("y2"),0,0,0});
         } else if(elem=="defs"||elem=="title"||elem=="desc"){
@@ -4332,7 +4332,7 @@ static PShape* svgLoad(const std::string& path){
             continue;
         } else if(elem=="g"){
             // Push group id onto stack so child shapes inherit it
-            std::string gid=svgAttr(tag,"id");
+            ::std::string gid=svgAttr(tag,"id");
             if(gid.empty()) gid=svgAttr(tag,"inkscape:label");
             groupIdStack.push_back(gid);
             currentGroupId=gid.empty()?currentGroupId:gid;
@@ -4340,7 +4340,7 @@ static PShape* svgLoad(const std::string& path){
         } else continue;
 
         {
-            std::string sid = svgAttr(tag,"id");
+            ::std::string sid = svgAttr(tag,"id");
             if(sid.empty()) sid = svgAttr(tag,"inkscape:label");
             if(sid.empty()) sid = currentGroupId;
             child.name = sid;
@@ -4371,20 +4371,20 @@ struct ObjVertex {
 };
 
 // Parse MTL file, return map of material name -> texture PImage*
-static std::unordered_map<std::string,GLuint> objLoadMtl(const std::string& mtlPath){
-    std::unordered_map<std::string,GLuint> mats;
-    std::ifstream f(mtlPath);
+static ::std::unordered_map<::std::string,GLuint> objLoadMtl(const ::std::string& mtlPath){
+    ::std::unordered_map<::std::string,GLuint> mats;
+    ::std::ifstream f(mtlPath);
     if(!f.is_open()) return mats;
-    std::string curMat, line;
-    while(std::getline(f,line)){
+    ::std::string curMat, line;
+    while(::std::getline(f,line)){
         if(line.empty()||line[0]=='#') continue;
-        std::istringstream ss(line);
-        std::string tok; ss>>tok;
+        ::std::istringstream ss(line);
+        ::std::string tok; ss>>tok;
         if(tok=="newmtl"){ ss>>curMat; }
         else if((tok=="map_Kd"||tok=="map_Ka")&&!curMat.empty()&&mats.find(curMat)==mats.end()){
-            std::string texFile; ss>>texFile;
+            ::std::string texFile; ss>>texFile;
             // Try relative to obj dir
-            std::vector<std::string> tries={
+            ::std::vector<::std::string> tries={
                 _s_objDir+texFile, _s_objDir+"data/"+texFile,
                 "data/"+texFile, texFile
             };
@@ -4413,30 +4413,30 @@ static std::unordered_map<std::string,GLuint> objLoadMtl(const std::string& mtlP
     return mats;
 }
 
-static PShape* objLoad(const std::string& path){
-    std::vector<std::string> tries={path,"data/"+path,"files/"+path};
-    std::string found;
+static PShape* objLoad(const ::std::string& path){
+    ::std::vector<::std::string> tries={path,"data/"+path,"files/"+path};
+    ::std::string found;
     for(auto& t:tries){FILE* f2=fopen(t.c_str(),"r");if(f2){fclose(f2);found=t;break;}}
-    if(found.empty()){std::cerr<<"loadShape: OBJ not found: "<<path<<"\n";return new PShape();}
+    if(found.empty()){::std::cerr<<"loadShape: OBJ not found: "<<path<<"\n";return new PShape();}
 
     // Get directory for relative texture paths
     size_t slash=found.find_last_of("/\\");
-    _s_objDir=(slash==std::string::npos)?"":found.substr(0,slash+1);
+    _s_objDir=(slash==::std::string::npos)?"":found.substr(0,slash+1);
 
-    std::vector<std::array<float,3>> vp,vn;
-    std::vector<std::array<float,2>> vt;
-    std::unordered_map<std::string,GLuint> mats; // material name -> GL texture
+    ::std::vector<::std::array<float,3>> vp,vn;
+    ::std::vector<::std::array<float,2>> vt;
+    ::std::unordered_map<::std::string,GLuint> mats; // material name -> GL texture
 
     PShape* root=new PShape();
     root->name="__obj__";
 
     // Current group state
     struct Group {
-        std::string name, matName;
+        ::std::string name, matName;
         GLuint texId=0;
-        std::vector<ObjVertex> verts;
+        ::std::vector<ObjVertex> verts;
     };
-    std::vector<Group> groups;
+    ::std::vector<Group> groups;
     Group* cur=nullptr;
 
     auto getGroup=[&]()->Group*{
@@ -4444,19 +4444,19 @@ static PShape* objLoad(const std::string& path){
         return cur;
     };
 
-    std::ifstream f(found);
-    std::string line;
-    while(std::getline(f,line)){
+    ::std::ifstream f(found);
+    ::std::string line;
+    while(::std::getline(f,line)){
         // Strip \r
         if(!line.empty()&&line.back()=='\r') line.pop_back();
         if(line.empty()||line[0]=='#') continue;
-        std::istringstream ss(line);
-        std::string tok; ss>>tok;
+        ::std::istringstream ss(line);
+        ::std::string tok; ss>>tok;
         if(tok=="mtllib"){
-            std::string mtlFile; ss>>mtlFile;
-            std::vector<std::string> mtlTries={_s_objDir+mtlFile,"data/"+mtlFile,mtlFile};
+            ::std::string mtlFile; ss>>mtlFile;
+            ::std::vector<::std::string> mtlTries={_s_objDir+mtlFile,"data/"+mtlFile,mtlFile};
             for(auto& t:mtlTries){
-                std::ifstream test(t);
+                ::std::ifstream test(t);
                 if(test.is_open()){mats=objLoadMtl(t);break;}
             }
         } else if(tok=="v"){
@@ -4468,21 +4468,21 @@ static PShape* objLoad(const std::string& path){
         } else if(tok=="o"||tok=="g"){
             groups.push_back({}); cur=&groups.back(); ss>>cur->name;
         } else if(tok=="usemtl"){
-            std::string mat; ss>>mat;
+            ::std::string mat; ss>>mat;
             if(!cur){groups.push_back({});cur=&groups.back();}
             // Start new group for new material
             if(!cur->verts.empty()){groups.push_back({});cur=&groups.back();}
             cur->matName=mat;
             cur->texId=mats.count(mat)?mats[mat]:0;
         } else if(tok=="f"){
-            std::vector<std::array<int,3>> face;
-            std::string fv;
+            ::std::vector<::std::array<int,3>> face;
+            ::std::string fv;
             while(ss>>fv){
-                std::array<int,3> idx={0,0,0};
-                std::istringstream fs(fv);
-                std::string part; int fi=0;
-                while(std::getline(fs,part,'/')&&fi<3){
-                    if(!part.empty()) try{idx[fi]=std::stoi(part);}catch(...){}
+                ::std::array<int,3> idx={0,0,0};
+                ::std::istringstream fs(fv);
+                ::std::string part; int fi=0;
+                while(::std::getline(fs,part,'/')&&fi<3){
+                    if(!part.empty()) try{idx[fi]=::std::stoi(part);}catch(...){}
                     fi++;
                 }
                 face.push_back(idx);
@@ -4537,13 +4537,13 @@ static PShape* objLoad(const std::string& path){
     return root;
 }
 
-PShape* PApplet::loadShape(const std::string& path){
-    auto ext=[&](const std::string& e)->bool{
+PShape* PApplet::loadShape(const ::std::string& path){
+    auto ext=[&](const ::std::string& e)->bool{
         return path.size()>=e.size()&&path.substr(path.size()-e.size())==e;
     };
     if(ext(".svg")||ext(".SVG")) return svgLoad(path);
     if(ext(".obj")||ext(".OBJ")) return objLoad(path);
-    std::cerr<<"loadShape: unsupported format: "<<path<<"\n";
+    ::std::cerr<<"loadShape: unsupported format: "<<path<<"\n";
     return new PShape();
 }
 
@@ -4589,7 +4589,7 @@ void PApplet::drawPShape(const PShape& s,float x,float y,float w,float h,bool pa
                         float ax=s.verts[vi+1].x-s.verts[vi].x,ay=s.verts[vi+1].y-s.verts[vi].y,az=s.verts[vi+1].z-s.verts[vi].z;
                         float bx=s.verts[vi+2].x-s.verts[vi].x,by=s.verts[vi+2].y-s.verts[vi].y,bz=s.verts[vi+2].z-s.verts[vi].z;
                         float nx2=ay*bz-az*by,ny2=az*bx-ax*bz,nz2=ax*by-ay*bx;
-                        float len=std::sqrt(nx2*nx2+ny2*ny2+nz2*nz2);
+                        float len=::std::sqrt(nx2*nx2+ny2*ny2+nz2*nz2);
                         if(len>0){nx2/=len;ny2/=len;nz2/=len;}
                         glNormal3f(nx2,ny2,nz2);
                     }
@@ -4636,7 +4636,7 @@ void PApplet::drawPShape(const PShape& s,float x,float y,float w,float h,bool pa
             glStencilFunc(GL_NOTEQUAL,0,~0);
             glStencilOp(GL_KEEP,GL_KEEP,GL_KEEP);
             float minx=s.verts[0].x,maxx=minx,miny=s.verts[0].y,maxy=miny;
-            for(auto& v:s.verts){minx=std::min(minx,v.x);maxx=std::max(maxx,v.x);miny=std::min(miny,v.y);maxy=std::max(maxy,v.y);}
+            for(auto& v:s.verts){minx=::std::min(minx,v.x);maxx=::std::max(maxx,v.x);miny=::std::min(miny,v.y);maxy=::std::max(maxy,v.y);}
 #ifdef __EMSCRIPTEN__
             glBegin(GL_TRIANGLES);
             glVertex3f(minx,miny,0);glVertex3f(maxx,miny,0);glVertex3f(maxx,maxy,0);
@@ -4671,7 +4671,7 @@ void PApplet::shape(const PShape& s,float x,float y,float w,float h){ drawPShape
 // PFONT / TYPOGRAPHY
 // =============================================================================
 // Internal helper -- try to load a TTF by path
-bool PApplet::tryLoadTTF(const std::string& path, float size) {
+bool PApplet::tryLoadTTF(const ::std::string& path, float size) {
 #if PROCESSING_HAS_STB_TRUETYPE
     if (loadTTFFile(path)) {
         g_ttf.loaded = true;
@@ -4685,19 +4685,19 @@ bool PApplet::tryLoadTTF(const std::string& path, float size) {
 }
 
 // loadFont -- loads a .ttf file; falls back to bitmap font gracefully
-PFont PApplet::loadFont(const std::string& filename) {
+PFont PApplet::loadFont(const ::std::string& filename) {
     PFont f(filename, g_textSize);
     tryLoadTTF(filename, g_textSize);
     return f;
 }
 
 // createFont -- creates font from a name/path and size
-static std::vector<PFont> _fontPool;
-PFont* PApplet::createFont(const std::string& name, float size, bool /*smooth*/) {
+static ::std::vector<PFont> _fontPool;
+PFont* PApplet::createFont(const ::std::string& name, float size, bool /*smooth*/) {
     PFont f(name, size);
     // Try as file path first, then common system paths
     // Strip extension from name if already present, to avoid double extensions
-    std::string baseName = name;
+    ::std::string baseName = name;
     if (baseName.size() > 4 && (baseName.substr(baseName.size()-4) == ".ttf"
                               || baseName.substr(baseName.size()-4) == ".otf")) {
         // name already has extension -- use as-is for first attempt
@@ -4705,37 +4705,37 @@ PFont* PApplet::createFont(const std::string& name, float size, bool /*smooth*/)
         baseName = ""; // will build paths with extensions below
     }
 
-    std::string nameNoExt = name;
+    ::std::string nameNoExt = name;
     if (nameNoExt.size() > 4 && (nameNoExt.substr(nameNoExt.size()-4) == ".ttf"
                                || nameNoExt.substr(nameNoExt.size()-4) == ".otf"))
         nameNoExt = nameNoExt.substr(0, nameNoExt.size()-4);
 
-    std::vector<std::string> paths = {
+    ::std::vector<::std::string> paths = {
         // Try exact name first (may already have extension)
         name,
         // Try adding extensions if not already present
         nameNoExt + ".ttf",
         nameNoExt + ".otf",
         // Sketch data/ folder
-        std::string("data/") + name,
-        std::string("data/") + nameNoExt + ".ttf",
-        std::string("data/") + nameNoExt + ".otf",
+        ::std::string("data/") + name,
+        ::std::string("data/") + nameNoExt + ".ttf",
+        ::std::string("data/") + nameNoExt + ".otf",
         // Sketch fonts/ folder
-        std::string("fonts/") + name,
-        std::string("fonts/") + nameNoExt + ".ttf",
-        std::string("fonts/") + nameNoExt + ".otf",
+        ::std::string("fonts/") + name,
+        ::std::string("fonts/") + nameNoExt + ".ttf",
+        ::std::string("fonts/") + nameNoExt + ".otf",
         // Linux system font directories
-        std::string("/usr/share/fonts/truetype/") + nameNoExt + ".ttf",
-        std::string("/usr/share/fonts/opentype/") + nameNoExt + ".otf",
-        std::string("/usr/share/fonts/TTF/") + nameNoExt + ".ttf",
-        std::string("/usr/share/fonts/OTF/") + nameNoExt + ".otf",
+        ::std::string("/usr/share/fonts/truetype/") + nameNoExt + ".ttf",
+        ::std::string("/usr/share/fonts/opentype/") + nameNoExt + ".otf",
+        ::std::string("/usr/share/fonts/TTF/") + nameNoExt + ".ttf",
+        ::std::string("/usr/share/fonts/OTF/") + nameNoExt + ".otf",
         // Windows system fonts
-        std::string("C:/Windows/Fonts/") + name,
-        std::string("C:/Windows/Fonts/") + nameNoExt + ".ttf",
-        std::string("C:/Windows/Fonts/") + nameNoExt + ".otf",
+        ::std::string("C:/Windows/Fonts/") + name,
+        ::std::string("C:/Windows/Fonts/") + nameNoExt + ".ttf",
+        ::std::string("C:/Windows/Fonts/") + nameNoExt + ".otf",
         // macOS
-        std::string("/Library/Fonts/") + name,
-        std::string("/System/Library/Fonts/") + name,
+        ::std::string("/Library/Fonts/") + name,
+        ::std::string("/System/Library/Fonts/") + name,
     };
 
     // Also search system font dirs recursively (Linux: fc-list output)
@@ -4745,11 +4745,11 @@ PFont* PApplet::createFont(const std::string& name, float size, bool /*smooth*/)
         if (fc) {
             char buf[512];
             while (fgets(buf, sizeof(buf), fc)) {
-                std::string line(buf);
+                ::std::string line(buf);
                 // fc-list format: /path/to/font.ttf: Family:style
                 size_t colon = line.find(':');
-                if (colon != std::string::npos) {
-                    std::string fpath = line.substr(0, colon);
+                if (colon != ::std::string::npos) {
+                    ::std::string fpath = line.substr(0, colon);
                     // strip whitespace
                     fpath.erase(0, fpath.find_first_not_of(" \t"));
                     fpath.erase(fpath.find_last_not_of(" \t\n\r") + 1);
@@ -4766,10 +4766,10 @@ PFont* PApplet::createFont(const std::string& name, float size, bool /*smooth*/)
         if (tryLoadTTF(p, size)) { found = true; break; }
     }
     if (!found) {
-        std::cerr << "[font] Could not find font: " << name << "\n";
-        std::cerr << "[font] Put the .ttf file in your sketch's data/ folder\n";
+        ::std::cerr << "[font] Could not find font: " << name << "\n";
+        ::std::cerr << "[font] Put the .ttf file in your sketch's data/ folder\n";
     }
-    _fontPool.push_back(std::move(f)); return &_fontPool.back();
+    _fontPool.push_back(::std::move(f)); return &_fontPool.back();
 }
 
 // textFont -- switch to a previously loaded font
@@ -4804,74 +4804,74 @@ void PApplet::texture(PImage& img){
 // FILE / IO HELPERS
 // =============================================================================
 
-BufferedReader* PApplet::createReader(const std::string& path){ return new BufferedReader(path); }
-PrintWriter* PApplet::createWriter(const std::string& path){ return new PrintWriter(path); }
+BufferedReader* PApplet::createReader(const ::std::string& path){ return new BufferedReader(path); }
+PrintWriter* PApplet::createWriter(const ::std::string& path){ return new PrintWriter(path); }
 
-std::string PApplet::selectInput(const std::string& prompt,const std::string&){
+::std::string PApplet::selectInput(const ::std::string& prompt,const ::std::string&){
 #ifdef __EMSCRIPTEN__
     (void)prompt; return "";
 #endif
-    std::string cmd="zenity --file-selection --title=\""+prompt+"\" 2>/dev/null";
+    ::std::string cmd="zenity --file-selection --title=\""+prompt+"\" 2>/dev/null";
     FILE* p=popen(cmd.c_str(),"r"); if(!p)return "";
     char buf[4096]=""; fgets(buf,sizeof(buf),p); pclose(p);
-    std::string r(buf); if(!r.empty()&&r.back()=='\n')r.pop_back(); return r;
+    ::std::string r(buf); if(!r.empty()&&r.back()=='\n')r.pop_back(); return r;
 }
-std::string PApplet::selectOutput(const std::string& prompt,const std::string&){
+::std::string PApplet::selectOutput(const ::std::string& prompt,const ::std::string&){
 #ifdef __EMSCRIPTEN__
     (void)prompt; return "";
 #endif
-    std::string cmd="zenity --file-selection --save --title=\""+prompt+"\" 2>/dev/null";
+    ::std::string cmd="zenity --file-selection --save --title=\""+prompt+"\" 2>/dev/null";
     FILE* p=popen(cmd.c_str(),"r"); if(!p)return "";
     char buf[4096]=""; fgets(buf,sizeof(buf),p); pclose(p);
-    std::string r(buf); if(!r.empty()&&r.back()=='\n')r.pop_back(); return r;
+    ::std::string r(buf); if(!r.empty()&&r.back()=='\n')r.pop_back(); return r;
 }
-std::string PApplet::selectFolder(const std::string& prompt){
+::std::string PApplet::selectFolder(const ::std::string& prompt){
 #ifdef __EMSCRIPTEN__
     (void)prompt; return "";
 #endif
-    std::string cmd="zenity --file-selection --directory --title=\""+prompt+"\" 2>/dev/null";
+    ::std::string cmd="zenity --file-selection --directory --title=\""+prompt+"\" 2>/dev/null";
     FILE* p=popen(cmd.c_str(),"r"); if(!p)return "";
     char buf[4096]=""; fgets(buf,sizeof(buf),p); pclose(p);
-    std::string r(buf); if(!r.empty()&&r.back()=='\n')r.pop_back(); return r;
+    ::std::string r(buf); if(!r.empty()&&r.back()=='\n')r.pop_back(); return r;
 }
 
-PImage* PApplet::requestImage(const std::string& path){
+PImage* PApplet::requestImage(const ::std::string& path){
     // Create a placeholder: width=-1 means "still loading", width=0 means "failed"
     // We use a heap PImage and fill it in from a background thread.
     // The sketch checks img->width != 0 && img->width != -1 to detect completion.
     PImage* img = new PImage();
     img->width  = -1;  // sentinel: loading in progress
     img->height = -1;
-    std::thread([img, path]{
+    ::std::thread([img, path]{
         // Resolve search paths same as loadImage
         // Check PROCESSING_SKETCH_PATH env var set by IDE
-    std::string _sketchDir;
-    if (const char* _sp = std::getenv("PROCESSING_SKETCH_PATH"))
-        _sketchDir = std::string(_sp) + "/";
+    ::std::string _sketchDir;
+    if (const char* _sp = ::std::getenv("PROCESSING_SKETCH_PATH"))
+        _sketchDir = ::std::string(_sp) + "/";
     // Also get the directory of the running executable
-    std::string _exeDir;
+    ::std::string _exeDir;
     {
         char _buf[4096] = {};
 #ifdef _WIN32
         GetModuleFileNameA(nullptr, _buf, sizeof(_buf));
-        std::string _ep(_buf);
+        ::std::string _ep(_buf);
         size_t _sl = _ep.find_last_of("\\\\");
 #else
 #ifndef __EMSCRIPTEN__
         ssize_t _len = readlink("/proc/self/exe", _buf, sizeof(_buf)-1);
         if (_len > 0) _buf[_len] = 0;
 #endif
-        std::string _ep(_buf);
+        ::std::string _ep(_buf);
         size_t _sl = _ep.find_last_of("/");
 #endif
-        if (_sl != std::string::npos) _exeDir = _ep.substr(0, _sl+1);
+        if (_sl != ::std::string::npos) _exeDir = _ep.substr(0, _sl+1);
     }
-    std::vector<std::string> tries = {
+    ::std::vector<::std::string> tries = {
             path,
             "data/" + path,
             "files/" + path,
         };
-        std::string found;
+        ::std::string found;
         for (auto& t : tries) {
             FILE* f = fopen(t.c_str(), "rb");
             if (f) { fclose(f); found = t; break; }
@@ -4880,7 +4880,7 @@ PImage* PApplet::requestImage(const std::string& path){
             // Not found: mark as failed (width=0)
             img->width  = 0;
             img->height = 0;
-            std::cerr << "requestImage: file not found: " << path << "\n";
+            ::std::cerr << "requestImage: file not found: " << path << "\n";
             return;
         }
 #ifdef PROCESSING_HAS_STB_IMAGE
@@ -4889,7 +4889,7 @@ PImage* PApplet::requestImage(const std::string& path){
         if (!data || w<=0 || h<=0) {
             img->width  = 0;
             img->height = 0;
-            std::cerr << "requestImage: failed to decode: " << path << "\n";
+            ::std::cerr << "requestImage: failed to decode: " << path << "\n";
             return;
         }
         img->pixels.resize((size_t)w * h);
@@ -4907,7 +4907,7 @@ PImage* PApplet::requestImage(const std::string& path){
 #else
         img->width  = 0;
         img->height = 0;
-        std::cerr << "requestImage: rebuild with -DPROCESSING_HAS_STB_IMAGE: " << path << "\n";
+        ::std::cerr << "requestImage: rebuild with -DPROCESSING_HAS_STB_IMAGE: " << path << "\n";
 #endif
     }).detach();
     return img;
@@ -4917,17 +4917,17 @@ PImage* PApplet::requestImage(const std::string& path){
 // PSHADER IMPLEMENTATION
 // =============================================================================
 
-static std::string readShaderFile(const std::string& path){
-    std::ifstream f(path); if(!f)return "";
-    return std::string((std::istreambuf_iterator<char>(f)),std::istreambuf_iterator<char>());
+static ::std::string readShaderFile(const ::std::string& path){
+    ::std::ifstream f(path); if(!f)return "";
+    return ::std::string((::std::istreambuf_iterator<char>(f)),::std::istreambuf_iterator<char>());
 }
 
-PShader* PApplet::loadShader(const std::string& fragPath,const std::string& vertPath){
-    std::string fSrc=readShaderFile(fragPath);
-    std::string vSrc=vertPath.empty()?
+PShader* PApplet::loadShader(const ::std::string& fragPath,const ::std::string& vertPath){
+    ::std::string fSrc=readShaderFile(fragPath);
+    ::std::string vSrc=vertPath.empty()?
         "#version 120\nvoid main(){gl_Position=ftransform();gl_TexCoord[0]=gl_MultiTexCoord0;gl_FrontColor=gl_Color;}":
         readShaderFile(vertPath);
-    if(fSrc.empty()){std::cerr<<"loadShader: could not read "<<fragPath<<"\n";return nullptr;}
+    if(fSrc.empty()){::std::cerr<<"loadShader: could not read "<<fragPath<<"\n";return nullptr;}
     PShader* s=new PShader(vSrc,fSrc);
     s->compile();
     return s;
@@ -4940,9 +4940,9 @@ void PApplet::resetShader(){ glUseProgram(0); activeShader=nullptr; }
 // =============================================================================
 
 void PApplet::blend(int sx,int sy,int sw,int sh,int dx,int dy,int dw,int dh,int mode){
-    std::vector<unsigned char> src(sw*sh*4);
+    ::std::vector<unsigned char> src(sw*sh*4);
     glReadPixels(sx,winHeight-(sy+sh),sw,sh,GL_RGBA,GL_UNSIGNED_BYTE,src.data());
-    std::vector<unsigned char> dst(dw*dh*4);
+    ::std::vector<unsigned char> dst(dw*dh*4);
     for(int y=0;y<dh;y++) for(int x=0;x<dw;x++){
         int srcX=(int)(x*(float)sw/dw), srcY=(int)(y*(float)sh/dh);
         for(int c=0;c<4;c++) dst[(y*dw+x)*4+c]=src[(srcY*sw+srcX)*4+c];
@@ -4969,7 +4969,7 @@ void PApplet::copy(int sx,int sy,int sw,int sh,int dx,int dy,int dw,int dh){
 
 PImage getRegion(int x,int y,int w,int h){
     PImage img(w,h);
-    std::vector<unsigned char> buf(w*h*4);
+    ::std::vector<unsigned char> buf(w*h*4);
     glReadPixels(x,(PApplet::g_papplet?PApplet::g_papplet->winHeight:0)-(y+h),w,h,GL_RGBA,GL_UNSIGNED_BYTE,buf.data());
     for(int iy=0;iy<h;iy++) for(int ix=0;ix<w;ix++){
         int si=((h-1-iy)*w+ix)*4;
@@ -4980,77 +4980,77 @@ PImage getRegion(int x,int y,int w,int h){
     return img;
 }
 
-std::vector<std::string> PApplet::loadStrings(const std::string& path) {
-    std::vector<std::string> lines;
-    std::string sketchDir;
-    if (const char* sp = std::getenv("PROCESSING_SKETCH_PATH")) sketchDir = std::string(sp) + "/";
-    std::ifstream f(path);
+::std::vector<::std::string> PApplet::loadStrings(const ::std::string& path) {
+    ::std::vector<::std::string> lines;
+    ::std::string sketchDir;
+    if (const char* sp = ::std::getenv("PROCESSING_SKETCH_PATH")) sketchDir = ::std::string(sp) + "/";
+    ::std::ifstream f(path);
     if (!f) f.open(sketchDir + path);
     if (!f) f.open(sketchDir + "data/" + path);
-    std::string line;
-    while (std::getline(f, line)) lines.push_back(line);
+    ::std::string line;
+    while (::std::getline(f, line)) lines.push_back(line);
     return lines;
 }
-bool PApplet::saveStrings(const std::string& path, const std::vector<std::string>& lines) {
-    std::ofstream f(path); if (!f) return false;
+bool PApplet::saveStrings(const ::std::string& path, const ::std::vector<::std::string>& lines) {
+    ::std::ofstream f(path); if (!f) return false;
     for (auto& l : lines) f << l << "\n"; return true;
 }
-std::vector<unsigned char> PApplet::loadBytes(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    return std::vector<unsigned char>((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+::std::vector<unsigned char> PApplet::loadBytes(const ::std::string& path) {
+    ::std::ifstream f(path, ::std::ios::binary);
+    return ::std::vector<unsigned char>((::std::istreambuf_iterator<char>(f)), ::std::istreambuf_iterator<char>());
 }
-bool PApplet::saveBytes(const std::string& path, const std::vector<unsigned char>& data) {
-    std::ofstream f(path, std::ios::binary); if (!f) return false;
+bool PApplet::saveBytes(const ::std::string& path, const ::std::vector<unsigned char>& data) {
+    ::std::ofstream f(path, ::std::ios::binary); if (!f) return false;
     f.write(reinterpret_cast<const char*>(data.data()), data.size()); return true;
 }
-std::vector<std::string> PApplet::split(const std::string& s, char delim) {
-    std::vector<std::string> r; std::string t;
+::std::vector<::std::string> PApplet::split(const ::std::string& s, char delim) {
+    ::std::vector<::std::string> r; ::std::string t;
     for (char c : s) { if (c==delim){r.push_back(t);t.clear();}else t+=c; }
     r.push_back(t); return r;
 }
-std::vector<std::string> PApplet::splitTokens(const std::string& s, const std::string& delims) {
-    std::vector<std::string> r; std::string t;
-    for (char c : s) { if (delims.find(c)!=std::string::npos){if(!t.empty()){r.push_back(t);t.clear();}}else t+=c; }
+::std::vector<::std::string> PApplet::splitTokens(const ::std::string& s, const ::std::string& delims) {
+    ::std::vector<::std::string> r; ::std::string t;
+    for (char c : s) { if (delims.find(c)!=::std::string::npos){if(!t.empty()){r.push_back(t);t.clear();}}else t+=c; }
     if (!t.empty()) r.push_back(t); return r;
 }
-std::string PApplet::join(const std::vector<std::string>& v, const std::string& sep) {
-    std::string r; for (size_t i=0;i<v.size();i++){if(i)r+=sep;r+=v[i];} return r;
+::std::string PApplet::join(const ::std::vector<::std::string>& v, const ::std::string& sep) {
+    ::std::string r; for (size_t i=0;i<v.size();i++){if(i)r+=sep;r+=v[i];} return r;
 }
-std::string PApplet::trim(const std::string& s) {
+::std::string PApplet::trim(const ::std::string& s) {
     size_t a=s.find_first_not_of(" \t\n\r"), b=s.find_last_not_of(" \t\n\r");
-    return a==std::string::npos?"":s.substr(a,b-a+1);
+    return a==::std::string::npos?"":s.substr(a,b-a+1);
 }
-std::string PApplet::nf(int v)                                      { return Processing::nf(v); }
-std::string PApplet::nf(int v, int digits)                          { return Processing::nf(v, digits); }
-std::string PApplet::nf(float v, int digits)                        { return Processing::nf(v, digits); }
-std::string PApplet::nf(float v, int left, int right)                { return Processing::nf(v, left, right); }
-std::vector<std::string> PApplet::nf(const std::vector<int>& nums)   { return Processing::nf(nums); }
-std::vector<std::string> PApplet::nf(const std::vector<int>& nums, int digits) { return Processing::nf(nums, digits); }
-std::vector<std::string> PApplet::nf(const std::vector<float>& nums, int left, int right) { return Processing::nf(nums, left, right); }
+::std::string PApplet::nf(int v)                                      { return Processing::nf(v); }
+::std::string PApplet::nf(int v, int digits)                          { return Processing::nf(v, digits); }
+::std::string PApplet::nf(float v, int digits)                        { return Processing::nf(v, digits); }
+::std::string PApplet::nf(float v, int left, int right)                { return Processing::nf(v, left, right); }
+::std::vector<::std::string> PApplet::nf(const ::std::vector<int>& nums)   { return Processing::nf(nums); }
+::std::vector<::std::string> PApplet::nf(const ::std::vector<int>& nums, int digits) { return Processing::nf(nums, digits); }
+::std::vector<::std::string> PApplet::nf(const ::std::vector<float>& nums, int left, int right) { return Processing::nf(nums, left, right); }
 
-std::string PApplet::nfc(int v)                                      { return Processing::nfc(v); }
-std::string PApplet::nfc(float v, int right)                         { return Processing::nfc(v, right); }
-std::vector<std::string> PApplet::nfc(const std::vector<int>& nums)  { return Processing::nfc(nums); }
-std::vector<std::string> PApplet::nfc(const std::vector<float>& nums, int right) { return Processing::nfc(nums, right); }
+::std::string PApplet::nfc(int v)                                      { return Processing::nfc(v); }
+::std::string PApplet::nfc(float v, int right)                         { return Processing::nfc(v, right); }
+::std::vector<::std::string> PApplet::nfc(const ::std::vector<int>& nums)  { return Processing::nfc(nums); }
+::std::vector<::std::string> PApplet::nfc(const ::std::vector<float>& nums, int right) { return Processing::nfc(nums, right); }
 
-std::string PApplet::nfp(int v)                                      { return Processing::nfp(v); }
-std::string PApplet::nfp(int v, int digits)                          { return Processing::nfp(v, digits); }
-std::string PApplet::nfp(float v, int left, int right)               { return Processing::nfp(v, left, right); }
-std::vector<std::string> PApplet::nfp(const std::vector<int>& nums)  { return Processing::nfp(nums); }
-std::vector<std::string> PApplet::nfp(const std::vector<int>& nums, int digits) { return Processing::nfp(nums, digits); }
-std::vector<std::string> PApplet::nfp(const std::vector<float>& nums, int left, int right) { return Processing::nfp(nums, left, right); }
+::std::string PApplet::nfp(int v)                                      { return Processing::nfp(v); }
+::std::string PApplet::nfp(int v, int digits)                          { return Processing::nfp(v, digits); }
+::std::string PApplet::nfp(float v, int left, int right)               { return Processing::nfp(v, left, right); }
+::std::vector<::std::string> PApplet::nfp(const ::std::vector<int>& nums)  { return Processing::nfp(nums); }
+::std::vector<::std::string> PApplet::nfp(const ::std::vector<int>& nums, int digits) { return Processing::nfp(nums, digits); }
+::std::vector<::std::string> PApplet::nfp(const ::std::vector<float>& nums, int left, int right) { return Processing::nfp(nums, left, right); }
 
-std::string PApplet::nfs(int v)                                      { return Processing::nfs(v); }
-std::string PApplet::nfs(int v, int digits)                          { return Processing::nfs(v, digits); }
-std::string PApplet::nfs(float v, int left, int right)               { return Processing::nfs(v, left, right); }
-std::vector<std::string> PApplet::nfs(const std::vector<int>& nums)  { return Processing::nfs(nums); }
-std::vector<std::string> PApplet::nfs(const std::vector<int>& nums, int digits) { return Processing::nfs(nums, digits); }
-std::vector<std::string> PApplet::nfs(const std::vector<float>& nums, int left, int right) { return Processing::nfs(nums, left, right); }
-std::string PApplet::hex(int v) {
-    std::ostringstream ss; ss<<std::uppercase<<std::hex<<std::setw(8)<<std::setfill('0')<<v; return ss.str();
+::std::string PApplet::nfs(int v)                                      { return Processing::nfs(v); }
+::std::string PApplet::nfs(int v, int digits)                          { return Processing::nfs(v, digits); }
+::std::string PApplet::nfs(float v, int left, int right)               { return Processing::nfs(v, left, right); }
+::std::vector<::std::string> PApplet::nfs(const ::std::vector<int>& nums)  { return Processing::nfs(nums); }
+::std::vector<::std::string> PApplet::nfs(const ::std::vector<int>& nums, int digits) { return Processing::nfs(nums, digits); }
+::std::vector<::std::string> PApplet::nfs(const ::std::vector<float>& nums, int left, int right) { return Processing::nfs(nums, left, right); }
+::std::string PApplet::hex(int v) {
+    ::std::ostringstream ss; ss<<::std::uppercase<<::std::hex<<::std::setw(8)<<::std::setfill('0')<<v; return ss.str();
 }
-std::string PApplet::binary(int v) {
-    std::string r; for(int i=31;i>=0;i--) r+=((v>>i)&1)?'1':'0'; return r;
+::std::string PApplet::binary(int v) {
+    ::std::string r; for(int i=31;i>=0;i--) r+=((v>>i)&1)?'1':'0'; return r;
 }
 
 } // namespace Processing
