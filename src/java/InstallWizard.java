@@ -503,40 +503,19 @@ public class InstallWizard {
 
       // ── Step 1: compiler ────────────────────────────────────────────────
       if (needsCompiler) {
-        if (brewExe != null) {
-          // Homebrew present: install gcc fully in-app, no GUI popup needed.
-          setStep("Installing: g++ (via Homebrew)");
-          appendLog("Installing gcc via Homebrew...");
-          try {
-            ProcessBuilder pb = new ProcessBuilder(brewExe, "install", "gcc");
-            pb.redirectErrorStream(true);
-            Process proc = pb.start();
-            streamToLog(proc);
-            int code = proc.waitFor();
-            if (cancelled.get()) return;
-            if (code != 0) { finishDialog(false, "Failed to install gcc — see log above."); return; }
-          } catch (Exception e) {
-            finishDialog(false, "Couldn't run Homebrew: " + e.getMessage()); return;
-          }
-        } else {
-          // No Homebrew: fall back to Xcode Command Line Tools GUI.
-          setStep("Installing: g++ (Xcode Command Line Tools)");
-          appendLog("Opening the Xcode Command Line Tools installer...");
-          appendLog("Please complete the popup window, then wait here.");
-          try { new ProcessBuilder("xcode-select", "--install").start(); }
-          catch (Exception e) { finishDialog(false, "Couldn't start Xcode CLT installer."); return; }
-          boolean installed = false;
-          for (int i = 0; i < 180; i++) {
-            if (cancelled.get()) return;
-            try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
-            appendLog("Waiting for Xcode CLT... (" + ((i+1)*5) + "s)");
-            if (commandExists("xcrun", "-find", "g++")) { installed = true; break; }
-          }
-          if (!installed) {
-            finishDialog(false, "Xcode CLT not detected — finish the install and try again.");
-            return;
-          }
+        setStep("Installing: Xcode Command Line Tools");
+        appendLog("Opening the Xcode Command Line Tools installer...");
+        appendLog("Please click Install in the popup window, then wait here.");
+        try { new ProcessBuilder("xcode-select", "--install").start(); }
+        catch (Exception e) { finishDialog(false, "Couldn't launch Xcode CLT installer."); return; }
+        boolean installed = false;
+        for (int i = 0; i < 180; i++) {
+          if (cancelled.get()) return;
+          try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
+          appendLog("Waiting for installation... (" + ((i+1)*5) + "s)");
+          if (commandExists("xcrun", "-find", "g++")) { installed = true; break; }
         }
+        if (!installed) { finishDialog(false, "Xcode CLT not detected — finish the install and try again."); return; }
       }
       if (cancelled.get()) return;
       if (missingLibs.isEmpty()) { finishDialog(true, "Setup complete."); return; }
