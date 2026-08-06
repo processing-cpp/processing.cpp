@@ -10,6 +10,7 @@ import processing.app.*;
 import processing.app.syntax.*;
 import processing.app.ui.*;
 import java.util.List;
+import java.util.prefs.Preferences;
 
 
 public class CppEditor extends Editor {
@@ -51,11 +52,67 @@ public class CppEditor extends Editor {
   private static final String BUG_REPORT_URL =
     "https://github.com/processing-cpp/processing.cpp/issues";
 
+  private static final String[] CPP_STDS = {"c++17", "c++20", "c++23", "c++2c"};
+  private static final String PREF_KEY = "cppmode.std";
+  private JComboBox<String> stdCombo;
+
   @Override
   public EditorFooter createFooter() {
     EditorFooter ef = super.createFooter();
-    SwingUtilities.invokeLater(() -> addBugReportLink(ef));
+    SwingUtilities.invokeLater(() -> {
+      addBugReportLink(ef);
+      addStdDropdown(ef);
+    });
     return ef;
+  }
+
+  private void addStdDropdown(EditorFooter ef) {
+    JLabel versionLabel = findVersionLabel(ef);
+    Container tabBar = (versionLabel != null) ? versionLabel.getParent() : null;
+    if (tabBar == null) return;
+
+    // Load saved preference or detect from g++
+    Preferences prefs = Preferences.userNodeForPackage(CppEditor.class);
+    String savedStd = prefs.get(PREF_KEY, null);
+    String currentStd = (savedStd != null) ? savedStd
+        : processing.mode.cpp.CppBuild.bestCppStd("g++");
+
+    stdCombo = new JComboBox<>(CPP_STDS);
+    stdCombo.setSelectedItem(currentStd);
+    stdCombo.setFont(versionLabel.getFont());
+    stdCombo.setFocusable(false);
+    stdCombo.setToolTipText("C++ standard version");
+    stdCombo.addActionListener(e -> {
+      String selected = (String) stdCombo.getSelectedItem();
+      prefs.put(PREF_KEY, selected);
+    });
+
+    // Position just left of the version label
+    tabBar.setLayout(null);
+    tabBar.add(stdCombo);
+    tabBar.addComponentListener(new java.awt.event.ComponentAdapter() {
+      @Override public void componentResized(java.awt.event.ComponentEvent e) {
+        positionStdCombo(tabBar, versionLabel);
+      }
+    });
+    SwingUtilities.invokeLater(() -> positionStdCombo(tabBar, versionLabel));
+  }
+
+  private void positionStdCombo(Container tabBar, JLabel versionLabel) {
+    if (stdCombo == null || !versionLabel.isShowing()) return;
+    Point vpos = SwingUtilities.convertPoint(versionLabel, 0, 0, tabBar);
+    Dimension pref = stdCombo.getPreferredSize();
+    int h = tabBar.getHeight();
+    int y = (h - pref.height) / 2;
+    int x = vpos.x - pref.width - 8;
+    if (x > 0) stdCombo.setBounds(x, y, pref.width, pref.height);
+  }
+
+  /** Returns the selected C++ standard for use in CppBuild. */
+  public String getSelectedCppStd() {
+    if (stdCombo != null) return (String) stdCombo.getSelectedItem();
+    Preferences prefs = Preferences.userNodeForPackage(CppEditor.class);
+    return prefs.get(PREF_KEY, processing.mode.cpp.CppBuild.bestCppStd("g++"));
   }
 
   private void addBugReportLink(EditorFooter ef) {

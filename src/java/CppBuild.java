@@ -508,7 +508,8 @@ public class CppBuild {
     File    binary    = new File(buildDir, sketch.getName() + ext);
     String  gpp       = findGpp(isWindows);
 
-    List<String> cmd = buildCommand(gpp, sketchSrc, binary, isWindows, isMac);
+    String stdOverride = (listener instanceof CppEditor ce) ? ce.getSelectedCppStd() : null;
+    List<String> cmd = buildCommand(gpp, sketchSrc, binary, isWindows, isMac, stdOverride);
     listener.statusNotice("$ " + String.join(" ", cmd));
     // Only print the full compile command when debug mode is actually on
     // (i.e. the DEBUG file already caused buildCommand() to add
@@ -3021,9 +3022,12 @@ public class CppBuild {
   }
 
   private List<String> buildCommand(String gpp, File src, File bin, boolean win, boolean mac) {
+    return buildCommand(gpp, src, bin, win, mac, null);
+  }
+  private List<String> buildCommand(String gpp, File src, File bin, boolean win, boolean mac, String overrideStd) {
     List<String> cmd = new ArrayList<>();
     cmd.add(gpp);
-    String cppStd = bestCppStd(gpp);
+    String cppStd = (overrideStd != null) ? overrideStd : bestCppStd(gpp);
     cmd.add("-std=" + cppStd);
     cmd.add("-O2");
     // -march=native isn't reliably supported by Apple's clang (which is
