@@ -1,3 +1,4 @@
+package processing.mode.cpp;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 
@@ -13,7 +14,7 @@ public class ParserCLI {
         String input = new String(System.in.readAllBytes(), StandardCharsets.UTF_8);
         try {
             var cu  = Parser.parse(input);
-            var cpp = CodeGen.generate(cu);
+            var cpp = CodeGen.generate(cu, null);
             System.out.print(cpp);
             System.exit(0);
         } catch (Exception e) {
