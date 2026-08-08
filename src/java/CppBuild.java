@@ -510,7 +510,24 @@ public class CppBuild {
 
     int gppVer = gppMajorVersion(gpp);
     if (gppVer > 0 && gppVer < 7) {
-      listener.statusError("g++ " + gppVer + " is too old. CppMode requires GCC 7+ for C++17.");
+      listener.statusError("g++ " + gppVer + " is too old (need 7+). See dialog.");
+      boolean isWin2 = isWindows;
+      javax.swing.SwingUtilities.invokeLater(() -> {
+        Object[] opts = {"Update g++", "Cancel"};
+        int ch = javax.swing.JOptionPane.showOptionDialog(null,
+          "<html><b>g++ " + gppVer + " is too old.</b><br><br>"
+          + "CppMode requires GCC 7 or newer for C++17 support.<br>"
+          + "Your version: <b>GCC " + gppVer + "</b><br><br>"
+          + (isWin2 ? "Click <b>Update g++</b> to download the latest portable GCC." 
+                   : "Please update g++ using your system package manager.") + "</html>",
+          "g++ Too Old",
+          javax.swing.JOptionPane.DEFAULT_OPTION,
+          javax.swing.JOptionPane.ERROR_MESSAGE,
+          null, opts, opts[0]);
+        if (ch == 0 && isWin2) {
+          try { InstallWizard.run(listener); } catch (Exception ignored2) {}
+        }
+      });
       throw new Exception("g++ too old: " + gppVer);
     }
 
