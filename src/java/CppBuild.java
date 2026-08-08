@@ -3372,7 +3372,7 @@ public class CppBuild {
       String out = new String(proc.getInputStream().readAllBytes());
       proc.waitFor();
       // Output: "g++ (GCC) 13.2.0 ..." or "Apple clang version 15.0.0 ..."
-      java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\d+)\.\d+\.\d+").matcher(out);
+      java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)\\.\\d+\\.\\d+").matcher(out);
       if (m.find()) return Integer.parseInt(m.group(1));
     } catch (Exception ignored) {}
     return 0;
