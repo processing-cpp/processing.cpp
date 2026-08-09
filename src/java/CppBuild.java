@@ -509,7 +509,7 @@ public class CppBuild {
     String  gpp       = findGpp(isWindows);
 
     int gppVer = gppMajorVersion(gpp);
-    if (gppVer > 0 && gppVer < 99) { // SIMULATION
+    if (gppVer > 0 && gppVer < 7) {
       listener.statusError("g++ " + gppVer + " is too old — need GCC 7+ for C++17.");
       boolean isWin2 = isWindows;
       final int[] choice = {-1};
@@ -528,8 +528,13 @@ public class CppBuild {
             null, opts, opts[0]);
         });
       } catch (Exception ignored2) {}
-      if (choice[0] == 0 && isWin2) {
-        try { InstallWizard.run(listener); } catch (Exception ignored3) {}
+      if (choice[0] == 0) {
+        if (isWin2) {
+          try { InstallWizard.run(listener); } catch (Exception ignored3) {}
+        } else {
+          // Linux/macOS: open the install wizard which handles package managers
+          try { InstallWizard.run(listener); } catch (Exception ignored3) {}
+        }
       }
       throw new Exception("g++ too old: " + gppVer);
     }
