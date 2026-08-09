@@ -3043,8 +3043,10 @@ public class CppBuild {
         pb.redirectErrorStream(true);
         Process proc = pb.start();
         proc.getOutputStream().close();
+        // 3 second timeout -- if g++ hangs on stdin, skip this std
+        boolean finished = proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS);
+        if (!finished) { proc.destroyForcibly(); continue; }
         String out = new String(proc.getInputStream().readAllBytes());
-        proc.waitFor();
         if (!out.contains("unrecognized") && !out.contains("invalid argument") && !out.contains("note: use")) {
           return std;
         }
