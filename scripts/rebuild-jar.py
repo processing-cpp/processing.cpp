@@ -73,6 +73,8 @@ def main():
         if os.path.exists(p): _shutil.rmtree(p)
     run([gradlew, ":java:compileJava", ":java:jar", "--no-daemon"], cwd=processing4_dir)
 
+    _c2 = glob.glob(os.path.join(libs_dir, "java.jar")) + glob.glob(os.path.join(libs_dir, "java-*.jar"))
+    if _c2: java_jar = _c2[0]
     if not os.path.exists(java_jar):
         print(f"ERROR: expected jar not found at {java_jar}")
         sys.exit(1)
