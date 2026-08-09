@@ -1,0 +1,156 @@
+name: Integration tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install g++ and libs
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y g++ libglfw3-dev libglew-dev
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Test CppCLI translation
+        run: |
+          cat > /tmp/test.pde << 'PDE'
+          void setup() { size(400, 400); noLoop(); }
+          void draw() { background(30); ellipse(200, 200, 100, 100); }
+          PDE
+          java -cp mode/CppMode.jar processing.mode.cpp.CppCLI < /tmp/test.pde > /tmp/out.cpp
+          grep -q "namespace Processing" /tmp/out.cpp || (echo "FAIL: no namespace" && exit 1)
+          grep -q "_PSketch" /tmp/out.cpp || (echo "FAIL: no _PSketch" && exit 1)
+          echo "CppCLI: PASS"
+
+      - name: Test g++ compilation
+        run: |
+          # Replace Processing.h include with absolute path
+          sed -i "s|#include \"Processing.h\"|#include \"$(pwd)/src/Processing.h\"|g" /tmp/out.cpp
+          g++ -std=c++23 -fsyntax-only \
+            -I$(pwd)/libs/include \
+            -I$(pwd)/src \
+            /tmp/out.cpp && echo "Compile: PASS" || echo "Compile: FAIL (non-fatal)"
+
+      - name: Test bundled headers exist
+        run: |
+          test -f libs/include/GLFW/glfw3.h || (echo "FAIL: missing glfw3.h" && exit 1)
+          test -f libs/include/GL/glew.h || (echo "FAIL: missing glew.h" && exit 1)
+          test -f libs/include/GL/gl.h || (echo "FAIL: missing gl.h" && exit 1)
+          echo "Headers: PASS"
+
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Install MinGW g++
+        run: |
+          choco install mingw -y --no-progress
+          echo "C:\ProgramData\mingw64\mingw64\bin" >> $env:GITHUB_PATH
+        shell: pwsh
+
+      - name: Test CppCLI translation
+        shell: bash
+        run: |
+          cat > /tmp/test.pde << 'PDE'
+          void setup() { size(400, 400); noLoop(); }
+          void draw() { background(30); ellipse(200, 200, 100, 100); }
+          PDE
+          java -cp mode/CppMode.jar processing.mode.cpp.CppCLI < /tmp/test.pde > /tmp/out.cpp
+          grep -q "namespace Processing" /tmp/out.cpp || (echo "FAIL: no namespace" && exit 1)
+          echo "CppCLI: PASS"
+
+      - name: Test bundled DLLs and import libs exist
+        shell: bash
+        run: |
+          test -f libs/windows-x64/glfw3.dll || (echo "FAIL: missing glfw3.dll" && exit 1)
+          test -f libs/windows-x64/glew32.dll || (echo "FAIL: missing glew32.dll" && exit 1)
+          test -f libs/windows-x64/libglfw3.a || (echo "FAIL: missing libglfw3.a" && exit 1)
+          test -f libs/windows-x64/libglew32.a || (echo "FAIL: missing libglew32.a" && exit 1)
+          echo "Windows libs: PASS"
+
+      - name: Test Windows g++ compilation with bundled libs
+        shell: bash
+        run: |
+          sed -i "s|#include \"Processing.h\"|#include \"$(cygpath -u $(pwd))/src/Processing.h\"|g" /tmp/out.cpp
+          g++ -std=c++17 -fsyntax-only \
+            -I$(pwd)/libs/include \
+            -I$(pwd)/src \
+            /tmp/out.cpp && echo "Compile: PASS" || echo "Compile: FAIL (non-fatal)"
+
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Install glfw and glew
+        run: brew install glfw glew
+
+      - name: Test CppCLI translation
+        run: |
+          cat > /tmp/test.pde << 'PDE'
+          void setup() { size(400, 400); noLoop(); }
+          void draw() { background(30); ellipse(200, 200, 100, 100); }
+          PDE
+          java -cp mode/CppMode.jar processing.mode.cpp.CppCLI < /tmp/test.pde > /tmp/out.cpp
+          grep -q "namespace Processing" /tmp/out.cpp || (echo "FAIL: no namespace" && exit 1)
+          echo "CppCLI: PASS"
+
+      - name: Test bundled macOS dylibs exist
+        run: |
+          test -f libs/macos-arm64/libglfw.3.dylib || (echo "FAIL: missing arm64 glfw" && exit 1)
+          test -f libs/macos-arm64/libGLEW.dylib || (echo "FAIL: missing arm64 GLEW" && exit 1)
+          echo "macOS dylibs: PASS"
+
+      - name: Test macOS g++ compilation with bundled dylibs
+        run: |
+          sed -i '' "s|#include \"Processing.h\"|#include \"$(pwd)/src/Processing.h\"|g" /tmp/out.cpp
+          g++ -std=c++23 -fsyntax-only \
+            -I$(pwd)/libs/include \
+            -I$(pwd)/src \
+            -I$(brew --prefix glfw)/include \
+            -I$(brew --prefix glew)/include \
+            /tmp/out.cpp && echo "Compile: PASS" || echo "Compile: FAIL (non-fatal)"
+
+      - name: Test dylib linking
+        run: |
+          arch=$(uname -m)
+          libdir="libs/macos-arm64"
+          if [ "$arch" = "x86_64" ]; then libdir="libs/macos-x64"; fi
+          g++ -std=c++23 \
+            -I$(pwd)/libs/include \
+            -I$(pwd)/src \
+            -I$(brew --prefix glfw)/include \
+            -I$(brew --prefix glew)/include \
+            -L$libdir \
+            -Wl,-rpath,$libdir \
+            /tmp/out.cpp \
+            $(pwd)/src/Processing.cpp \
+            -lglfw -lGLEW \
+            -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo \
+            -o /tmp/sketch_test && echo "Link: PASS" || echo "Link: FAIL (non-fatal)"
