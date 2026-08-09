@@ -1,0 +1,71 @@
+name: Bundle portable Windows gcc (MinGW-w64)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download WinLibs portable gcc
+        shell: powershell
+        run: |
+          $url = "https://github.com/brechtsanders/winlibs_mingw/releases/download/14.2.0posix-19.1.1-12.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-14.2.0-mingw-w64ucrt-12.0.0-r2.zip"
+          Write-Host "Downloading WinLibs gcc..."
+          Invoke-WebRequest -Uri $url -OutFile gcc.zip -UseBasicParsing
+          Write-Host "Extracting..."
+          Expand-Archive gcc.zip -DestinationPath gcc_extracted
+
+      - name: Extract minimal toolchain
+        shell: powershell
+        run: |
+          # We only need the compiler and its immediate runtime deps.
+          # Full mingw64 is ~700MB -- extract just what's needed to compile.
+          $src = "gcc_extracted\mingw64"
+          $dst = "libs\windows-x64\gcc"
+          New-Item -ItemType Directory -Force -Path $dst
+
+          # Essential compiler binaries
+          $bins = @("g++.exe", "gcc.exe", "as.exe", "ld.exe", "windres.exe",
+                    "cpp.exe", "cc1.exe", "cc1plus.exe", "collect2.exe",
+                    "libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll",
+                    "libgomp-1.dll")
+          foreach ($b in $bins) {
+            $f = Get-ChildItem -Path $src -Recurse -Filter $b -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($f) { Copy-Item $f.FullName -Destination $dst; Write-Host "Copied $b" }
+          }
+
+          # Runtime libraries needed by compiled sketches
+          Copy-Item "$src\bin\libgcc_s_seh-1.dll" $dst -ErrorAction SilentlyContinue
+          Copy-Item "$src\bin\libstdc++-6.dll" $dst -ErrorAction SilentlyContinue
+          Copy-Item "$src\bin\libwinpthread-1.dll" $dst -ErrorAction SilentlyContinue
+
+          # Include dirs (needed at compile time)
+          Copy-Item "$src\include" "$dst\include" -Recurse -Force
+          Copy-Item "$src\lib\gcc" "$dst\lib\gcc" -Recurse -Force
+          Copy-Item "$src\lib\libstdc++*" "$dst\lib\" -Force -ErrorAction SilentlyContinue
+          Copy-Item "$src\lib\libgcc*" "$dst\lib\" -Force -ErrorAction SilentlyContinue
+          Copy-Item "$src\lib\libwinpthread*" "$dst\lib\" -Force -ErrorAction SilentlyContinue
+          Copy-Item "$src\lib\crt*" "$dst\lib\" -Force -ErrorAction SilentlyContinue
+
+          Write-Host "Done. Size:"
+          (Get-ChildItem $dst -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+
+      - name: Commit to repo
+        shell: powershell
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add libs/windows-x64/gcc/
+          git diff --staged --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "ci: bundle portable MinGW-w64 gcc for Windows"
+            git push
+          } else {
+            Write-Host "No changes to commit"
+          }

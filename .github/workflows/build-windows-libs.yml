@@ -1,0 +1,52 @@
+name: Bundle Windows GLFW+GLEW headers and libs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MinGW and get GLFW/GLEW
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-glfw mingw-w64-x86_64-glew
+
+      - name: Copy headers and import libs
+        shell: msys2 {0}
+        run: |
+          mkdir -p libs/windows-x64/include/GLFW
+          mkdir -p libs/windows-x64/include/GL
+
+          # GLFW headers
+          cp /mingw64/include/GLFW/*.h libs/windows-x64/include/GLFW/
+
+          # GLEW headers
+          cp /mingw64/include/GL/glew.h libs/windows-x64/include/GL/
+          cp /mingw64/include/GL/wglew.h libs/windows-x64/include/GL/ 2>/dev/null || true
+
+          # Import libs (needed at link time)
+          cp /mingw64/lib/libglfw3.a libs/windows-x64/ 2>/dev/null || true
+          cp /mingw64/lib/libglfw3dll.a libs/windows-x64/ 2>/dev/null || true
+          cp /mingw64/lib/libglew32.dll.a libs/windows-x64/ 2>/dev/null || true
+          cp /mingw64/lib/libglew32.a libs/windows-x64/ 2>/dev/null || true
+
+          echo "=== Headers ==="
+          find libs/windows-x64/include -name "*.h"
+          echo "=== Libs ==="
+          ls -lh libs/windows-x64/*.a 2>/dev/null || echo "no .a files"
+
+      - name: Commit to repo
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add libs/windows-x64/
+          git diff --staged --quiet || git commit -m "ci: add bundled GLFW+GLEW headers and import libs for Windows"
+          git push
