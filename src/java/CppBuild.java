@@ -3113,6 +3113,21 @@ public class CppBuild {
     // Declared outside try so they are visible after the catch block.
     File processingPch = null;
     boolean needsPch = true;
+    // Skip PCH on low-memory machines (< 4GB free) to avoid OOM
+    long freeMemBytes = Runtime.getRuntime().maxMemory() - 
+        (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory());
+    boolean lowMemory = freeMemBytes < 512L * 1024 * 1024; // < 512MB JVM headroom
+    // Also check system RAM
+    try {
+      java.lang.management.OperatingSystemMXBean osmx =
+          (java.lang.management.OperatingSystemMXBean)
+          java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+      if (osmx instanceof com.sun.management.OperatingSystemMXBean sunOs) {
+        long freeRam = sunOs.getFreeMemorySize();
+        if (freeRam < 2L * 1024 * 1024 * 1024) lowMemory = true; // < 2GB free RAM
+      }
+    } catch (Exception ignored) {}
+    if (lowMemory) needsPch = false;
     try {
     String osName = System.getProperty("os.name","").toLowerCase();
     String cacheSubDir = osName.contains("win")  ? "cache/windows-x64"

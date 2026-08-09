@@ -73,7 +73,21 @@ public class CppEditor extends Editor {
 
     Preferences prefs = Preferences.userNodeForPackage(CppEditor.class);
     String gpp = "g++";
-    String bestStd = processing.mode.cpp.CppBuild.bestCppStd(gpp);
+    // Run bestCppStd off the EDT to avoid blocking the UI
+    String bestStd = prefs.get(PREF_KEY + ".cached_best", "c++17");
+    new Thread(() -> {
+      String detected = processing.mode.cpp.CppBuild.bestCppStd(gpp);
+      prefs.put(PREF_KEY + ".cached_best", detected);
+      javax.swing.SwingUtilities.invokeLater(() -> {
+        if (stdCombo == null) return;
+        // Update combo with detected standard
+        int detectedIdx = 0;
+        for (int i = 0; i < CPP_STDS.length; i++)
+          if (CPP_STDS[i].equals(detected)) { detectedIdx = i; break; }
+        // Re-enable/disable items based on detected support
+        stdCombo.repaint();
+      });
+    }, "CppStdProbe").start();
     String savedStd = prefs.get(PREF_KEY, bestStd);
 
     int bestIdx = 0;

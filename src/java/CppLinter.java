@@ -186,7 +186,9 @@ public class CppLinter {
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.redirectErrorStream(true);
             Process proc = pb.start();
-            String output = new String(proc.getInputStream().readAllBytes());
+            // Cap output to 64KB to avoid OOM on large error outputs
+            byte[] rawOut = proc.getInputStream().readNBytes(64 * 1024);
+            String output = new String(rawOut);
             proc.waitFor(20, TimeUnit.SECONDS);
 
             // Parse errors and map back to tab + line
