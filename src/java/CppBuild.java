@@ -3037,21 +3037,33 @@ public class CppBuild {
       = new java.util.concurrent.ConcurrentHashMap<>();
   static String bestCppStd(String gpp) {
     return _stdCache.computeIfAbsent(gpp, g -> {
-      for (String std : new String[]{"c++2c", "c++23", "c++20", "c++17"}) {
+      // First verify g++ is actually available
       try {
-        ProcessBuilder pb = new ProcessBuilder(gpp, "-std=" + std, "-x", "c++", "-fsyntax-only", "-");
-        pb.redirectErrorStream(true);
-        Process proc = pb.start();
-        proc.getOutputStream().close();
-        // 3 second timeout -- if g++ hangs on stdin, skip this std
-        boolean finished = proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS);
-        if (!finished) { proc.destroyForcibly(); continue; }
-        String out = new String(proc.getInputStream().readAllBytes());
-        if (!out.contains("unrecognized") && !out.contains("invalid argument") && !out.contains("note: use")) {
-          return std;
+        Process test = new ProcessBuilder(g, "--version").redirectErrorStream(true).start();
+        test.getInputStream().readAllBytes();
+        if (!test.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)) {
+          test.destroyForcibly();
+          return "c++17";
         }
-      } catch (Exception ignored) {}
-    }
+        if (test.exitValue() != 0) return "c++17";
+      } catch (Exception e) {
+        return "c++17"; // g++ not installed
+      }
+      // Probe for best supported standard
+      for (String std : new String[]{"c++2c", "c++23", "c++20", "c++17"}) {
+        try {
+          ProcessBuilder pb = new ProcessBuilder(g, "-std=" + std, "-x", "c++", "-fsyntax-only", "-");
+          pb.redirectErrorStream(true);
+          Process proc = pb.start();
+          proc.getOutputStream().close();
+          boolean done = proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS);
+          if (!done) { proc.destroyForcibly(); continue; }
+          String out = new String(proc.getInputStream().readAllBytes());
+          if (!out.contains("unrecognized") && !out.contains("invalid argument") && !out.contains("note: use")) {
+            return std;
+          }
+        } catch (Exception ignored) {}
+      }
       return "c++17";
     });
   }
