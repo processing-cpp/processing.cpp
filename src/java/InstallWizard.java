@@ -88,7 +88,6 @@ public class InstallWizard {
       String missingMsg = isWin
         ? "C++ Mode needs a C++ compiler (g++) to compile sketches.\n\n"
           + "Click Install to download g++ automatically (~130 MB).\n"
-          + "GLFW and GLEW are already bundled — no extra downloads needed."
         : "Missing: " + String.join(", ", missing) + "\n\n"
           + "C++ Mode needs these to compile and run sketches.";
       int choice = JOptionPane.showOptionDialog(null,
@@ -357,7 +356,7 @@ public class InstallWizard {
    * dialog in run() — no further confirmation happens here.
    */
   private boolean runWindows(java.util.List<String> missing) {
-    buildDialog("C++ Mode Setup — Windows");
+    buildDialog("C++ Mode Setup: Windows");
     String pacman = findWindowsPacman();
 
     Thread worker = new Thread(() -> {
@@ -515,7 +514,7 @@ public class InstallWizard {
    * dialog in run() — no further confirmation happens here.
    */
   private boolean runMac(java.util.List<String> missing) {
-    buildDialog("C++ Mode Setup — macOS");
+    buildDialog("C++ Mode Setup: macOS");
     boolean needsCompiler = missing.contains("g++ (Xcode Command Line Tools)");
     java.util.List<String> missingLibs = new java.util.ArrayList<>();
     if (missing.contains("glfw")) missingLibs.add("glfw");
@@ -651,7 +650,7 @@ public class InstallWizard {
    * existing fallback already uses) rather than streaming output here.
    */
   private boolean runLinux(java.util.List<String> missing) {
-    buildDialog("C++ Mode Setup — Linux");
+    buildDialog("C++ Mode Setup: Linux");
     String pm = detectLinuxPackageManager();
 
     Thread worker = new Thread(() -> {
