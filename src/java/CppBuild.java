@@ -659,7 +659,6 @@ public class CppBuild {
     // Bundled DLLs are in libs/windows-x64 -- copy them next to the binary
     File bundledDir = new File(runtimeDir.getParentFile(), "libs/windows-x64");
 
-    listener.statusNotice("CppMode: bundledDir=" + bundledDir.getAbsolutePath() + " exists=" + bundledDir.exists());
     File binaryDir = new File(binary.getParent());
     binaryDir.mkdirs();
 
@@ -678,11 +677,12 @@ public class CppBuild {
         if (!src2.exists()) continue;
         // Copy next to binary
         try { java.nio.file.Files.copy(src2.toPath(), new File(binaryDir, dll).toPath(),
-            java.nio.file.StandardCopyOption.REPLACE_EXISTING); } catch (Exception ignored) {}
-        // Copy to sketch folder
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception ignored) {}
         try { java.nio.file.Files.copy(src2.toPath(), new File(sketch.getFolder(), dll).toPath(),
-            java.nio.file.StandardCopyOption.REPLACE_EXISTING); } catch (Exception ignored) {}
-        break; // found in this source dir
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception ignored) {}
+        break;
       }
     }
 
@@ -3185,6 +3185,9 @@ public class CppBuild {
       // Link against bundled import libs in libs/windows-x64/
       File winLibs = new File(runtimeDir.getParentFile(), "libs/windows-x64");
       if (winLibs.exists()) cmd.add("-L" + winLibs.getAbsolutePath());
+      // Also add WinLibs portable gcc bin dir for runtime DLLs
+      File portableBin = InstallWizard.getPortableGccDir();
+      if (portableBin.exists()) cmd.add("-L" + portableBin.getAbsolutePath());
       Collections.addAll(cmd,
         "-lglfw3", "-lglew32", "-lopengl32", "-lglu32",
         "-lcomdlg32", "-lshell32", "-lole32", "-luuid",
