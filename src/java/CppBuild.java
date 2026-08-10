@@ -658,10 +658,7 @@ public class CppBuild {
 
     // Bundled DLLs are in libs/windows-x64 -- copy them next to the binary
     File bundledDir = new File(runtimeDir.getParentFile(), "libs/windows-x64");
-    javax.swing.JOptionPane.showMessageDialog(null,
-      "bundledDir: " + bundledDir.getAbsolutePath() + "\nexists: " + bundledDir.exists() +
-      "\nruntimeDir: " + runtimeDir.getAbsolutePath(),
-      "CppMode Debug", javax.swing.JOptionPane.INFORMATION_MESSAGE);
+
     listener.statusNotice("CppMode: bundledDir=" + bundledDir.getAbsolutePath() + " exists=" + bundledDir.exists());
     File binaryDir = new File(binary.getParent());
     binaryDir.mkdirs();
@@ -679,12 +676,16 @@ public class CppBuild {
       }
     }
 
-    // Verify required DLLs are now present
+    // If all required DLLs exist in bundledDir, we're good -- they were
+    // either copied successfully or will be found via the bundled path.
+    boolean allBundled = true;
+    for (String dll : required)
+      if (!new File(bundledDir, dll).exists()) { allBundled = false; break; }
+    if (allBundled) return;
+    // Bundled dir missing some DLLs -- report error
     java.util.List<String> missing = new java.util.ArrayList<>();
-    for (String dll : required) {
-      if (!new File(binaryDir, dll).exists() && !new File(bundledDir, dll).exists())
-        missing.add(dll);
-    }
+    for (String dll : required)
+      if (!new File(bundledDir, dll).exists()) missing.add(dll);
     if (missing.isEmpty()) return;
 
     // DLLs missing from bundle -- this should not happen in a correct install
