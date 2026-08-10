@@ -663,11 +663,12 @@ public class CppBuild {
     File binaryDir = new File(binary.getParent());
     binaryDir.mkdirs();
 
-    // DLL search dirs: bundled first, then WinLibs portable gcc, then MSYS2
+    // DLL search dirs: WinLibs portable gcc first (exact match for compiler used),
+    // then bundled, then MSYS2
     java.util.List<File> dllSources = new java.util.ArrayList<>();
-    dllSources.add(bundledDir);
     File portableGccBin = InstallWizard.getPortableGccDir();
     if (portableGccBin.exists()) dllSources.add(portableGccBin);
+    dllSources.add(bundledDir);
     for (String msysDir : new String[]{"C:\\msys64\\mingw64\\bin","C:\\msys2\\mingw64\\bin"})
       dllSources.add(new File(msysDir));
 
