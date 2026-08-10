@@ -308,19 +308,40 @@ public class InstallWizard {
       setProgress(100);
       setStep("Extracting gcc...");
       appendLog("Extracting to " + gccDir.getAbsolutePath());
-      setIndeterminate(true);
-      // Use PowerShell Expand-Archive (available on all modern Windows)
-      Process extract = new ProcessBuilder(
-        "powershell", "-NoProfile", "-Command",
-        "Expand-Archive -Force -Path '" + zipFile.getAbsolutePath() +
-        "' -DestinationPath '" + gccDir.getAbsolutePath() + "'")
-        .redirectErrorStream(true).start();
-      streamToLog(extract);
-      int code = extract.waitFor();
-      zipFile.delete(); // clean up zip after extraction
-      setIndeterminate(false);
+      // Count entries first for accurate progress
+      int totalEntries = 0;
+      try (java.util.zip.ZipInputStream zcount =
+               new java.util.zip.ZipInputStream(new java.io.FileInputStream(zipFile))) {
+        while (zcount.getNextEntry() != null) totalEntries++;
+      }
+      appendLog("Extracting " + totalEntries + " files...");
+      int extracted = 0;
+      try (java.util.zip.ZipInputStream zis =
+               new java.util.zip.ZipInputStream(new java.io.FileInputStream(zipFile))) {
+        java.util.zip.ZipEntry entry;
+        byte[] buf = new byte[64 * 1024];
+        while ((entry = zis.getNextEntry()) != null) {
+          if (cancelled.get()) return false;
+          java.io.File outFile = new java.io.File(gccDir, entry.getName());
+          if (entry.isDirectory()) {
+            outFile.mkdirs();
+          } else {
+            outFile.getParentFile().mkdirs();
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile)) {
+              int n;
+              while ((n = zis.read(buf)) != -1) fos.write(buf, 0, n);
+            }
+          }
+          extracted++;
+          int pct = totalEntries > 0 ? (extracted * 100 / totalEntries) : 0;
+          setProgress(pct);
+          if (extracted % 500 == 0)
+            appendLog("Extracted " + extracted + " / " + totalEntries + " files...");
+        }
+      }
+      zipFile.delete();
       setProgress(100);
-      if (code != 0) { appendLog("Extraction failed."); return false; }
+      int code = 0; // Java extraction always succeeds or throws
       if (!getPortableGpp().exists()) {
         appendLog("g++.exe not found after extraction -- unexpected zip structure.");
         return false;
