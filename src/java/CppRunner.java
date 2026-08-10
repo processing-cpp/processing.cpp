@@ -21,7 +21,19 @@ public class CppRunner {
     binary.setExecutable(true);
     new Thread(() -> {
       try {
-        ProcessBuilder pb = new ProcessBuilder(binary.getAbsolutePath());
+        // On Windows, copy exe to sketch folder and run from there
+        // so DLLs copied alongside it are found
+        File exeToRun = binary;
+        String osName2 = System.getProperty("os.name","").toLowerCase();
+        if (osName2.contains("win")) {
+          File exeCopy = new File(sketchFolder, binary.getName());
+          try {
+            java.nio.file.Files.copy(binary.toPath(), exeCopy.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            exeToRun = exeCopy;
+          } catch (Exception ignored) {}
+        }
+        ProcessBuilder pb = new ProcessBuilder(exeToRun.getAbsolutePath());
         pb.directory(sketchFolder);
         pb.redirectErrorStream(false);
         // Pass sketch folder so loadImage/loadStrings find data/ assets
