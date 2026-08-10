@@ -658,7 +658,10 @@ public class CppBuild {
 
     // Bundled DLLs are in libs/windows-x64 -- copy them next to the binary
     File bundledDir = new File(runtimeDir.getParentFile(), "libs/windows-x64");
-    listener.statusNotice("CppMode: bundledDir=" + bundledDir.getAbsolutePath() + " exists=" + bundledDir.exists());
+    javax.swing.JOptionPane.showMessageDialog(null,
+      "bundledDir: " + bundledDir.getAbsolutePath() + "\nexists: " + bundledDir.exists() +
+      "\nruntimeDir: " + runtimeDir.getAbsolutePath(),
+      "CppMode Debug", javax.swing.JOptionPane.INFORMATION_MESSAGE);
     listener.statusNotice("CppMode: bundledDir=" + bundledDir.getAbsolutePath() + " exists=" + bundledDir.exists());
     File binaryDir = new File(binary.getParent());
     binaryDir.mkdirs();
