@@ -365,7 +365,6 @@ public class CppBuild {
         new javax.swing.JLabel(
           "<html><b>g++ (C++ compiler) not found.</b><br><br>"
           + "C++ Mode needs g++ to compile sketches.<br>"
-          + "GLFW and GLEW are already bundled — no extra downloads needed.<br><br>"
           + "<b>Auto-Install (recommended):</b><br>"
           + "&nbsp;&nbsp;Click <b>Auto-Install</b> to download g++ automatically.<br><br>"
           + "<b>Manual:</b><br>"
@@ -657,22 +656,20 @@ public class CppBuild {
     String[] allDlls  = { "glfw3.dll", "glew32.dll",
         "libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll" };
     String[] msysDirs = { "C:\\msys64\\mingw64\\bin", "C:\\msys2\\mingw64\\bin" };
-
+    File bundledLibsDir = new File(runtimeDir.getParentFile(), "libs/windows-x64");
     java.util.List<String> searchDirs = new java.util.ArrayList<>();
     searchDirs.add(binary.getParent());
+    if (bundledLibsDir.exists()) searchDirs.add(bundledLibsDir.getAbsolutePath());
     for (String d : msysDirs) searchDirs.add(d);
     String path = System.getenv("PATH");
-    if (path != null) for (String p : path.split(";")) searchDirs.add(p);
-
-    // Always copy all required DLLs next to the binary so the sketch can
-    // find them at runtime without MSYS2 on PATH. This is the root cause of
-    // exit code -1073741819 (0xC0000005) on fresh Windows installs: the DLLs
-    // exist in C:\msys64\mingw64in but Windows can't find them at runtime
-    // unless they're next to the exe or on PATH. Copy unconditionally.
+    if (path != null) for (String p2 : path.split(";")) searchDirs.add(p2);
+    java.util.List<String> copyDirs = new java.util.ArrayList<>();
+    if (bundledLibsDir.exists()) copyDirs.add(bundledLibsDir.getAbsolutePath());
+    for (String d : msysDirs) copyDirs.add(d);
     for (String dll : allDlls) {
       File dest = new File(binary.getParent(), dll);
-      if (dest.exists()) continue; // already copied from a previous run
-      for (String dir : msysDirs) {
+      if (dest.exists()) continue;
+      for (String dir : copyDirs) {
         File src2 = new File(dir, dll);
         if (src2.exists()) {
           try { java.nio.file.Files.copy(src2.toPath(), dest.toPath(),
@@ -682,7 +679,6 @@ public class CppBuild {
         }
       }
     }
-
     java.util.List<String> missing = new java.util.ArrayList<>();
     outer:
     for (String dll : required) {
@@ -3119,13 +3115,14 @@ public class CppBuild {
     boolean lowMemory = freeMemBytes < 512L * 1024 * 1024; // < 512MB JVM headroom
     // Also check system RAM
     try {
+      // Use reflection to avoid hard dependency on com.sun.management
       java.lang.management.OperatingSystemMXBean osmx =
-          (java.lang.management.OperatingSystemMXBean)
           java.lang.management.ManagementFactory.getOperatingSystemMXBean();
-      if (osmx instanceof com.sun.management.OperatingSystemMXBean sunOs) {
-        long freeRam = sunOs.getFreeMemorySize();
-        if (freeRam < 2L * 1024 * 1024 * 1024) lowMemory = true; // < 2GB free RAM
-      }
+      java.lang.reflect.Method getFreeMemory =
+          osmx.getClass().getMethod("getFreeMemorySize");
+      getFreeMemory.setAccessible(true);
+      long freeRam = (long) getFreeMemory.invoke(osmx);
+      if (freeRam < 2L * 1024 * 1024 * 1024) lowMemory = true;
     } catch (Exception ignored) {}
     if (lowMemory) needsPch = false;
     try {
