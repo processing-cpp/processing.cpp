@@ -652,115 +652,42 @@ public class CppBuild {
   }
 
   private void checkWindowsDLLs(RunnerListener listener, File binary) throws Exception {
-    String[] required = { "glfw3.dll", "glew32.dll" };
-    String[] allDlls  = { "glfw3.dll", "glew32.dll",
+    String[] allDlls = { "glfw3.dll", "glew32.dll",
         "libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll" };
-    String[] msysDirs = { "C:\\msys64\\mingw64\\bin", "C:\\msys2\\mingw64\\bin" };
-    File bundledLibsDir = new File(runtimeDir.getParentFile(), "libs/windows-x64");
-    java.util.List<String> searchDirs = new java.util.ArrayList<>();
-    searchDirs.add(binary.getParent());
-    if (bundledLibsDir.exists()) searchDirs.add(bundledLibsDir.getAbsolutePath());
-    for (String d : msysDirs) searchDirs.add(d);
-    String path = System.getenv("PATH");
-    if (path != null) for (String p2 : path.split(";")) searchDirs.add(p2);
-    java.util.List<String> copyDirs = new java.util.ArrayList<>();
-    if (bundledLibsDir.exists()) copyDirs.add(bundledLibsDir.getAbsolutePath());
-    for (String d : msysDirs) copyDirs.add(d);
+    String[] required = { "glfw3.dll", "glew32.dll" };
+
+    // Bundled DLLs are in libs/windows-x64 -- copy them next to the binary
+    File bundledDir = new File(runtimeDir.getParentFile(), "libs/windows-x64");
+    File binaryDir = new File(binary.getParent());
+    binaryDir.mkdirs();
+
     for (String dll : allDlls) {
-      File dest = new File(binary.getParent(), dll);
+      File dest = new File(binaryDir, dll);
       if (dest.exists()) continue;
-      for (String dir : copyDirs) {
-        File src2 = new File(dir, dll);
-        if (src2.exists()) {
-          try { java.nio.file.Files.copy(src2.toPath(), dest.toPath(),
-              java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
-          catch (Exception ignored) {}
-          break;
+      File src2 = new File(bundledDir, dll);
+      if (src2.exists()) {
+        try { java.nio.file.Files.copy(src2.toPath(), dest.toPath(),
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
+        catch (Exception e) {
+          System.err.println("[CppMode] Failed to copy " + dll + ": " + e.getMessage());
         }
       }
     }
+
+    // Verify required DLLs are now present
     java.util.List<String> missing = new java.util.ArrayList<>();
-    outer:
     for (String dll : required) {
-      for (String dir : searchDirs)
-        if (new File(dir, dll).exists()) continue outer;
-      missing.add(dll);
+      if (!new File(binaryDir, dll).exists() && !new File(bundledDir, dll).exists())
+        missing.add(dll);
     }
     if (missing.isEmpty()) return;
 
-    // Try the guided installer first.
-    if (InstallWizard.run(listener)) {
-      if (windowsLibsNowPresent(searchDirs, required)) return;
-    }
-
-    int choice = javax.swing.JOptionPane.showConfirmDialog(null,
-      "Missing libraries: " + String.join(", ", missing) + "\n\n" +
-      "C++ Mode requires GLFW and GLEW to run sketches.\n" +
-      "Click OK to install them automatically via MSYS2.",
-      "Missing Libraries", javax.swing.JOptionPane.OK_CANCEL_OPTION,
-      javax.swing.JOptionPane.WARNING_MESSAGE);
-
-    if (choice != javax.swing.JOptionPane.OK_OPTION) return;
-
-    // Find MSYS2 pacman
-    String pacman = null;
-    for (String p : new String[]{
-        "C:\\msys64\\usr\\bin\\pacman.exe",
-        "C:\\msys2\\usr\\bin\\pacman.exe"})
-      if (new File(p).exists()) { pacman = p; break; }
-
-    if (pacman == null) {
-      try { java.awt.Desktop.getDesktop().browse(new java.net.URI("https://www.msys2.org")); }
-      catch (Exception ignored) {}
-      javax.swing.JOptionPane.showMessageDialog(null,
-        "MSYS2 not found. Please install it from https://www.msys2.org\n\n" +
-        "Then open MSYS2 MinGW 64-bit and run:\n" +
-        "  pacman -S mingw-w64-x86_64-glfw mingw-w64-x86_64-glew\n\n" +
-        "Then restart Processing.",
-        "Install MSYS2", javax.swing.JOptionPane.INFORMATION_MESSAGE);
-      return;
-    }
-
-    final String finalPacman = pacman;
-    new Thread(() -> {
-      try {
-        listener.statusNotice("Installing GLFW and GLEW via MSYS2...");
-        ProcessBuilder pb = new ProcessBuilder(finalPacman, "-S", "--noconfirm",
-          "mingw-w64-x86_64-glfw", "mingw-w64-x86_64-glew");
-        pb.redirectErrorStream(true);
-        Process p = pb.start();
-        try (java.io.BufferedReader br = new java.io.BufferedReader(
-            new java.io.InputStreamReader(p.getInputStream()))) {
-          String line; while ((line = br.readLine()) != null) System.out.println(line);
-        }
-        if (p.waitFor() == 0) {
-          // Copy DLLs next to binary
-          for (String dll : new String[]{ "glfw3.dll","glew32.dll",
-              "libgcc_s_seh-1.dll","libstdc++-6.dll","libwinpthread-1.dll" }) {
-            for (String dir : new String[]{
-                "C:\\msys64\\mingw64\\bin","C:\\msys2\\mingw64\\bin"}) {
-              File src = new File(dir, dll);
-              if (src.exists()) {
-                try { java.nio.file.Files.copy(src.toPath(),
-                  new File(binary.getParent(), dll).toPath(),
-                  java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
-                catch (Exception ignored) {}
-                break;
-              }
-            }
-          }
-          listener.statusNotice("Libraries installed â you can now run your sketch.");
-          javax.swing.JOptionPane.showMessageDialog(null,
-            "GLFW and GLEW installed successfully!\nYou can now run your sketch.",
-            "Done", javax.swing.JOptionPane.INFORMATION_MESSAGE);
-        } else {
-          listener.statusError("Installation failed â try manually in MSYS2 MinGW 64-bit terminal.");
-        }
-      } catch (Exception e) { listener.statusError("Install error: " + e.getMessage()); }
-    }).start();
+    // DLLs missing from bundle -- this should not happen in a correct install
+    listener.statusError("Missing DLLs: " + String.join(", ", missing) +
+        " -- try reinstalling CppMode from https://github.com/processing-cpp/processing.cpp");
+    throw new Exception("Missing DLLs: " + missing);
   }
 
-  // ââ macOS ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   private void checkMacLibs(RunnerListener listener) throws Exception {
     // Check for glfw and glew via pkg-config or known Homebrew paths
     boolean glfwOk = new File("/opt/homebrew/lib/libglfw.dylib").exists()
