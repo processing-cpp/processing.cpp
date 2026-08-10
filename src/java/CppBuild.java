@@ -663,22 +663,26 @@ public class CppBuild {
     File binaryDir = new File(binary.getParent());
     binaryDir.mkdirs();
 
+    // DLL search dirs: bundled first, then WinLibs portable gcc, then MSYS2
+    java.util.List<File> dllSources = new java.util.ArrayList<>();
+    dllSources.add(bundledDir);
+    File portableGccBin = InstallWizard.getPortableGccDir();
+    if (portableGccBin.exists()) dllSources.add(portableGccBin);
+    for (String msysDir : new String[]{"C:\\msys64\\mingw64\\bin","C:\\msys2\\mingw64\\bin"})
+      dllSources.add(new File(msysDir));
+
     for (String dll : allDlls) {
-      File src2 = new File(bundledDir, dll);
-      if (!src2.exists()) continue;
-      // Copy next to binary
-      File dest = new File(binaryDir, dll);
-      try { java.nio.file.Files.copy(src2.toPath(), dest.toPath(),
-          java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-      } catch (Exception e) {
-        System.err.println("[CppMode] Failed to copy " + dll + ": " + e.getMessage());
+      for (File sourceDir : dllSources) {
+        File src2 = new File(sourceDir, dll);
+        if (!src2.exists()) continue;
+        // Copy next to binary
+        try { java.nio.file.Files.copy(src2.toPath(), new File(binaryDir, dll).toPath(),
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING); } catch (Exception ignored) {}
+        // Copy to sketch folder
+        try { java.nio.file.Files.copy(src2.toPath(), new File(sketch.getFolder(), dll).toPath(),
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING); } catch (Exception ignored) {}
+        break; // found in this source dir
       }
-      // Copy to sketch folder -- CppRunner sets sketch folder as cwd
-      // so Windows finds DLLs there at runtime
-      File sketchDest = new File(sketch.getFolder(), dll);
-      try { java.nio.file.Files.copy(src2.toPath(), sketchDest.toPath(),
-          java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-      } catch (Exception ignored) {}
     }
 
     // If all required DLLs exist in bundledDir, we're good -- they were
