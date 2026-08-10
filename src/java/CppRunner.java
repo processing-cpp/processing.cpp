@@ -25,6 +25,15 @@ public class CppRunner {
         pb.directory(sketchFolder);
         pb.redirectErrorStream(false);
         // Pass sketch folder so loadImage/loadStrings find data/ assets
+        // On Windows, add bundled DLL directory to PATH so the exe finds them at runtime
+        String osName = System.getProperty("os.name", "").toLowerCase();
+        if (osName.contains("win") && runtimeDir != null) {
+          File bundledLibs = new File(runtimeDir.getParentFile(), "libs/windows-x64");
+          if (bundledLibs.exists()) {
+            String existingPath = pb.environment().getOrDefault("PATH", "");
+            pb.environment().put("PATH", bundledLibs.getAbsolutePath() + ";" + existingPath);
+          }
+        }
         pb.environment().put("PROCESSING_SKETCH_NAME", sketchFolder.getName());
         pb.environment().put("PROCESSING_SKETCH_PATH",
             sketchFolder.getAbsolutePath().replace('\\', '/'));

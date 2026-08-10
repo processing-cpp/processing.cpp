@@ -666,15 +666,16 @@ public class CppBuild {
     for (String dll : allDlls) {
       File src2 = new File(bundledDir, dll);
       if (!src2.exists()) continue;
-      // Copy to binary dir (next to the exe)
+      // Copy next to binary
       File dest = new File(binaryDir, dll);
       try { java.nio.file.Files.copy(src2.toPath(), dest.toPath(),
           java.nio.file.StandardCopyOption.REPLACE_EXISTING);
       } catch (Exception e) {
         System.err.println("[CppMode] Failed to copy " + dll + ": " + e.getMessage());
       }
-      // Also copy to sketch folder so the sketch can find them when run
-      File sketchDest = new File(binary.getParentFile().getParentFile(), dll);
+      // Copy to sketch folder -- CppRunner sets sketch folder as cwd
+      // so Windows finds DLLs there at runtime
+      File sketchDest = new File(sketch.getFolder(), dll);
       try { java.nio.file.Files.copy(src2.toPath(), sketchDest.toPath(),
           java.nio.file.StandardCopyOption.REPLACE_EXISTING);
       } catch (Exception ignored) {}
