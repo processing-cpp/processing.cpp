@@ -653,7 +653,7 @@ public class CppBuild {
 
   private void checkWindowsDLLs(RunnerListener listener, File binary) throws Exception {
     String[] allDlls = { "glfw3.dll", "glew32.dll",
-        "libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll" };
+        "libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll", "libssp-0.dll" };
     String[] required = { "glfw3.dll", "glew32.dll" };
 
     // Bundled DLLs are in libs/windows-x64 -- copy them next to the binary
