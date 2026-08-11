@@ -3055,19 +3055,21 @@ public class CppBuild {
     // Skip PCH on low-memory machines (< 4GB free) to avoid OOM
     long freeMemBytes = Runtime.getRuntime().maxMemory() - 
         (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory());
-    boolean lowMemory = freeMemBytes < 512L * 1024 * 1024; // < 512MB JVM headroom
+    boolean lowMemory = freeMemBytes < 768L * 1024 * 1024; // < 768MB JVM headroom
     // Also check system RAM
     try {
-      // Use reflection to avoid hard dependency on com.sun.management
       java.lang.management.OperatingSystemMXBean osmx =
           java.lang.management.ManagementFactory.getOperatingSystemMXBean();
       java.lang.reflect.Method getFreeMemory =
           osmx.getClass().getMethod("getFreeMemorySize");
       getFreeMemory.setAccessible(true);
       long freeRam = (long) getFreeMemory.invoke(osmx);
-      if (freeRam < 2L * 1024 * 1024 * 1024) lowMemory = true;
+      if (freeRam < 3L * 1024 * 1024 * 1024) lowMemory = true; // < 3GB free RAM
     } catch (Exception ignored) {}
-    if (lowMemory) needsPch = false;
+    if (lowMemory) {
+      needsPch = false;
+      listener.statusNotice("Low memory detected — skipping PCH cache (compile may be slower)");
+    }
     try {
     String osName = System.getProperty("os.name","").toLowerCase();
     String cacheSubDir = osName.contains("win")  ? "cache/windows-x64"
@@ -3077,17 +3079,13 @@ public class CppBuild {
     cacheDir.mkdirs();
     File processingH = new File(runtimeDir, "Processing.h");
     processingPch = new File(cacheDir, "Processing.h.gch");
-    needsPch = !processingPch.exists()
-      || (processingH.exists() && processingH.lastModified() > processingPch.lastModified());
+    needsPch = !processingPch.exists();
     File processingO  = new File(cacheDir, "Processing.o");
     File defaultsO    = new File(cacheDir, "Processing_defaults.o");
     File processingCpp = new File(runtimeDir, "Processing.cpp");
     File defaultsCpp   = new File(runtimeDir, "Processing_defaults.cpp");
-    boolean needsProcessing = !processingO.exists()
-      || processingCpp.lastModified() > processingO.lastModified()
-      || (processingH.exists() && processingH.lastModified() > processingO.lastModified());
-    boolean needsDefaults   = !defaultsO.exists()
-      || defaultsCpp.lastModified() > defaultsO.lastModified();
+    boolean needsProcessing = !processingO.exists();
+    boolean needsDefaults   = !defaultsO.exists();
 
     if (needsPch) {
       List<String> pchCmd = new ArrayList<>();
