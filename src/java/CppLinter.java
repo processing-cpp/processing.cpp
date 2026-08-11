@@ -79,13 +79,12 @@ public class CppLinter {
         cacheDir.mkdirs();
         File gch = new File(cacheDir, "Processing.h.gch");
 
-        if (gch.exists() && processingH.lastModified() <= gch.lastModified())
-            return gch; // still fresh
+        if (gch.exists()) return gch; // use cached PCH
 
         // Build PCH: g++ -x c++-header -std=c++23 Processing.h -o Processing.h.gch
         try {
             ProcessBuilder pb = new ProcessBuilder(
-                gpp, "-x", "c++-header", "-std=c++2c", "-std=c++23",
+                gpp, "-x", "c++-header", "-std=c++23",
                 "-I", runtimeDir.getAbsolutePath(),
                 processingH.getAbsolutePath(),
                 "-o", gch.getAbsolutePath()
@@ -110,7 +109,10 @@ public class CppLinter {
             if (!processingH.exists()) return;
 
             boolean isWin = System.getProperty("os.name","").toLowerCase().contains("win");
-            String gpp = isWin ? "g++" : "g++";
+            String gpp = isWin
+                ? (InstallWizard.getPortableGpp().exists()
+                    ? InstallWizard.getPortableGpp().getAbsolutePath() : "g++")
+                : "g++";
 
             // Ensure PCH is up to date (fast no-op if already fresh)
             File gch = ensurePch(runtimeDir, processingH, gpp);
