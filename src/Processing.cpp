@@ -2934,7 +2934,7 @@ static void cursor_pos_cb(GLFWwindow*, double x, double y) {
     p->pmouseY = p->mouseY;
     p->mouseX  = (float)x;
     p->mouseY  = (float)y;
-    { auto [sh,ct,al,me] = std::make_tuple(
+    { auto [sh,ct,al,me] = ::std::make_tuple(
           (p->g_currentMods&GLFW_MOD_SHIFT)!=0,
           (p->g_currentMods&GLFW_MOD_CONTROL)!=0,
           (p->g_currentMods&GLFW_MOD_ALT)!=0,
@@ -3113,7 +3113,7 @@ static int glfw_to_processing_keycode(int k) {
 }
 
 // Scancode-based press tracking for Bug B (GLFW #2417 Windows virtual key mismatch)
-static std::unordered_set<int> s_pressedScancodes;
+static ::std::unordered_set<int> s_pressedScancodes;
 
 // Translate GLFW key to Processing key/keyCode atomically
 static void translate_glfw_key(int k, char16_t* outKey, int* outKeyCode) {
