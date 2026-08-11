@@ -101,11 +101,13 @@ jobs:
           BREW=$(brew --prefix)
           FLAGS="-std=c++2c -O2 -w -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -I src -I $BREW/include"
 
-          # Processing.o skipped on macOS -- clang namespace issue;
-          # it compiles inline at sketch build time instead.
 
+          echo "Building Processing.o..."
+          g++ $FLAGS -Wno-error -c src/Processing.cpp -o cache/macos-arm64/Processing.o || echo "WARNING: Processing.o failed"
           echo "Building Processing_defaults.o..."
-          g++ $FLAGS -Wno-error -c src/Processing_defaults.cpp -o cache/macos-arm64/Processing_defaults.o || echo "WARNING: defaults.o build failed, skipping"
+          g++ $FLAGS -Wno-error -c src/Processing_defaults.cpp -o cache/macos-arm64/Processing_defaults.o || echo "WARNING: defaults.o failed"
+          echo "Building PCH..."
+          g++ $FLAGS -x c++-header src/Processing.h -o cache/macos-arm64/Processing.h.gch || echo "WARNING: PCH failed"
 
           ls -lh cache/macos-arm64/
 
@@ -130,11 +132,13 @@ jobs:
           BREW=$(brew --prefix)
           FLAGS="-std=c++2c -O2 -w -target x86_64-apple-macos10.13 -DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE -I src -I $BREW/include"
 
-          # Processing.o skipped on macOS -- clang namespace issue;
-          # it compiles inline at sketch build time instead.
 
+          echo "Building Processing.o..."
+          g++ $FLAGS -Wno-error -c src/Processing.cpp -o cache/macos-x64/Processing.o || echo "WARNING: Processing.o failed"
           echo "Building Processing_defaults.o..."
-          g++ $FLAGS -Wno-error -c src/Processing_defaults.cpp -o cache/macos-x64/Processing_defaults.o || echo "WARNING: defaults.o build failed, skipping"
+          g++ $FLAGS -Wno-error -c src/Processing_defaults.cpp -o cache/macos-x64/Processing_defaults.o || echo "WARNING: defaults.o failed"
+          echo "Building PCH..."
+          g++ $FLAGS -x c++-header src/Processing.h -o cache/macos-x64/Processing.h.gch || echo "WARNING: PCH failed"
 
           ls -lh cache/macos-x64/
 
