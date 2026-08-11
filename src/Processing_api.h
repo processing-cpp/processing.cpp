@@ -3,6 +3,7 @@
 // classes inside sketches (which don't inherit from PApplet).
 #pragma once
 #include "Processing.h"
+#include <string>
 
 // ── Math (static, no instance needed) ────────────────────────────────────────
 inline float radians(float d)              { return PApplet::radians(d); }
