@@ -45,7 +45,13 @@
 // Uncomment + drop stb_image_write.h to enable saveFrame()/save():
 // #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include "stb_image_write.h"
+#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
 
 // ── Manual glu replacements (no GLU header needed) ───────────────────────────
 static void _gluPerspective(double fovY_deg, double aspect, double zNear, double zFar) {
@@ -2210,7 +2216,7 @@ void PApplet::drawTTFStr(float x, float y, const ::std::string& s) {
     glColor4f(fillR, fillG, fillB, fillA);
     float cx = x;
     for (char ch : s) {
-        if (ch < 32 || ch >= 128) continue;
+        if ((unsigned char)ch < 32 || (unsigned char)ch >= 128) continue;
         stbtt_aligned_quad q;
         stbtt_GetBakedQuad(g_ttf.chars, g_ttf.atlasW, g_ttf.atlasH,
                            ch - 32, &cx, &y, &q, 1);

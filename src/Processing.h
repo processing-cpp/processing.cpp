@@ -375,12 +375,12 @@ public:
     // Static constructors
     static PVector fromAngle(float a, float len=1.0f) { return PVector(::std::cos(a)*len, ::std::sin(a)*len); }
     static PVector random2D() {
-        float a = static_cast<float>(rand()) / RAND_MAX * 6.28318f;
+        float a = static_cast<float>(rand()) / (float)RAND_MAX * 6.28318f;
         return fromAngle(a);
     }
     static PVector random3D() {
-        float t = static_cast<float>(rand()) / RAND_MAX * 6.28318f;
-        float p = ::std::acos(2.0f * static_cast<float>(rand()) / RAND_MAX - 1.0f);
+        float t = static_cast<float>(rand()) / (float)RAND_MAX * 6.28318f;
+        float p = ::std::acos(2.0f * static_cast<float>(rand()) / (float)RAND_MAX - 1.0f);
         return PVector(::std::sin(p)*::std::cos(t), ::std::sin(p)*::std::sin(t), ::std::cos(p));
     }
 
