@@ -549,7 +549,7 @@ void PApplet::size(int w,int h){
             #ifdef _WIN32
             Sleep(1);
             #elif !defined(__EMSCRIPTEN__)
-            usleep(1000);
+            ::std::this_thread::sleep_for(::std::chrono::milliseconds(1));
             #endif
         }
         // Force coordinate system to requested size regardless of WM.
