@@ -1,51 +1,49 @@
 name: Build macOS bundled dylibs
 
 on:
-  workflow_dispatch:  # manual trigger only
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-arm64:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install GLFW and GLEW via Homebrew
-        run: brew install glfw glew
-
-      - name: Collect dylibs (arm64)
+      - name: Install GLFW and GLEW
+        run: |
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+          brew install glfw glew
+      - name: Collect arm64 dylibs
         run: |
           mkdir -p libs/macos-arm64
-          # GLFW
           cp $(brew --prefix glfw)/lib/libglfw.3.dylib libs/macos-arm64/
-          # GLEW
           cp $(brew --prefix glew)/lib/libGLEW.dylib libs/macos-arm64/
-          # Fix install names so the binary finds them via @rpath
           install_name_tool -id @rpath/libglfw.3.dylib libs/macos-arm64/libglfw.3.dylib
           install_name_tool -id @rpath/libGLEW.dylib libs/macos-arm64/libGLEW.dylib
-          ls -la libs/macos-arm64/
           file libs/macos-arm64/*.dylib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-dylibs
+          path: libs/macos-arm64/
+          retention-days: 30
 
-      - name: Also build x64 slice (lipo from universal if available)
+  build-x64:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GLFW and GLEW
+        run: |
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+          brew install glfw glew
+      - name: Collect x64 dylibs
         run: |
           mkdir -p libs/macos-x64
-          # GitHub's macos-latest runners are arm64; extract x86_64 slice if universal
-          for f in libs/macos-arm64/*.dylib; do
-            name=$(basename $f)
-            if lipo -info $f 2>/dev/null | grep -q x86_64; then
-              lipo $f -thin x86_64 -output libs/macos-x64/$name
-            else
-              # arm64 only -- copy as-is for now, x64 users need Homebrew
-              cp $f libs/macos-x64/$name
-            fi
-          done
-          ls -la libs/macos-x64/
+          cp $(brew --prefix glfw)/lib/libglfw.3.dylib libs/macos-x64/
+          cp $(brew --prefix glew)/lib/libGLEW.dylib libs/macos-x64/
+          install_name_tool -id @rpath/libglfw.3.dylib libs/macos-x64/libglfw.3.dylib
+          install_name_tool -id @rpath/libGLEW.dylib libs/macos-x64/libGLEW.dylib
           file libs/macos-x64/*.dylib
-
-      - name: Upload as artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: macos-dylibs
-          path: |
-            libs/macos-arm64/
-            libs/macos-x64/
+          name: macos-x64-dylibs
+          path: libs/macos-x64/
           retention-days: 30
