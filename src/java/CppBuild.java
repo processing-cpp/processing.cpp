@@ -3066,10 +3066,7 @@ public class CppBuild {
       long freeRam = (long) getFreeMemory.invoke(osmx);
       if (freeRam < 3L * 1024 * 1024 * 1024) lowMemory = true; // < 3GB free RAM
     } catch (Exception ignored) {}
-    if (lowMemory) {
-      needsPch = false;
-      listener.statusNotice("Low memory detected — skipping PCH cache (compile may be slower)");
-    }
+    if (lowMemory) needsPch = false;
     try {
     String osName = System.getProperty("os.name","").toLowerCase();
     String cacheSubDir = osName.contains("win")  ? "cache/windows-x64"
