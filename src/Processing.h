@@ -3632,6 +3632,55 @@ inline float dist(A x1,B y1,C z1,D x2,E y2,F z2){ float dx=(float)x2-(float)x1,d
 //   int main() { Sketch s; s.run(); return 0; }
 // =============================================================================
 
+// ── Event objects (mirrors Java Processing's MouseEvent / KeyEvent) ──────────
+struct MouseEvent {
+    float x, y;           // cursor position at time of event
+    int   button;         // LEFT, CENTER, RIGHT, or -1
+    int   count;          // click count (press/release/click) or wheel steps
+    bool  shiftDown;
+    bool  controlDown;
+    bool  altDown;
+    bool  metaDown;
+    int   action;         // PRESS, RELEASE, CLICK, MOVE, DRAG, WHEEL
+    // action constants
+    static constexpr int PRESS   = 1;
+    static constexpr int RELEASE = 2;
+    static constexpr int CLICK   = 3;
+    static constexpr int MOVE    = 4;
+    static constexpr int DRAG    = 5;
+    static constexpr int WHEEL   = 6;
+    // convenience
+    bool isShiftDown()   const { return shiftDown;   }
+    bool isControlDown() const { return controlDown; }
+    bool isAltDown()     const { return altDown;     }
+    bool isMetaDown()    const { return metaDown;    }
+    int  getButton()     const { return button;      }
+    int  getCount()      const { return count;       }
+    float getX()         const { return x;           }
+    float getY()         const { return y;           }
+    int  getAction()     const { return action;      }
+};
+
+struct KeyEvent {
+    char16_t key;         // the character (matches PApplet::key)
+    int      keyCode;     // VK_* code (matches PApplet::keyCode)
+    bool     shiftDown;
+    bool     controlDown;
+    bool     altDown;
+    bool     metaDown;
+    int      action;      // PRESS, RELEASE, TYPE
+    static constexpr int PRESS   = 1;
+    static constexpr int RELEASE = 2;
+    static constexpr int TYPE    = 3;
+    bool isShiftDown()   const { return shiftDown;   }
+    bool isControlDown() const { return controlDown; }
+    bool isAltDown()     const { return altDown;     }
+    bool isMetaDown()    const { return metaDown;    }
+    char16_t getKey()    const { return key;         }
+    int  getKeyCode()    const { return keyCode;     }
+    int  getAction()     const { return action;      }
+};
+
 struct PApplet {
     // ── Public state (directly accessible in sketch code) ───────────────────
     int   winWidth = 640, winHeight = 480;
@@ -3714,15 +3763,24 @@ struct PApplet {
     virtual void setup()         {}
     virtual void draw()          {}
     virtual void settings()      {}
-    virtual void mousePressed()  {}
-    virtual void mouseReleased() {}
-    virtual void mouseClicked()  {}
-    virtual void mouseMoved()    {}
-    virtual void mouseDragged()  {}
-    virtual void mouseWheel(int delta) {}
-    virtual void keyPressed()    {}
-    virtual void keyReleased()   {}
-    virtual void keyTyped()      {}
+    virtual void mousePressed()              {}
+    virtual void mousePressed(MouseEvent e)  {}
+    virtual void mouseReleased()             {}
+    virtual void mouseReleased(MouseEvent e) {}
+    virtual void mouseClicked()              {}
+    virtual void mouseClicked(MouseEvent e)  {}
+    virtual void mouseMoved()                {}
+    virtual void mouseMoved(MouseEvent e)    {}
+    virtual void mouseDragged()              {}
+    virtual void mouseDragged(MouseEvent e)  {}
+    virtual void mouseWheel(int delta)       {}
+    virtual void mouseWheel(MouseEvent e)    {}
+    virtual void keyPressed()                {}
+    virtual void keyPressed(KeyEvent e)      {}
+    virtual void keyReleased()               {}
+    virtual void keyReleased(KeyEvent e)     {}
+    virtual void keyTyped()                  {}
+    virtual void keyTyped(KeyEvent e)        {}
     virtual void windowMoved()   {}
     virtual void windowResized() {}
 
