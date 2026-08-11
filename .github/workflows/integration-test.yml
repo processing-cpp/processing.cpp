@@ -123,8 +123,8 @@ jobs:
 
       - name: Test bundled macOS dylibs exist
         run: |
-          test -f libs/macos-arm64/libglfw.3.dylib || (echo "FAIL: missing arm64 glfw" && exit 1)
-          test -f libs/macos-arm64/libGLEW.dylib || (echo "FAIL: missing arm64 GLEW" && exit 1)
+          test -f libs/macos/libglfw.3.dylib || (echo "FAIL: missing glfw" && exit 1)
+          test -f libs/macos/libGLEW.dylib || (echo "FAIL: missing GLEW" && exit 1)
           echo "macOS dylibs: PASS"
 
       - name: Test macOS g++ compilation with bundled dylibs
@@ -139,9 +139,7 @@ jobs:
 
       - name: Test dylib linking
         run: |
-          arch=$(uname -m)
-          libdir="libs/macos-arm64"
-          if [ "$arch" = "x86_64" ]; then libdir="libs/macos-x64"; fi
+          libdir="libs/macos"
           g++ -std=c++23 \
             -I$(pwd)/libs/include \
             -I$(pwd)/src \

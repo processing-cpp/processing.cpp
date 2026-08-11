@@ -77,8 +77,9 @@ public final class ErrorFormatter {
     // Strip trailing " (at line N, column M)"
     msg = msg.replaceAll("\\s*\\(at line \\d+, column \\d+\\)\\s*$", "").trim();
 
-    // Digit where name expected (e.g. "float 3x") — before any rewrites
-    { String _tok = msg.replaceAll(".*(?:but found|before) \'(.+?)\'.*", "$1");
+    // Digit where name expected (e.g. "float 3x") — only for identifier-position errors
+    if (msg.contains("expected identifier") || msg.contains("expected a type name")) {
+      String _tok = msg.replaceAll(".*(?:but found|before) \'(.+?)\'.*", "$1");
       if (_tok.length() > 0 && Character.isDigit(_tok.charAt(0)))
         msg = "identifier '" + _tok + "' is invalid — names cannot start with a digit";
     }
@@ -146,8 +147,10 @@ public final class ErrorFormatter {
     if (msg.contains("expected ','"))              return "missing ',' here";
     if (msg.contains("expected 'while'"))           return "do-while requires 'while (condition);' after the closing '}'";
     if (msg.contains("expected ':'"))              return "missing ':' after 'case'/'default'";
-    { String _d = msg.replaceAll(".*(?:but found|before) '(.+?)'.*", "$1");
+    if (msg.contains("expected identifier") || msg.contains("expected a type name")) {
+      String _d = msg.replaceAll(".*(?:but found|before) '(.+?)'.*", "$1");
       if (_d.length() > 0 && Character.isDigit(_d.charAt(0))) return "names cannot start with a digit";
+    }
       java.util.Set<String> KW = new java.util.HashSet<>(java.util.Arrays.asList(
         "for","while","if","else","switch","case","return","break","continue",
         "class","struct","namespace","template","typename","auto","void",

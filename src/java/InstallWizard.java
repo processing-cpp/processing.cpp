@@ -508,7 +508,7 @@ public class InstallWizard {
     // Check bundled dylibs first (shipped with the mode, no Homebrew needed)
     String macArch = System.getProperty("os.arch","").contains("aarch64") ? "arm64" : "x64";
     String home = System.getProperty("user.home");
-    File bundledLibs = new File(home + "/Library/Application Support/Processing/modes/CppMode/libs/macos-" + macArch);
+    File bundledLibs = new File(home + "/Library/Application Support/Processing/modes/CppMode/libs/macos");
     boolean glfwOk = new File(bundledLibs, "libglfw.3.dylib").exists()
                   || new File("/opt/homebrew/include/GLFW/glfw3.h").exists()
                   || new File("/usr/local/include/GLFW/glfw3.h").exists()

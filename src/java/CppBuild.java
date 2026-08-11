@@ -391,9 +391,9 @@ public class CppBuild {
         catch (Exception ignored) {}
         String macArch = System.getProperty("os.arch","").contains("aarch64") ? "arm64" : "x64";
         File macLibsDir = (runtimeDir != null)
-            ? new File(runtimeDir.getParentFile(), "libs/macos-" + macArch)
+            ? new File(runtimeDir.getParentFile(), "libs/macos")
             : new File(System.getProperty("user.home") +
-                "/Library/Application Support/Processing/modes/CppMode/libs/macos-" + macArch);
+                "/Library/Application Support/Processing/modes/CppMode/libs/macos");
         boolean hasBundledGlfw = new File(macLibsDir, "libglfw.3.dylib").exists();
         boolean hasBundledGlew = new File(macLibsDir, "libGLEW.dylib").exists();
         boolean macGlfw = hasBundledGlfw
@@ -602,12 +602,13 @@ public class CppBuild {
     // Copy bundled macOS dylibs to sketch folder so the binary finds them at runtime.
     if (isMac) {
       String macArch2 = System.getProperty("os.arch","").contains("aarch64") ? "arm64" : "x64";
-      File macLibsDir2 = new File(runtimeDir.getParentFile(), "libs/macos-" + macArch2);
+      File macLibsDir2 = new File(runtimeDir.getParentFile(), "libs/macos"2);
       if (macLibsDir2.exists()) {
         for (File dylib : macLibsDir2.listFiles((d,n) -> n.endsWith(".dylib"))) {
           File destDylib = new File(sketch.getFolder(), dylib.getName());
-          if (!destDylib.exists())
-            java.nio.file.Files.copy(dylib.toPath(), destDylib.toPath());
+          try { java.nio.file.Files.copy(dylib.toPath(), destDylib.toPath(),
+              java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
+          catch (Exception ignored) {}
         }
       }
     }
@@ -705,14 +706,19 @@ public class CppBuild {
   }
 
   private void checkMacLibs(RunnerListener listener) throws Exception {
-    // Check for glfw and glew via pkg-config or known Homebrew paths
+    // Check bundled dylibs first -- if present, no Homebrew needed
+    String macArch = System.getProperty("os.arch","").contains("aarch64") ? "arm64" : "x64";
+    File macLibsDir = new File(runtimeDir.getParentFile(), "libs/macos");
+    boolean hasBundled = new File(macLibsDir, "libglfw.3.dylib").exists()
+                      && new File(macLibsDir, "libGLEW.dylib").exists();
+    if (hasBundled) return;
+    // Fall back to Homebrew check
     boolean glfwOk = new File("/opt/homebrew/lib/libglfw.dylib").exists()
                   || new File("/usr/local/lib/libglfw.dylib").exists()
                   || commandExists("pkg-config glfw3");
     boolean glewOk = new File("/opt/homebrew/lib/libGLEW.dylib").exists()
                   || new File("/usr/local/lib/libGLEW.dylib").exists()
                   || commandExists("pkg-config glew");
-
     if (glfwOk && glewOk) return;
 
     java.util.List<String> missing = new java.util.ArrayList<>();
@@ -3188,10 +3194,10 @@ public class CppBuild {
         "-lcomdlg32", "-lshell32", "-lole32", "-luuid",
         "-mwindows", "-pthread", "-D_USE_MATH_DEFINES");
     } else if (mac) {
-      // macOS: prefer bundled dylibs shipped with the mode (libs/macos-arm64
-      // or libs/macos-x64) so users need no Homebrew install at all.
+      // macOS: prefer bundled dylibs shipped with the mode (libs/macos)
+      // universal dylibs work on both arm64 and x64.
       String arch = System.getProperty("os.arch","").contains("aarch64") ? "arm64" : "x64";
-      File macLibsDir = new File(runtimeDir.getParentFile(), "libs/macos-" + arch);
+      File macLibsDir = new File(runtimeDir.getParentFile(), "libs/macos");
       boolean hasBundled = new File(macLibsDir, "libglfw.3.dylib").exists()
                         && new File(macLibsDir, "libGLEW.dylib").exists();
       if (hasBundled) {

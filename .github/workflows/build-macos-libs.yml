@@ -4,46 +4,54 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-arm64:
+  build:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install GLFW and GLEW
-        run: |
-          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
-          brew install glfw glew
-      - name: Collect arm64 dylibs
-        run: |
-          mkdir -p libs/macos-arm64
-          cp $(brew --prefix glfw)/lib/libglfw.3.dylib libs/macos-arm64/
-          cp $(brew --prefix glew)/lib/libGLEW.dylib libs/macos-arm64/
-          install_name_tool -id @rpath/libglfw.3.dylib libs/macos-arm64/libglfw.3.dylib
-          install_name_tool -id @rpath/libGLEW.dylib libs/macos-arm64/libGLEW.dylib
-          file libs/macos-arm64/*.dylib
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-arm64-dylibs
-          path: libs/macos-arm64/
-          retention-days: 30
 
-  build-x64:
-    runs-on: macos-13
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install GLFW and GLEW
+      - name: Install build tools
         run: |
           export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
-          brew install glfw glew
-      - name: Collect x64 dylibs
+          brew install cmake glfw glew
+
+      - name: Build GLFW universal from source
         run: |
-          mkdir -p libs/macos-x64
-          cp $(brew --prefix glfw)/lib/libglfw.3.dylib libs/macos-x64/
-          cp $(brew --prefix glew)/lib/libGLEW.dylib libs/macos-x64/
-          install_name_tool -id @rpath/libglfw.3.dylib libs/macos-x64/libglfw.3.dylib
-          install_name_tool -id @rpath/libGLEW.dylib libs/macos-x64/libGLEW.dylib
-          file libs/macos-x64/*.dylib
+          GLFW_VER=$(brew info --json glfw | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['versions']['stable'])")
+          curl -L "https://github.com/glfw/glfw/archive/refs/tags/${GLFW_VER}.tar.gz" -o glfw.tar.gz
+          tar xf glfw.tar.gz
+          cd glfw-${GLFW_VER}
+          cmake -B build-arm64 -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DBUILD_SHARED_LIBS=ON -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF -DGLFW_BUILD_DOCS=OFF
+          cmake --build build-arm64
+          cmake -B build-x64 -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DBUILD_SHARED_LIBS=ON -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF -DGLFW_BUILD_DOCS=OFF
+          cmake --build build-x64
+          lipo -create build-arm64/src/libglfw.3.dylib build-x64/src/libglfw.3.dylib -output ../libglfw.3.dylib
+          install_name_tool -id @rpath/libglfw.3.dylib ../libglfw.3.dylib
+          cd ..
+
+      - name: Build GLEW universal from source
+        run: |
+          GLEW_VER=$(brew info --json glew | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['versions']['stable'])")
+          curl -L "https://github.com/nigels-com/glew/releases/download/glew-${GLEW_VER}/glew-${GLEW_VER}.tgz" -o glew.tgz
+          tar xf glew.tgz
+          cd glew-${GLEW_VER}
+          make SYSTEM=darwin CC="clang -arch arm64 -mmacosx-version-min=11.0" LD="clang -arch arm64 -mmacosx-version-min=11.0" LDFLAGS="-framework OpenGL" GLEW_DEST=../glew-arm64 install.lib
+          make clean
+          make SYSTEM=darwin CC="clang -arch x86_64 -mmacosx-version-min=10.13" LD="clang -arch x86_64 -mmacosx-version-min=10.13" LDFLAGS="-framework OpenGL" GLEW_DEST=../glew-x64 install.lib
+          cd ..
+          lipo -create glew-arm64/lib/libGLEW.dylib glew-x64/lib/libGLEW.dylib -output libGLEW.dylib
+          install_name_tool -id @rpath/libGLEW.dylib libGLEW.dylib
+
+      - name: Copy universal dylibs to libs/macos/
+        run: |
+          mkdir -p libs/macos
+          cp libglfw.3.dylib libs/macos/
+          cp libGLEW.dylib   libs/macos/
+          echo "Architecture check:"
+          lipo -info libs/macos/libglfw.3.dylib
+          lipo -info libs/macos/libGLEW.dylib
+
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-x64-dylibs
-          path: libs/macos-x64/
-          retention-days: 30
+          name: macos-dylibs
+          path: libs/macos/
+          retention-days: 90
