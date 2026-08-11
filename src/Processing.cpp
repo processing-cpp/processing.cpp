@@ -2934,8 +2934,16 @@ static void cursor_pos_cb(GLFWwindow*, double x, double y) {
     p->pmouseY = p->mouseY;
     p->mouseX  = (float)x;
     p->mouseY  = (float)y;
-    if (p->_mousePressed) { p->mouseDragged(); }
-    else               { p->mouseMoved();   }
+    { auto [sh,ct,al,me] = std::make_tuple(
+          (p->g_currentMods&GLFW_MOD_SHIFT)!=0,
+          (p->g_currentMods&GLFW_MOD_CONTROL)!=0,
+          (p->g_currentMods&GLFW_MOD_ALT)!=0,
+          (p->g_currentMods&GLFW_MOD_SUPER)!=0);
+      int act = p->_mousePressed ? MouseEvent::DRAG : MouseEvent::MOVE;
+      MouseEvent me2{p->mouseX, p->mouseY, p->mouseButton, 0, sh, ct, al, me, act};
+      if (p->_mousePressed) { p->mouseDragged(); p->mouseDragged(me2); }
+      else                  { p->mouseMoved();   p->mouseMoved(me2);   }
+    }
 }
 static void mouse_btn_cb(GLFWwindow*, int btn, int action, int mods) {
     auto* p = PApplet::g_papplet; if(!p) return;
@@ -2949,8 +2957,13 @@ static void mouse_btn_cb(GLFWwindow*, int btn, int action, int mods) {
         else if (btn == GLFW_MOUSE_BUTTON_RIGHT)  p->mouseButton = RIGHT;
         else                                       p->mouseButton = CENTER;
         p->_eventDrewSomething=true;
-        p->_eventDrewSomething=true;
-        p->mousePressed();
+        { auto sh=(p->g_currentMods&GLFW_MOD_SHIFT)!=0;
+          auto ct=(p->g_currentMods&GLFW_MOD_CONTROL)!=0;
+          auto al=(p->g_currentMods&GLFW_MOD_ALT)!=0;
+          auto me=(p->g_currentMods&GLFW_MOD_SUPER)!=0;
+          MouseEvent ev{p->mouseX, p->mouseY, p->mouseButton, 1, sh, ct, al, me, MouseEvent::PRESS};
+          p->mousePressed(); p->mousePressed(ev);
+        }
         p->mouseWasPressed = true;
     } else if (action == GLFW_RELEASE) {
         if(btn>=0&&btn<8) p->mouseButtons[btn]=false;
@@ -2962,14 +2975,32 @@ static void mouse_btn_cb(GLFWwindow*, int btn, int action, int mods) {
         p->mouseButton = p->mouseButtons[GLFW_MOUSE_BUTTON_LEFT]   ? LEFT  :
                          p->mouseButtons[GLFW_MOUSE_BUTTON_RIGHT]  ? RIGHT :
                          p->mouseButtons[GLFW_MOUSE_BUTTON_MIDDLE] ? CENTER : -1;
-        p->mouseReleased();
-        if(p->mouseWasPressed) p->mouseClicked();
+        { auto sh=(p->g_currentMods&GLFW_MOD_SHIFT)!=0;
+          auto ct=(p->g_currentMods&GLFW_MOD_CONTROL)!=0;
+          auto al=(p->g_currentMods&GLFW_MOD_ALT)!=0;
+          auto me=(p->g_currentMods&GLFW_MOD_SUPER)!=0;
+          MouseEvent ev{p->mouseX, p->mouseY, p->mouseButton, 1, sh, ct, al, me, MouseEvent::RELEASE};
+          p->mouseReleased(); p->mouseReleased(ev);
+          if(p->mouseWasPressed) {
+              MouseEvent ce{p->mouseX, p->mouseY, p->mouseButton, 1, sh, ct, al, me, MouseEvent::CLICK};
+              p->mouseClicked(); p->mouseClicked(ce);
+          }
+        }
         p->mouseWasPressed=false;
     }
 }
 static void scroll_cb(GLFWwindow*,double,double yoffset){
     auto* p = PApplet::g_papplet; if(!p) return;
-    if(p->_onMouseWheel)p->_onMouseWheel((int)yoffset);
+    int delta = (int)yoffset;
+    if(p->_onMouseWheel) p->_onMouseWheel(delta);
+    p->mouseWheel(delta);
+    { auto sh=(p->g_currentMods&GLFW_MOD_SHIFT)!=0;
+      auto ct=(p->g_currentMods&GLFW_MOD_CONTROL)!=0;
+      auto al=(p->g_currentMods&GLFW_MOD_ALT)!=0;
+      auto me=(p->g_currentMods&GLFW_MOD_SUPER)!=0;
+      MouseEvent ev{p->mouseX, p->mouseY, p->mouseButton, delta, sh, ct, al, me, MouseEvent::WHEEL};
+      p->mouseWheel(ev);
+    }
 }
 
 static void char_cb(GLFWwindow*, unsigned int codepoint) {
@@ -2983,11 +3014,11 @@ static void char_cb(GLFWwindow*, unsigned int codepoint) {
     if (p->g_pendingKeyPressed) {
         p->g_pendingKeyPressed = false;
         p->_eventDrewSomething=true;
-        p->keyPressed();
+        p->keyPressed(); p->keyPressed(KeyEvent{p->key, p->keyCode, (p->g_currentMods&GLFW_MOD_SHIFT)!=0, (p->g_currentMods&GLFW_MOD_CONTROL)!=0, (p->g_currentMods&GLFW_MOD_ALT)!=0, (p->g_currentMods&GLFW_MOD_SUPER)!=0, KeyEvent::PRESS});
     }
     // keyTyped() -- Processing standard: only printable chars, no action keys
     // Action keys (Ctrl, Shift, Alt, etc.) never reach char_cb, so this is correct.
-    p->keyTyped();
+    p->keyTyped(); p->keyTyped(KeyEvent{p->key, p->keyCode, (p->g_currentMods&GLFW_MOD_SHIFT)!=0, (p->g_currentMods&GLFW_MOD_CONTROL)!=0, (p->g_currentMods&GLFW_MOD_ALT)!=0, (p->g_currentMods&GLFW_MOD_SUPER)!=0, KeyEvent::TYPE});
 }
 
 // Translate GLFW key code to Java KeyEvent.VK_* value.
@@ -3081,10 +3112,48 @@ static int glfw_to_processing_keycode(int k) {
     }
 }
 
-static void key_cb(GLFWwindow* w, int k, int /*scancode*/, int action, int mods) {
+// Scancode-based press tracking for Bug B (GLFW #2417 Windows virtual key mismatch)
+static std::unordered_set<int> s_pressedScancodes;
+
+// Translate GLFW key to Processing key/keyCode atomically
+static void translate_glfw_key(int k, char16_t* outKey, int* outKeyCode) {
+    *outKeyCode = glfw_to_java_keycode(k);
+    switch (k) {
+        case GLFW_KEY_BACKSPACE: *outKey = 8;   return;
+        case GLFW_KEY_TAB:       *outKey = 9;   return;
+        case GLFW_KEY_ENTER:
+        case GLFW_KEY_KP_ENTER:  *outKey = 10;  return;
+        case GLFW_KEY_ESCAPE:    *outKey = 27;  return;
+        case GLFW_KEY_SPACE:     *outKey = 32;  return;
+        case GLFW_KEY_DELETE:    *outKey = 127; return;
+        case GLFW_KEY_UP: case GLFW_KEY_DOWN:
+        case GLFW_KEY_LEFT: case GLFW_KEY_RIGHT:
+        case GLFW_KEY_HOME: case GLFW_KEY_END:
+        case GLFW_KEY_PAGE_UP: case GLFW_KEY_PAGE_DOWN:
+        case GLFW_KEY_LEFT_SHIFT: case GLFW_KEY_RIGHT_SHIFT:
+        case GLFW_KEY_LEFT_CONTROL: case GLFW_KEY_RIGHT_CONTROL:
+        case GLFW_KEY_LEFT_ALT: case GLFW_KEY_RIGHT_ALT:
+        case GLFW_KEY_LEFT_SUPER: case GLFW_KEY_RIGHT_SUPER:
+        case GLFW_KEY_INSERT: case GLFW_KEY_CAPS_LOCK:
+        case GLFW_KEY_F1: case GLFW_KEY_F2: case GLFW_KEY_F3:
+        case GLFW_KEY_F4: case GLFW_KEY_F5: case GLFW_KEY_F6:
+        case GLFW_KEY_F7: case GLFW_KEY_F8: case GLFW_KEY_F9:
+        case GLFW_KEY_F10: case GLFW_KEY_F11: case GLFW_KEY_F12:
+            *outKey = CODED; return;
+        default:
+            if (k >= GLFW_KEY_A && k <= GLFW_KEY_Z)
+                *outKey = (char16_t)('a' + (k - GLFW_KEY_A));
+            else
+                *outKey = (char16_t)k;
+            return;
+    }
+}
+
+static void key_cb(GLFWwindow* w, int k, int scancode, int action, int mods) {
     auto* p = PApplet::g_papplet; if(!p) return;
     p->g_currentMods = mods; // capture before callbacks fire
     if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+        if (action == GLFW_PRESS) s_pressedScancodes.insert(scancode);
         p->_keyPressed = true;
         if(k>=0&&k<349) p->keys[k]=true;
         { int pk=glfw_to_processing_keycode(k); if(pk>=0&&pk<256) {
@@ -3147,24 +3216,30 @@ static void key_cb(GLFWwindow* w, int k, int /*scancode*/, int action, int mods)
         // Fire keyPressed() now unless deferred to char_cb
         if (!p->g_pendingKeyPressed) {
             if(action==GLFW_PRESS) p->_eventDrewSomething=true;
-            p->keyPressed();
+            p->keyPressed(); p->keyPressed(KeyEvent{p->key, p->keyCode, (p->g_currentMods&GLFW_MOD_SHIFT)!=0, (p->g_currentMods&GLFW_MOD_CONTROL)!=0, (p->g_currentMods&GLFW_MOD_ALT)!=0, (p->g_currentMods&GLFW_MOD_SUPER)!=0, KeyEvent::PRESS});
             // Java Processing: ESC closes the sketch unless keyPressed() set p->key=0
             if (p->key == (char16_t)27 && p->gWindow)
                 glfwSetWindowShouldClose(p->gWindow, GLFW_TRUE);
         }
 
     } else if (action == GLFW_RELEASE) {
+        // Bug B guard: drop phantom releases with no matching press scancode
+        if (s_pressedScancodes.find(scancode) == s_pressedScancodes.end()) return;
+        s_pressedScancodes.erase(scancode);
         if(k>=0&&k<349) p->keys[k]=false;
         { int pk=glfw_to_processing_keycode(k); if(pk>=0&&pk<256) {
             p->keysDown[pk]=false;
             if(pk>='A'&&pk<='Z') p->keysDown[pk+32]=false;
             if(pk>='a'&&pk<='z') p->keysDown[pk-32]=false;
           } }
-        // check if any key still held
         bool anyHeld=false; for(int i=0;i<349;i++) if(p->keys[i]){anyHeld=true;break;}
         p->_keyPressed=anyHeld;
-        p->g_currentMods = mods; // update on release too
-        p->keyReleased();
+        p->g_currentMods = mods;
+        // Fix A: translate key/keyCode atomically from k, not from stale globals
+        char16_t relKey; int relKeyCode;
+        translate_glfw_key(k, &relKey, &relKeyCode);
+        p->key = relKey; p->keyCode = relKeyCode;
+        p->keyReleased(); p->keyReleased(KeyEvent{p->key, p->keyCode, (p->g_currentMods&GLFW_MOD_SHIFT)!=0, (p->g_currentMods&GLFW_MOD_CONTROL)!=0, (p->g_currentMods&GLFW_MOD_ALT)!=0, (p->g_currentMods&GLFW_MOD_SUPER)!=0, KeyEvent::RELEASE});
     }
 }
 static void focus_cb(GLFWwindow*,int f){
