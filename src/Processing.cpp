@@ -3405,6 +3405,7 @@ void PApplet::run(){
         glfwSwapBuffers(w);
     });
     glfwMakeContextCurrent(gWindow);
+    glewExperimental = GL_TRUE; // required for core/compat profiles to load all function pointers
     GLenum glewErr = glewInit();
     if(glewErr != GLEW_OK){
 #ifdef _WIN32
