@@ -583,8 +583,7 @@ void PApplet::size(int w,int h,int renderer){
         glDepthFunc(GL_LESS);
         glDisable(GL_CULL_FACE);
         glFrontFace(GL_CW);
-        glEnable(GL_NORMALIZE);
-        glClearColor(0.8f,0.8f,0.8f,1); // Java Processing default grey (204,204,204)
+            glClearColor(0.8f,0.8f,0.8f,1); // Java Processing default grey (204,204,204)
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
         applyDefaultCamera();
     }
@@ -1792,7 +1791,6 @@ void PApplet::lights() {
     //   directionalLight(128, 128, 128,  0, 0, -1)
     // Result: shadow faces = 50% brightness, front face = 100%, sides interpolated.
     glEnable(GL_LIGHTING);
-    glEnable(GL_NORMALIZE);
     glEnable(GL_COLOR_MATERIAL);
     // GL_COLOR_MATERIAL drives AMBIENT_AND_DIFFUSE from fill color
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
@@ -1870,7 +1868,6 @@ void PApplet::ambientLight(float r, float g, float b, float x, float y, float z)
     GLfloat zero[]= { 0.0f, 0.0f, 0.0f, 1.0f };
 
     glEnable(GL_LIGHTING);
-    glEnable(GL_NORMALIZE);
     glEnable(GL_COLOR_MATERIAL);
     glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
     glEnable(lt);
@@ -1894,7 +1891,6 @@ void PApplet::directionalLight(float r, float g, float b, float nx, float ny, fl
     GLfloat zero[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
     glEnable(GL_LIGHTING);
-    glEnable(GL_NORMALIZE);
     glDisable(GL_COLOR_MATERIAL);
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
     glEnable(GL_COLOR_MATERIAL);
@@ -1928,7 +1924,6 @@ void PApplet::pointLight(float r, float g, float b, float x, float y, float z) {
     GLfloat zero[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
     glEnable(GL_LIGHTING);
-    glEnable(GL_NORMALIZE);
     glEnable(GL_COLOR_MATERIAL);
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
     glEnable(lt);
@@ -1959,7 +1954,6 @@ void PApplet::spotLight(float r, float g, float b,
     GLfloat zero[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
     glEnable(GL_LIGHTING);
-    glEnable(GL_NORMALIZE);
     glDisable(GL_COLOR_MATERIAL);
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
     glEnable(GL_COLOR_MATERIAL);
@@ -3426,10 +3420,6 @@ void PApplet::run(){
     if(phongProg){glDeleteProgram(phongProg);phongProg=0;}
     glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_DEPTH_TEST);
-#if !defined(__EMSCRIPTEN__) && defined(GL_SHADE_MODEL)
-    if (glShadeModel) glShadeModel(GL_SMOOTH);
-#endif
-    glEnable(GL_NORMALIZE);
     smooth();
     // Don't call setProjection here -- let size() in this->setup() do it
     // with the correct dimensions. Calling it now with winWidth=640,winHeight=480
@@ -3570,8 +3560,7 @@ void PApplet::run(){
             glDepthFunc(GL_LESS);
             glDisable(GL_CULL_FACE);
             glFrontFace(GL_CW);
-            glEnable(GL_NORMALIZE);
-            // Do NOT clear -- this->setup() already drew to the back buffer.
+                    // Do NOT clear -- this->setup() already drew to the back buffer.
             // Only clear if this->draw() will redraw everything (i.e. calls background()).
             applyDefaultCamera();
         } else {
@@ -3628,8 +3617,7 @@ void PApplet::run(){
                 glDepthFunc(GL_LESS);
                 glDisable(GL_CULL_FACE);
                 glFrontFace(GL_CW);
-                glEnable(GL_NORMALIZE);
-                // Do NOT clear color here -- the sketch calls background() itself.
+                            // Do NOT clear color here -- the sketch calls background() itself.
                 // Clearing color would erase anything drawn in this->setup().
                 flushPoints(); // flush any pending points from previous frame
             glClear(GL_DEPTH_BUFFER_BIT);
@@ -3802,8 +3790,7 @@ void PApplet::run(){
                 glDepthFunc(GL_LESS);
                 glDisable(GL_CULL_FACE);
                 glFrontFace(GL_CW);
-                glEnable(GL_NORMALIZE);
-                glClear(GL_DEPTH_BUFFER_BIT);
+                            glClear(GL_DEPTH_BUFFER_BIT);
                 p->applyDefaultCamera();
             } else {
                 glViewport(0, 0, p->winWidth, p->winHeight);
