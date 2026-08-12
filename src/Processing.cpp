@@ -24,8 +24,10 @@
 #include <iomanip>
 #include <sstream>
 #include <fstream>
-#include <thread>
 #include <chrono>
+#ifndef _WIN32
+#include <thread>
+#endif
 #include <vector>
 #include <array>
 #include <string>
@@ -555,7 +557,11 @@ void PApplet::size(int w,int h){
             #ifdef _WIN32
             Sleep(1);
             #elif !defined(__EMSCRIPTEN__)
+            #ifdef _WIN32
+            Sleep(1);
+            #else
             ::std::this_thread::sleep_for(::std::chrono::milliseconds(1));
+            #endif
             #endif
         }
         // Force coordinate system to requested size regardless of WM.
@@ -3767,7 +3773,13 @@ void PApplet::run(){
         auto now = ::std::chrono::steady_clock::now();
         double elapsed = ::std::chrono::duration<double>(now - last).count();
         double sl = targetFrameTime - elapsed;
-        if (sl > 0) ::std::this_thread::sleep_for(::std::chrono::duration<double>(sl));
+        if (sl > 0) {
+            #ifdef _WIN32
+            Sleep((DWORD)(sl * 1000.0));
+            #else
+            ::std::this_thread::sleep_for(::std::chrono::duration<double>(sl));
+            #endif
+        }
         auto frameEnd = ::std::chrono::steady_clock::now();
         double fullFrame = ::std::chrono::duration<double>(frameEnd - last).count();
         if (fullFrame > 0) _frameRate = (float)(1.0 / fullFrame);
