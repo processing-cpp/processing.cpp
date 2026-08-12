@@ -58,8 +58,16 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-glfw mingw-w64-x86_64-glew
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-glfw mingw-w64-x86_64-cmake mingw-w64-x86_64-make
 
+      - name: Build GLEW 2.3.1 from source
+        shell: msys2 {0}
+        run: |
+          curl -L https://github.com/nigels-com/glew/releases/download/glew-2.3.1/glew-2.3.1.tgz -o glew.tgz
+          tar xf glew.tgz
+          cd glew-2.3.1
+          make SYSTEM=mingw GLEW_DEST=/mingw64 install
+          cd ..
       - name: Build cache
         shell: msys2 {0}
         run: |
