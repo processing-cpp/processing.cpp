@@ -3362,8 +3362,12 @@ void PApplet::run(){
     this->settings();
 
     glfwWindowHint(GLFW_RESIZABLE,isResizable?GLFW_TRUE:GLFW_FALSE);
-    glfwWindowHint(GLFW_SAMPLES,4); // 4x MSAA for crisp P3D rendering; 2D noSmooth() disables at runtime
-    glfwWindowHint(GLFW_STENCIL_BITS,8);  // needed for concave shape fill
+    glfwWindowHint(GLFW_SAMPLES,4);
+    glfwWindowHint(GLFW_STENCIL_BITS,8);
+    // Request OpenGL 3.3 compatibility profile
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
     gWindow=glfwCreateWindow(winWidth,winHeight,g_sketchName.c_str(),nullptr,nullptr);
     if(!gWindow){
         const char* err="unknown"; (void)err;
@@ -3422,8 +3426,8 @@ void PApplet::run(){
     if(phongProg){glDeleteProgram(phongProg);phongProg=0;}
     glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_DEPTH_TEST);
-#ifndef __EMSCRIPTEN__
-    glShadeModel(GL_SMOOTH);
+#if !defined(__EMSCRIPTEN__) && defined(GL_SHADE_MODEL)
+    if (glShadeModel) glShadeModel(GL_SMOOTH);
 #endif
     glEnable(GL_NORMALIZE);
     smooth();
