@@ -40,11 +40,18 @@ public class CppRunner {
         // On Windows, add bundled DLL directory to PATH so the exe finds them at runtime
         String osName = System.getProperty("os.name", "").toLowerCase();
         if (osName.contains("win") && runtimeDir != null) {
+          String existingPath = pb.environment().getOrDefault("PATH", "");
+          StringBuilder winPath = new StringBuilder();
+          // Add sketch folder first (DLLs are copied here)
+          winPath.append(sketchFolder.getAbsolutePath()).append(";");
+          // Add WinLibs portable gcc bin (compiler runtime DLLs)
+          File portableBin = new File(System.getenv("APPDATA") + "\\CppMode\\gcc\\mingw64\\bin");
+          if (portableBin.exists()) winPath.append(portableBin.getAbsolutePath()).append(";");
+          // Add bundled libs
           File bundledLibs = new File(runtimeDir.getParentFile(), "libs/windows-x64");
-          if (bundledLibs.exists()) {
-            String existingPath = pb.environment().getOrDefault("PATH", "");
-            pb.environment().put("PATH", bundledLibs.getAbsolutePath() + ";" + existingPath);
-          }
+          if (bundledLibs.exists()) winPath.append(bundledLibs.getAbsolutePath()).append(";");
+          winPath.append(existingPath);
+          pb.environment().put("PATH", winPath.toString());
         }
         pb.environment().put("PROCESSING_SKETCH_NAME", sketchFolder.getName());
         pb.environment().put("PROCESSING_SKETCH_PATH",
