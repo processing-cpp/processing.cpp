@@ -150,7 +150,6 @@ public final class ErrorFormatter {
     if (msg.contains("expected identifier") || msg.contains("expected a type name")) {
       String _d = msg.replaceAll(".*(?:but found|before) '(.+?)'.*", "$1");
       if (_d.length() > 0 && Character.isDigit(_d.charAt(0))) return "names cannot start with a digit";
-    }
       java.util.Set<String> KW = new java.util.HashSet<>(java.util.Arrays.asList(
         "for","while","if","else","switch","case","return","break","continue",
         "class","struct","namespace","template","typename","auto","void",
@@ -158,7 +157,10 @@ public final class ErrorFormatter {
         "const","constexpr","static","inline","virtual","override","new","delete","this"));
       if (KW.contains(_d)) return "'"+_d+"' is a reserved keyword";
     }
-    if (msg.contains("expected ';' but found '") && msg.replaceAll(".*but found '(.+?)'.*", "$1").matches("[^a-zA-Z0-9_]+")) { String tok = msg.replaceAll(".*but found '(.+?)'.*", "$1"); return "invalid token '" + tok + "'"; }
+    if (msg.contains("expected ';' but found '")) {
+      String tok = msg.replaceAll(".*but found '(.+?)'.*", "$1");
+      if (tok.matches("[^a-zA-Z0-9_]+")) return "invalid token '" + tok + "'";
+    }
     if (msg.contains("expected ';'"))              return "missing ';' here";
     if (msg.contains("expected '(' before") || msg.contains("expected '(' but found"))  return "'(' is required after 'if'/'while'/'for'/'switch'";
     if (msg.contains("expected ')'"))                               return "missing ')' to close this";

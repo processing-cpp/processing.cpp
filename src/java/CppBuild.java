@@ -602,7 +602,7 @@ public class CppBuild {
     // Copy bundled macOS dylibs to sketch folder so the binary finds them at runtime.
     if (isMac) {
       String macArch2 = System.getProperty("os.arch","").contains("aarch64") ? "arm64" : "x64";
-      File macLibsDir2 = new File(runtimeDir.getParentFile(), "libs/macos"2);
+      File macLibsDir2 = new File(runtimeDir.getParentFile(), "libs/macos");
       if (macLibsDir2.exists()) {
         for (File dylib : macLibsDir2.listFiles((d,n) -> n.endsWith(".dylib"))) {
           File destDylib = new File(sketch.getFolder(), dylib.getName());

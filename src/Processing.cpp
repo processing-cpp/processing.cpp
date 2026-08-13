@@ -3405,8 +3405,14 @@ void PApplet::run(){
         glfwSwapBuffers(w);
     });
     glfwMakeContextCurrent(gWindow);
-    glewExperimental = GL_TRUE; // required for core/compat profiles to load all function pointers
+    glewExperimental = GL_TRUE;
+#ifdef _WIN32
+    MessageBoxA(NULL, "Before glewInit", "Debug1", MB_OK);
+#endif
     GLenum glewErr = glewInit();
+#ifdef _WIN32
+    MessageBoxA(NULL, "After glewInit", "Debug2", MB_OK);
+#endif
     if(glewErr != GLEW_OK){
 #ifdef _WIN32
         char msg[256]; snprintf(msg,sizeof(msg),"glewInit() failed: %s", glewGetErrorString(glewErr));
@@ -3421,7 +3427,13 @@ void PApplet::run(){
     if(phongProg){glDeleteProgram(phongProg);phongProg=0;}
     glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_DEPTH_TEST);
+#ifdef _WIN32
+    MessageBoxA(NULL, "After GL enable calls", "Debug3", MB_OK);
+#endif
     smooth();
+#ifdef _WIN32
+    MessageBoxA(NULL, "After smooth()", "Debug4", MB_OK);
+#endif
     // Don't call setProjection here -- let size() in this->setup() do it
     // with the correct dimensions. Calling it now with winWidth=640,winHeight=480
     // (defaults) would set the wrong ortho before this->setup() changes the size.
@@ -3499,6 +3511,9 @@ void PApplet::run(){
         }
     }
 
+#ifdef _WIN32
+    MessageBoxA(NULL, "Before glfwFocusWindow", "Debug5", MB_OK);
+#endif
     glfwFocusWindow(gWindow);  // ensure input focus on Windows
 
     // Settle loop: poll+swap several times BEFORE this->setup() runs so i3/tiling WMs
