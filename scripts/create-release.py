@@ -149,12 +149,45 @@ def download_cache_artifacts():
             files = [f.name for f in dest.iterdir()]
             print(f"  {platform}: {files}")
 
+
+def trigger_and_wait_cache_build():
+    """Trigger a new build-cache CI run and wait for it to complete."""
+    import time
+    print("Triggering build-cache CI run...")
+    r = subprocess.run(
+        ["gh", "workflow", "run", "build-cache.yml", "--repo", repo],
+        capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        print(f"  WARNING: Could not trigger build-cache: {r.stderr.strip()}")
+        return
+    time.sleep(8)
+    r2 = subprocess.run(
+        ["gh", "run", "list", "--repo", repo, "--workflow", "build-cache.yml",
+         "--limit", "1", "--json", "databaseId"],
+        capture_output=True, text=True
+    )
+    run_id = json.loads(r2.stdout)[0]["databaseId"]
+    print(f"  Waiting for run {run_id}...")
+    while True:
+        r3 = subprocess.run(
+            ["gh", "run", "view", str(run_id), "--repo", repo, "--json", "status,conclusion"],
+            capture_output=True, text=True
+        )
+        data = json.loads(r3.stdout)
+        if data["status"] == "completed":
+            print(f"  Done: {data['conclusion']}")
+            return
+        print(f"  {data['status']}... waiting 15s")
+        time.sleep(15)
+
 def main():
     version = sys.argv[1] if len(sys.argv) > 1 else None
     if version:
         bump_version_files(version)
+    trigger_and_wait_cache_build()
     download_cache_artifacts()
-    zip_name = f"CppMode-{version}.zip" if version else "CppMode.zip"
+    zip_name = "CppMode.zip"
     zip_path = os.path.join(OUTPUT_DIR, zip_name)
 
     if os.path.exists(zip_path):
