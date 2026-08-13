@@ -3504,7 +3504,8 @@ void PApplet::run(){
     glClearColor(0.8f,0.8f,0.8f,1);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     glfwSwapBuffers(gWindow);
-#ifndef __EMSCRIPTEN__
+#ifndef _WIN32
+    // Settle loop for tiling WMs (i3 etc) -- not needed on Windows
     for (int _settle = 0; _settle < 5; _settle++) {
         glClearColor(0.8f,0.8f,0.8f,1);
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
