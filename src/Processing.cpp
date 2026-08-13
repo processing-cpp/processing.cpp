@@ -3332,9 +3332,6 @@ void PApplet::run(){
     ::std::srand((unsigned)::std::time(nullptr));
     initPerlin(0); // initialize noise table with default seed
 
-#ifdef _WIN32
-    MessageBoxA(NULL, "Before glfwInit", "Debug-1", MB_OK);
-#endif
     if(!glfwInit()){
         fprintf(stderr, "[ERR] glfwInit() failed. Make sure libglfw3.dll is next to ide.exe\n");
 #ifdef _WIN32
@@ -3361,13 +3358,6 @@ void PApplet::run(){
     glfwWindowHint(GLFW_RESIZABLE,isResizable?GLFW_TRUE:GLFW_FALSE);
     glfwWindowHint(GLFW_SAMPLES,4);
     glfwWindowHint(GLFW_STENCIL_BITS,8);
-    // Request OpenGL 3.3 compatibility profile
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
-#ifdef _WIN32
-    MessageBoxA(NULL, "Before glfwCreateWindow", "Debug0", MB_OK);
-#endif
     gWindow=glfwCreateWindow(winWidth,winHeight,g_sketchName.c_str(),nullptr,nullptr);
     if(!gWindow){
         const char* err="unknown"; (void)err;
@@ -3412,13 +3402,7 @@ void PApplet::run(){
     });
     glfwMakeContextCurrent(gWindow);
     glewExperimental = GL_TRUE;
-#ifdef _WIN32
-    MessageBoxA(NULL, "Before glewInit", "Debug1", MB_OK);
-#endif
     GLenum glewErr = glewInit();
-#ifdef _WIN32
-    MessageBoxA(NULL, "After glewInit", "Debug2", MB_OK);
-#endif
     if(glewErr != GLEW_OK){
 #ifdef _WIN32
         char msg[256]; snprintf(msg,sizeof(msg),"glewInit() failed: %s", glewGetErrorString(glewErr));
@@ -3433,38 +3417,17 @@ void PApplet::run(){
     if(phongProg){glDeleteProgram(phongProg);phongProg=0;}
     glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_DEPTH_TEST);
-#ifdef _WIN32
-    MessageBoxA(NULL, "After GL enable calls", "Debug3", MB_OK);
-#endif
-#ifdef _WIN32
-    MessageBoxA(NULL, "Before getFramebufferSize", "Debug4x", MB_OK);
-#endif
     // Don't call setProjection here -- let size() in this->setup() do it
     // with the correct dimensions. Calling it now with winWidth=640,winHeight=480
     // (defaults) would set the wrong ortho before this->setup() changes the size.
     {int fw,fh;glfwGetFramebufferSize(gWindow,&fw,&fh);pixelWidth=fw;pixelHeight=fh;fbW=fw>0?fw:logicalW;fbH=fh>0?fh:logicalH;}
-#ifdef _WIN32
-    MessageBoxA(NULL, "After getFramebufferSize", "Debug4y", MB_OK);
-#endif
 
     // Enable sticky keys/buttons: GLFW will keep state as PRESSED until polled,
     // Clear both buffers once at startup so the sketch starts with
     // a known clean state (no GPU garbage in either buffer).
-#ifdef _WIN32
-    MessageBoxA(NULL, "Before glClearColor", "Debug4a", MB_OK);
-#endif
     glClearColor(0.8f,0.8f,0.8f,1);
-#ifdef _WIN32
-    MessageBoxA(NULL, "Before first glClear", "Debug4b", MB_OK);
-#endif
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-#ifdef _WIN32
-    MessageBoxA(NULL, "Before glfwSwapBuffers", "Debug4c", MB_OK);
-#endif
     glfwSwapBuffers(gWindow);
-#ifdef _WIN32
-    MessageBoxA(NULL, "After glfwSwapBuffers", "Debug4e", MB_OK);
-#endif
     // preventing missed inputs on Windows where events can arrive between polls.
     glfwSetInputMode(gWindow, GLFW_STICKY_KEYS, GLFW_TRUE);
     glfwSetInputMode(gWindow, GLFW_STICKY_MOUSE_BUTTONS, GLFW_TRUE);
@@ -3477,9 +3440,6 @@ void PApplet::run(){
     glfwSetWindowSizeCallback(gWindow,  winsize_cb);
     glfwSetWindowFocusCallback(gWindow, focus_cb);
     glfwSetWindowPosCallback(gWindow,   winpos_cb);
-#ifdef _WIN32
-    MessageBoxA(NULL, "After callbacks", "Debug4f", MB_OK);
-#endif
     focused=(glfwGetWindowAttrib(gWindow,GLFW_FOCUSED)==GLFW_TRUE);
 
     // Auto-load default.ttf from project root as the default font
@@ -3532,10 +3492,7 @@ void PApplet::run(){
         }
     }
 
-#ifdef _WIN32
-    MessageBoxA(NULL, "Before glfwFocusWindow", "Debug5", MB_OK);
-#endif
-    glfwFocusWindow(gWindow);  // ensure input focus on Windows
+    glfwFocusWindow(gWindow);
 
     // Settle loop: poll+swap several times BEFORE this->setup() runs so i3/tiling WMs
     // fully resize the window first. winsize_cb fires during these polls and
@@ -3545,8 +3502,6 @@ void PApplet::run(){
     // Initialize the framebuffer before the settle loop -- required on Windows
     // to avoid swapping an uninitialized back buffer which crashes the driver.
     glClearColor(0.8f,0.8f,0.8f,1);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-    glfwSwapBuffers(gWindow);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     glfwSwapBuffers(gWindow);
 #ifndef __EMSCRIPTEN__
