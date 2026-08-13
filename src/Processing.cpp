@@ -3332,6 +3332,9 @@ void PApplet::run(){
     ::std::srand((unsigned)::std::time(nullptr));
     initPerlin(0); // initialize noise table with default seed
 
+#ifdef _WIN32
+    MessageBoxA(NULL, "Before glfwInit", "Debug-1", MB_OK);
+#endif
     if(!glfwInit()){
         fprintf(stderr, "[ERR] glfwInit() failed. Make sure libglfw3.dll is next to ide.exe\n");
 #ifdef _WIN32
@@ -3362,6 +3365,9 @@ void PApplet::run(){
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
+#ifdef _WIN32
+    MessageBoxA(NULL, "Before glfwCreateWindow", "Debug0", MB_OK);
+#endif
     gWindow=glfwCreateWindow(winWidth,winHeight,g_sketchName.c_str(),nullptr,nullptr);
     if(!gWindow){
         const char* err="unknown"; (void)err;
