@@ -87,6 +87,17 @@ static void _gluLookAt(double ex,double ey,double ez,
 }
 
 // stb_truetype -- drop stb_truetype.h next to this file for TTF font rendering.
+// Workaround for MinGW 14+ locale initialization crash on Windows
+#ifdef _WIN32
+struct _LocaleInit {
+    _LocaleInit() {
+        // Initialize locale early to prevent crash in ios_base::_M_init
+        try { ::std::locale::global(::std::locale("C")); } catch(...) {}
+    }
+};
+static _LocaleInit _locale_init_instance;
+#endif
+
 // default.ttf in the project root is loaded automatically as the default font.
 
 
@@ -148,7 +159,8 @@ static void _doEnableDebugConsole() {
 }
 void enableDebugConsole() { _doEnableDebugConsole(); }
 
-static ::std::string _s_objDir; // OBJ loader scratch
+static ::std::string* _s_objDir_ptr = nullptr;
+static ::std::string& _s_objDir = *(_s_objDir_ptr ? _s_objDir_ptr : (_s_objDir_ptr = new ::std::string()));
 
 static const int PERLIN_YWRAPB = 4;
 static const int PERLIN_YWRAP  = 1 << PERLIN_YWRAPB;  // 16
@@ -3402,6 +3414,7 @@ void PApplet::run(){
     });
     glfwMakeContextCurrent(gWindow);
     glewExperimental = GL_TRUE;
+    glewExperimental = GL_TRUE;
     GLenum glewErr = glewInit();
     if(glewErr != GLEW_OK){
 #ifdef _WIN32
@@ -3440,6 +3453,9 @@ void PApplet::run(){
     glfwSetWindowSizeCallback(gWindow,  winsize_cb);
     glfwSetWindowFocusCallback(gWindow, focus_cb);
     glfwSetWindowPosCallback(gWindow,   winpos_cb);
+#ifdef _WIN32
+    __try {
+#endif
     focused=(glfwGetWindowAttrib(gWindow,GLFW_FOCUSED)==GLFW_TRUE);
 
     // Auto-load default.ttf from project root as the default font
@@ -3493,6 +3509,13 @@ void PApplet::run(){
     }
 
     glfwFocusWindow(gWindow);
+#ifdef _WIN32
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        char msg[512];
+        snprintf(msg,sizeof(msg),"SEH Exception 0x%08lX\n\nThis crash occurred during window initialization.\nPlease report this to the CppMode developers.", GetExceptionCode());
+        MessageBoxA(NULL,msg,"CppMode Crash",MB_OK|MB_ICONERROR);
+    }
+#endif
 
     // Settle loop: poll+swap several times BEFORE this->setup() runs so i3/tiling WMs
     // fully resize the window first. winsize_cb fires during these polls and
@@ -4768,7 +4791,8 @@ PFont PApplet::loadFont(const ::std::string& filename) {
 }
 
 // createFont -- creates font from a name/path and size
-static ::std::vector<PFont> _fontPool;
+static ::std::vector<PFont>* _fontPool_ptr = nullptr;
+static ::std::vector<PFont>& _fontPool = *(_fontPool_ptr ? _fontPool_ptr : (_fontPool_ptr = new ::std::vector<PFont>()));
 PFont* PApplet::createFont(const ::std::string& name, float size, bool /*smooth*/) {
     PFont f(name, size);
     // Try as file path first, then common system paths
