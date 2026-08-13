@@ -1538,7 +1538,7 @@ public class CppBuild {
     out.append("#include <windows.h>\n");
     out.append("int main() {\n");
     out.append("    #ifdef _WIN32\n");
-    out.append("    ::ShowWindow(::GetConsoleWindow(), SW_HIDE);\n");
+    out.append("    ::FreeConsole();\n");
     out.append("    #endif\n");
     out.append("    Processing::Sketch sketch;\n");
     out.append("    sketch.run();\n");
@@ -3196,7 +3196,8 @@ public class CppBuild {
         "-lglfw3", "-lglew32", "-lopengl32", "-lglu32",
         "-lcomdlg32", "-lshell32", "-lole32", "-luuid",
         "-pthread", "-D_USE_MATH_DEFINES",
-        "-Wl,--subsystem,windows");
+        "-Wl,--subsystem,windows",
+        "-Wl,--allow-multiple-definition");
     } else if (mac) {
       // macOS: prefer bundled dylibs shipped with the mode (libs/macos)
       // universal dylibs work on both arm64 and x64.
