@@ -3463,10 +3463,8 @@ void PApplet::run(){
 #endif
     glfwSwapBuffers(gWindow);
 #ifdef _WIN32
-    MessageBoxA(NULL, "Before second glClear", "Debug4d", MB_OK);
+    MessageBoxA(NULL, "After glfwSwapBuffers", "Debug4e", MB_OK);
 #endif
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-
     // preventing missed inputs on Windows where events can arrive between polls.
     glfwSetInputMode(gWindow, GLFW_STICKY_KEYS, GLFW_TRUE);
     glfwSetInputMode(gWindow, GLFW_STICKY_MOUSE_BUTTONS, GLFW_TRUE);
@@ -3479,6 +3477,9 @@ void PApplet::run(){
     glfwSetWindowSizeCallback(gWindow,  winsize_cb);
     glfwSetWindowFocusCallback(gWindow, focus_cb);
     glfwSetWindowPosCallback(gWindow,   winpos_cb);
+#ifdef _WIN32
+    MessageBoxA(NULL, "After callbacks", "Debug4f", MB_OK);
+#endif
     focused=(glfwGetWindowAttrib(gWindow,GLFW_FOCUSED)==GLFW_TRUE);
 
     // Auto-load default.ttf from project root as the default font

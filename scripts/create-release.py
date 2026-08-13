@@ -79,6 +79,38 @@ def bump_version_files(tag):
             out.writelines(new_lines)
         print(f"Updated {path}: {pretty_key}={tag}, version bumped by 1")
 
+def trigger_and_wait_cache_build():
+    """Trigger a new build-cache CI run and wait for it to complete."""
+    import time
+    print("Triggering build-cache CI run...")
+    r = subprocess.run(
+        ["gh", "workflow", "run", "build-cache.yml", "--repo", repo],
+        capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        print(f"  WARNING: Could not trigger build-cache: {r.stderr.strip()}")
+        return None
+    time.sleep(5)  # wait for run to register
+    r2 = subprocess.run(
+        ["gh", "run", "list", "--repo", repo, "--workflow", "build-cache.yml",
+         "--limit", "1", "--json", "databaseId,status"],
+        capture_output=True, text=True
+    )
+    if r2.returncode != 0: return None
+    run_id = json.loads(r2.stdout)[0]["databaseId"]
+    print(f"  Waiting for run {run_id} to complete...")
+    while True:
+        r3 = subprocess.run(
+            ["gh", "run", "view", str(run_id), "--repo", repo, "--json", "status,conclusion"],
+            capture_output=True, text=True
+        )
+        data = json.loads(r3.stdout)
+        if data["status"] == "completed":
+            print(f"  Run {run_id} completed with: {data['conclusion']}")
+            return run_id if data["conclusion"] == "success" else None
+        print(f"  Status: {data['status']}... waiting 15s")
+        time.sleep(15)
+
 def download_cache_artifacts():
     """Download precompiled .o files from latest successful build-cache CI run."""
     import subprocess, json
