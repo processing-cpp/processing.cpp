@@ -3498,9 +3498,7 @@ void PApplet::run(){
     // fully resize the window first. winsize_cb fires during these polls and
     // sets the correct viewport. After settling, this->setup() and this->draw() use the
     // correct dimensions from the start -- no shifted first frame.
-    _setupDone = true; // enable winsize_cb to update projection during settle
-    // Initialize the framebuffer before the settle loop -- required on Windows
-    // to avoid swapping an uninitialized back buffer which crashes the driver.
+    // Initialize the framebuffer
     glClearColor(0.8f,0.8f,0.8f,1);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     glfwSwapBuffers(gWindow);
@@ -3513,6 +3511,7 @@ void PApplet::run(){
         glfwSwapBuffers(gWindow);
     }
 #endif
+    _setupDone = true; // enable winsize_cb to update projection after settle
     if (!defaultP3D) setProjection(winWidth, winHeight);
 
     this->setup();
