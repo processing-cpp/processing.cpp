@@ -3453,9 +3453,6 @@ void PApplet::run(){
     glfwSetWindowSizeCallback(gWindow,  winsize_cb);
     glfwSetWindowFocusCallback(gWindow, focus_cb);
     glfwSetWindowPosCallback(gWindow,   winpos_cb);
-#ifdef _WIN32
-    __try {
-#endif
     focused=(glfwGetWindowAttrib(gWindow,GLFW_FOCUSED)==GLFW_TRUE);
 
     // Auto-load default.ttf from project root as the default font
@@ -3509,13 +3506,6 @@ void PApplet::run(){
     }
 
     glfwFocusWindow(gWindow);
-#ifdef _WIN32
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
-        char msg[512];
-        snprintf(msg,sizeof(msg),"SEH Exception 0x%08lX\n\nThis crash occurred during window initialization.\nPlease report this to the CppMode developers.", GetExceptionCode());
-        MessageBoxA(NULL,msg,"CppMode Crash",MB_OK|MB_ICONERROR);
-    }
-#endif
 
     // Settle loop: poll+swap several times BEFORE this->setup() runs so i3/tiling WMs
     // fully resize the window first. winsize_cb fires during these polls and
