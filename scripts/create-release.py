@@ -82,6 +82,7 @@ def bump_version_files(tag):
 def trigger_and_wait_cache_build():
     """Trigger a new build-cache CI run and wait for it to complete."""
     import subprocess, json, time
+    repo = "processing-cpp/processing.cpp"
     print("Triggering build-cache CI run...")
     r = subprocess.run(
         ["gh", "workflow", "run", "build-cache.yml", "--repo", repo],
@@ -153,6 +154,7 @@ def download_cache_artifacts():
 def trigger_and_wait_cache_build():
     """Trigger a new build-cache CI run and wait for it to complete."""
     import subprocess, json, time
+    repo = "processing-cpp/processing.cpp"
     print("Triggering build-cache CI run...")
     r = subprocess.run(
         ["gh", "workflow", "run", "build-cache.yml", "--repo", repo],
