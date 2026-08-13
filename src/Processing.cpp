@@ -684,7 +684,7 @@ void PApplet::smooth(int level) {
     smoothLevel = level;
 #ifndef __EMSCRIPTEN__
     glEnable(GL_LINE_SMOOTH);glHint(GL_LINE_SMOOTH_HINT,GL_NICEST);
-    glEnable(GL_POINT_SMOOTH);glHint(GL_POINT_SMOOTH_HINT,GL_NICEST);
+    // GL_POINT_SMOOTH removed in OpenGL 3.2+ core -- skip to avoid crash
     glEnable(GL_MULTISAMPLE);
 #endif
 }
@@ -3436,21 +3436,35 @@ void PApplet::run(){
 #ifdef _WIN32
     MessageBoxA(NULL, "After GL enable calls", "Debug3", MB_OK);
 #endif
-    smooth();
 #ifdef _WIN32
-    MessageBoxA(NULL, "After smooth()", "Debug4", MB_OK);
+    MessageBoxA(NULL, "Before getFramebufferSize", "Debug4x", MB_OK);
 #endif
     // Don't call setProjection here -- let size() in this->setup() do it
     // with the correct dimensions. Calling it now with winWidth=640,winHeight=480
     // (defaults) would set the wrong ortho before this->setup() changes the size.
     {int fw,fh;glfwGetFramebufferSize(gWindow,&fw,&fh);pixelWidth=fw;pixelHeight=fh;fbW=fw>0?fw:logicalW;fbH=fh>0?fh:logicalH;}
+#ifdef _WIN32
+    MessageBoxA(NULL, "After getFramebufferSize", "Debug4y", MB_OK);
+#endif
 
     // Enable sticky keys/buttons: GLFW will keep state as PRESSED until polled,
     // Clear both buffers once at startup so the sketch starts with
     // a known clean state (no GPU garbage in either buffer).
-    glClearColor(0.8f,0.8f,0.8f,1); // Java Processing default grey
+#ifdef _WIN32
+    MessageBoxA(NULL, "Before glClearColor", "Debug4a", MB_OK);
+#endif
+    glClearColor(0.8f,0.8f,0.8f,1);
+#ifdef _WIN32
+    MessageBoxA(NULL, "Before first glClear", "Debug4b", MB_OK);
+#endif
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+#ifdef _WIN32
+    MessageBoxA(NULL, "Before glfwSwapBuffers", "Debug4c", MB_OK);
+#endif
     glfwSwapBuffers(gWindow);
+#ifdef _WIN32
+    MessageBoxA(NULL, "Before second glClear", "Debug4d", MB_OK);
+#endif
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 
     // preventing missed inputs on Windows where events can arrive between polls.

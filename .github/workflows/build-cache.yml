@@ -27,10 +27,13 @@ jobs:
       - name: Build cache
         run: |
           mkdir -p cache/linux-x64
+          # Download GLEW 2.3.1 headers to match bundled DLL
+          curl -L https://github.com/nigels-com/glew/releases/download/glew-2.3.1/glew-2.3.1.tgz -o glew.tgz
+          tar xf glew.tgz
           CFLAGS="-std=c++2c -O2 -march=x86-64"
           LFLAGS="-static-libgcc -static-libstdc++"
           DEFS="-DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE"
-          INC="-I src"
+          INC="-I src -I glew-2.3.1/include"
 
           echo "Building Processing.h.gch..."
           g++ $CFLAGS $DEFS $INC -x c++-header src/Processing.h -o cache/linux-x64/Processing.h.gch
@@ -64,10 +67,13 @@ jobs:
         shell: msys2 {0}
         run: |
           mkdir -p cache/windows-x64
+          # Download GLEW 2.3.1 headers to match bundled DLL
+          curl -L https://github.com/nigels-com/glew/releases/download/glew-2.3.1/glew-2.3.1.tgz -o glew.tgz
+          tar xf glew.tgz
           CFLAGS="-std=c++2c -O2 -march=x86-64"
           LFLAGS="-static-libgcc -static-libstdc++"
           DEFS="-DPROCESSING_HAS_STB_IMAGE -DPROCESSING_HAS_STB_TRUETYPE"
-          INC="-I src"
+          INC="-I src -I glew-2.3.1/include"
 
           echo "Building Processing.h.gch..."
           g++ $CFLAGS $DEFS $INC -x c++-header src/Processing.h -o cache/windows-x64/Processing.h.gch
