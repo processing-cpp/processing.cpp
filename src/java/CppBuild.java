@@ -654,7 +654,7 @@ public class CppBuild {
 
   private void checkWindowsDLLs(RunnerListener listener, File binary) throws Exception {
     String[] allDlls = { "glfw3.dll", "glew32.dll",
-        "libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll", "libssp-0.dll" };
+        "libgcc_s_seh-1.dll", "libwinpthread-1.dll", "libssp-0.dll" };
     String[] required = { "glfw3.dll", "glew32.dll" };
 
     // Bundled DLLs are in libs/windows-x64 -- copy them next to the binary
@@ -3183,16 +3183,18 @@ public class CppBuild {
     if (stbTTF.exists()) cmd.add("-DPROCESSING_HAS_STB_TRUETYPE");
 
     if (win) {
-      // Link against bundled import libs in libs/windows-x64/
-      File winLibs = new File(runtimeDir.getParentFile(), "libs/windows-x64");
-      if (winLibs.exists()) cmd.add("-L" + winLibs.getAbsolutePath());
-      // Also add WinLibs portable gcc bin dir for runtime DLLs
+      // Link against import libs: WinLibs first, then bundled, then MSYS2
       File portableBin = InstallWizard.getPortableGccDir();
       if (portableBin.exists()) cmd.add("-L" + portableBin.getAbsolutePath());
+      // Add sketch folder to -L so DLLs copied there can be linked directly
+      cmd.add("-L" + sketch.getFolder().getAbsolutePath());
+      File winLibs = new File(runtimeDir.getParentFile(), "libs/windows-x64");
+      if (winLibs.exists()) cmd.add("-L" + winLibs.getAbsolutePath());
       Collections.addAll(cmd,
         "-lglfw3", "-lglew32", "-lopengl32", "-lglu32",
         "-lcomdlg32", "-lshell32", "-lole32", "-luuid",
-        "-mwindows", "-pthread", "-D_USE_MATH_DEFINES");
+        "-mwindows", "-pthread", "-D_USE_MATH_DEFINES",
+        "-static-libgcc", "-static-libstdc++");
     } else if (mac) {
       // macOS: prefer bundled dylibs shipped with the mode (libs/macos)
       // universal dylibs work on both arm64 and x64.
