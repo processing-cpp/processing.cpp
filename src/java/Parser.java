@@ -551,6 +551,16 @@ public final class Parser {
             }
         }
 
+        // Bare statement at top level: control-flow keywords can only be statements,
+        // never declarations. Route directly to statement parsing (static-mode sketches).
+        if (checkKeyword("for") || checkKeyword("while") || checkKeyword("do") ||
+            checkKeyword("if") || checkKeyword("switch") || checkKeyword("return") ||
+            checkKeyword("break") || checkKeyword("continue") ||
+            checkKeyword("try") || checkKeyword("throw")) {
+            CppLexerToken start = peek();
+            Statement stmt = parseStatement(leadingComments);
+            return List.of(new TopLevelStatement(stmt, start.line(), start.col(), leadingComments));
+        }
         return parseFunctionOrVariable(leadingComments, templateParams, true);
     }
 
@@ -866,11 +876,9 @@ public final class Parser {
         // "class HScrollbar { ... }" has no trailing ';' at all. Processing's
         // own preprocessing tolerates this; this parser does too rather than
         // hard-requiring strict C++ grammar here.
-        matchPunct(";");
-
         TypeDef typeDef = new TypeDef(kind, name, templateParams, baseClasses, members, start.line(), start.col(), leadingComments);
         // Trailing declarators: "class Foo { ... } *ptr;" or "} a, b, *c;"
-        // Only enter if next token is an identifier or pointer star, not a keyword.
+        // Only enter if there is NO trailing semicolon yet.
         boolean nextIsDeclarator = checkOp("*") || checkPunct("*")
             || peek().type() == CppLexerTokenType.IDENTIFIER;
         if (!matchPunct(";") && !isAtEnd() && !checkPunct("}") && nextIsDeclarator) {
@@ -1519,8 +1527,30 @@ public final class Parser {
                 || checkKeyword("operator")) {
                 return true;
             }
-            // Constructor: type name followed by ( -- "RGBA(...)" inside struct RGBA
-            if (checkPunct("(")) return true;
+            // If the parsed type has template args (e.g. ArrayList<Ball>),
+            // it is unambiguously a declaration — template types are never bare calls.
+            if (type instanceof NamedType nt2 && !nt2.templateArgs().isEmpty()) return true;
+            // Constructor or bare call: type name followed by (
+            // Disambiguate: scan ahead to find matching ) then check next token.
+            // If next is { or : it's a constructor/function definition.
+            // If next is ; or another statement-like token it's a bare call.
+            if (checkPunct("(")) {
+                int scan = pos + 1; int depth = 1;
+                while (scan < tokens.size() && depth > 0) {
+                    if (tokens.get(scan).isPunct("(")) depth++;
+                    else if (tokens.get(scan).isPunct(")")) depth--;
+                    scan++;
+                }
+                // scan is now after the closing )
+                if (scan < tokens.size()) {
+                    String after = tokens.get(scan).text();
+                    // Function/constructor definition: followed by { or :
+                    if (after.equals("{") || after.equals(":")) return true;
+                    // Bare call statement: followed by ; or next statement
+                    return false;
+                }
+                return true;
+            }
             return check(CppLexerTokenType.IDENTIFIER);
         } finally {
             pos = save;

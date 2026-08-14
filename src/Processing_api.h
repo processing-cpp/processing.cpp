@@ -184,3 +184,23 @@ inline void exit_sketch()                              { if(::Processing::PApple
 // For now we define them since most sketches need width/height as globals.
 // PImage members can be accessed via the struct directly: (*img).height
 // or by temporarily undefining: #undef height ... 
+// ── Environment variables as free values ─────────────────────────────────────
+// These let user-defined classes (hoisted outside _PSketch) access
+// width/height/mouseX/mouseY/frameCount etc. as free variables.
+namespace {
+  struct _FreeWidth    { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->logicalW     : 0;    } } width;
+  struct _FreeHeight   { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->logicalH     : 0;    } } height;
+  struct _FreeMouseX   { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseX       : 0.f;  } } mouseX;
+  struct _FreeMouseY   { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseY       : 0.f;  } } mouseY;
+  struct _FreePMouseX  { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->pmouseX      : 0.f;  } } pmouseX;
+  struct _FreePMouseY  { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->pmouseY      : 0.f;  } } pmouseY;
+  struct _FreeFC       { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->frameCount   : 0;    } } frameCount;
+  struct _FreeKey      { operator char()  const { return ::Processing::PApplet::g_papplet ? (char)::Processing::PApplet::g_papplet->key    : 0;    } } key;
+  struct _FreeKeyCode  { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->keyCode      : 0;    } } keyCode;
+  struct _FreeMB       { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseButton  : 0;    } } mouseButton;
+  struct _FreeMP       { operator bool()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_mousePressed : false; } } mousePressed;
+  struct _FreeKP       { operator bool()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_keyPressed   : false; } } keyPressed;
+  struct _FreeFR       { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_frameRate    : 0.f;  } } frameRate;
+  struct _FreeMDX      { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseDX       : 0.f;  } } mouseDX;
+  struct _FreeMDY      { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseDY       : 0.f;  } } mouseDY;
+} // namespace

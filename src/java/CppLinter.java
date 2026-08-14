@@ -151,10 +151,51 @@ public class CppLinter {
             sb.append("using namespace std;\n");
             sb.append("namespace Processing {\n");
             sb.append("using namespace std;\n");
-            sb.append("struct _PSketch : public PApplet {\n");
-            sb.append("#line 1 \"sketch.pde\"\n");
-            sb.append(code);
-            sb.append("\n};\n");
+            boolean hasSetup = code.contains("void setup(") || code.contains("void draw(");
+            if (hasSetup) {
+                sb.append("#include \"Processing_api.h\"\n");
+                // Hoist top-level class/struct/union definitions before _PSketch
+                // so their methods can call Processing API free functions.
+                StringBuilder hoisted = new StringBuilder();
+                StringBuilder rest = new StringBuilder();
+                String[] lintLines = code.split("\n", -1);
+                int li = 0;
+                while (li < lintLines.length) {
+                    String lt = lintLines[li].strip();
+                    if ((lt.startsWith("class ") || lt.startsWith("struct ") || lt.startsWith("union "))
+                            && !lt.endsWith(";")) {
+                        // Consume until matching closing };
+                        int depth = 0; boolean found = false;
+                        StringBuilder block = new StringBuilder();
+                        while (li < lintLines.length) {
+                            String bl = lintLines[li];
+                            block.append(bl).append("\n");
+                            for (char ch : bl.toCharArray()) {
+                                if (ch == '{') depth++;
+                                else if (ch == '}') { depth--; if (depth == 0) found = true; }
+                            }
+                            li++;
+                            if (found) { if (li < lintLines.length && lintLines[li].strip().equals(";")) { block.append(lintLines[li]).append("\n"); li++; } break; }
+                        }
+                        hoisted.append(block);
+                    } else {
+                        rest.append(lintLines[li]).append("\n");
+                        li++;
+                    }
+                }
+                sb.append(hoisted);
+                sb.append("struct _PSketch : public PApplet {\n");
+                sb.append("#line 1 \"sketch.pde\"\n");
+                sb.append(rest);
+                sb.append("\n};\n");
+            } else {
+                // Static sketch: bare statements at file scope — wrap in a function
+                sb.append("struct _PSketch : public PApplet {\n");
+                sb.append("void setup() override {\n");
+                sb.append("#line 1 \"sketch.pde\"\n");
+                sb.append(code);
+                sb.append("\n}\n};\n");
+            }
             sb.append("} // namespace Processing\n");
 
             tmp = Files.createTempFile("cppmode_lint_", ".cpp");
