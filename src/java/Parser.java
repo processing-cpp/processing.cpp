@@ -3237,6 +3237,19 @@ public final class Parser {
         try {
             if (!checkOp("<")) return false;
             advance();
+            // A bare integer/float literal immediately after < is a comparison, not a template.
+            // e.g. "neighbours < 2" -- never a template arg list.
+            if (check(CppLexerTokenType.INT_LITERAL) || check(CppLexerTokenType.FLOAT_LITERAL)) return false;
+            // If next token is an identifier followed by && or ||, it's a comparison chain
+            if (check(CppLexerTokenType.IDENTIFIER) && pos + 1 < tokens.size()) {
+                String next = tokens.get(pos + 1).text();
+                // Comparison/logical operators after identifier = not a template
+                if (next.equals("&&") || next.equals("||") || next.equals(">") ||
+                    next.equals(">=") || next.equals("<=") || next.equals("!=") ||
+                    next.equals("==") || next.equals("+") || next.equals("-") ||
+                    next.equals("*") || next.equals("/") || next.equals("%") ||
+                    next.equals(")") || next.equals("]") || next.equals(";")) return false;
+            }
             int depth = 1;
             int parenDepth = 0;
             int braceDepth = 0;

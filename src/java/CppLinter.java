@@ -154,39 +154,47 @@ public class CppLinter {
             boolean hasSetup = code.contains("void setup(") || code.contains("void draw(");
             if (hasSetup) {
                 sb.append("#include \"Processing_api.h\"\n");
-                // Hoist top-level class/struct/union definitions before _PSketch
-                // so their methods can call Processing API free functions.
-                StringBuilder hoisted = new StringBuilder();
-                StringBuilder rest = new StringBuilder();
-                String[] lintLines = code.split("\n", -1);
-                int li = 0;
-                while (li < lintLines.length) {
-                    String lt = lintLines[li].strip();
-                    if ((lt.startsWith("class ") || lt.startsWith("struct ") || lt.startsWith("union "))
-                            && !lt.endsWith(";")) {
-                        // Consume until matching closing };
-                        int depth = 0; boolean found = false;
-                        StringBuilder block = new StringBuilder();
-                        while (li < lintLines.length) {
-                            String bl = lintLines[li];
-                            block.append(bl).append("\n");
-                            for (char ch : bl.toCharArray()) {
-                                if (ch == '{') depth++;
-                                else if (ch == '}') { depth--; if (depth == 0) found = true; }
-                            }
-                            li++;
-                            if (found) { if (li < lintLines.length && lintLines[li].strip().equals(";")) { block.append(lintLines[li]).append("\n"); li++; } break; }
-                        }
-                        hoisted.append(block);
-                    } else {
-                        rest.append(lintLines[li]).append("\n");
-                        li++;
+                // Use ClassHoister (same as real build) to separate classes from sketch code
+                StringBuilder hoistedSb = new StringBuilder();
+                StringBuilder sketchSb  = new StringBuilder();
+                try {
+                    CompilationUnit lintCu = Parser.parse(code);
+                    ClassHoister.Result hr = ClassHoister.hoist(lintCu.items());
+                    for (TypeDef td : hr.hoistedClasses) {
+                        hoistedSb.append(CodeGen.generateNode(td, 0));
                     }
+                    for (TopLevelItem item : hr.rest) {
+                        if (item instanceof VariableDecl vd && vd.name().contains("::"))
+                            hoistedSb.append(CodeGen.generateNode(item, 0));
+                        else
+                            sketchSb.append(CodeGen.generateNode(item, 0));
+                    }
+                } catch (Exception _lintEx) {
+                    sketchSb.append(code);
                 }
-                sb.append(hoisted);
-                sb.append("struct _PSketch : public PApplet {\n");
+                sb.append("struct _PSketch : public PApplet {\n"
+                + "  struct _W   { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->logicalW    : 0;     } } width;\n"
+                + "  struct _H   { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->logicalH    : 0;     } } height;\n"
+                + "  struct _MX  { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseX      : 0.f;   } } mouseX;\n"
+                + "  struct _MY  { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseY      : 0.f;   } } mouseY;\n"
+                + "  struct _PMX { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->pmouseX     : 0.f;   } } pmouseX;\n"
+                + "  struct _PMY { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->pmouseY     : 0.f;   } } pmouseY;\n"
+                + "  struct _FC  { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->frameCount  : 0;     } } frameCount;\n"
+                + "  struct _MP  { operator bool()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_mousePressed : false; } } _mousePressed;\n"
+                + "  struct _KP  { operator bool()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_keyPressed  : false; } } _keyPressed;\n"
+                + "  struct _K   { operator char()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->key          : 0;     } } key;\n"
+                + "  struct _KC  { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->keyCode      : 0;     } } keyCode;\n"
+                + "  struct _MB  { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseButton  : 0;     } } mouseButton;\n"
+                + "  struct _FR  { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_frameRate   : 0.f;   } } _frameRate;\n"
+                + "  struct _MDX { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseDX      : 0.f;   } } mouseDX;\n"
+                + "  struct _MDY { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseDY      : 0.f;   } } mouseDY;\n"
+                + "  bool* keysDown()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->keysDown  : nullptr; }\n"
+                + "  bool* mouseDown() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseDown : nullptr; }\n"
+                + "};\n");
+                sb.append(hoistedSb);
+                sb.append("struct _PSketchImpl : public _PSketch {\n");
                 sb.append("#line 1 \"sketch.pde\"\n");
-                sb.append(rest);
+                sb.append(sketchSb);
                 sb.append("\n};\n");
             } else {
                 // Static sketch: bare statements at file scope — wrap in a function
