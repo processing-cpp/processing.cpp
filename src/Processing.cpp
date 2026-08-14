@@ -3344,7 +3344,11 @@ void PApplet::run(){
     PDEBUG("Debug mode ON -- PApplet::run() starting\n");
     g_papplet = this;
 #ifdef _WIN32
-    // Prevent ios_base crash on Windows by syncing before first use
+    // CRITICAL: call sync_with_stdio before ANY iostream use on Windows.
+    // MinGW 14+ has a bug where ios_base::_M_init crashes when the first
+    // std::cerr/cout use happens without a console attached (-mwindows).
+    // sync_with_stdio(false) bypasses the broken locale init path.
+    // DO NOT add any std::cerr/cout calls before PApplet::run() is called.
     ::std::ios_base::sync_with_stdio(false);
     ::std::cin.tie(nullptr);
 #endif
