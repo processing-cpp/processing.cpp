@@ -98,6 +98,16 @@ struct _LocaleInit {
 static _LocaleInit _locale_init_instance;
 #endif
 
+// On Windows, avoid std::cerr/cout which crash during ios_base::_M_init
+// when no console is attached (MinGW 14+ bug with -mwindows)
+#ifdef _WIN32
+  #define CPP_ERR(...) fprintf(stderr, __VA_ARGS__)
+  #define CPP_OUT(...) fprintf(stdout, __VA_ARGS__)
+#else
+  #define CPP_ERR(...) fprintf(stderr, __VA_ARGS__)
+  #define CPP_OUT(...) fprintf(stdout, __VA_ARGS__)
+#endif
+
 // default.ttf in the project root is loaded automatically as the default font.
 
 
@@ -3333,6 +3343,11 @@ void PApplet::run(){
     PDEBUG("CppMode build stamp: %s\n", PROCESSING_BUILD_STAMP);
     PDEBUG("Debug mode ON -- PApplet::run() starting\n");
     g_papplet = this;
+#ifdef _WIN32
+    // Prevent ios_base crash on Windows by syncing before first use
+    ::std::ios_base::sync_with_stdio(false);
+    ::std::cin.tie(nullptr);
+#endif
     signal(SIGTERM, [](int){ if(PApplet::g_papplet && PApplet::g_papplet->gWindow) glfwSetWindowShouldClose(PApplet::g_papplet->gWindow, GLFW_TRUE); });
 #ifndef _WIN32
     // SIGHUP is POSIX-only -- Windows has no controlling-terminal/session
