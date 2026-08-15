@@ -3363,6 +3363,9 @@ void PApplet::run(){
     ::std::srand((unsigned)::std::time(nullptr));
     initPerlin(0); // initialize noise table with default seed
 
+#if defined(__APPLE__)
+    glfwInitHint(GLFW_COCOA_CHDIR_RESOURCES, GLFW_FALSE);
+#endif
     if(!glfwInit()){
         fprintf(stderr, "[ERR] glfwInit() failed. Make sure libglfw3.dll is next to ide.exe\n");
 #ifdef _WIN32
