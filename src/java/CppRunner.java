@@ -33,7 +33,13 @@ public class CppRunner {
             exeToRun = exeCopy;
           } catch (Exception ignored) {}
         }
-        ProcessBuilder pb = new ProcessBuilder(exeToRun.getAbsolutePath());
+        ProcessBuilder pb;
+        if (System.getProperty("os.name","").toLowerCase().contains("mac")) {
+          // macOS: use open command to properly register with window server
+          pb = new ProcessBuilder("open", "-W", "-n", "-a", exeToRun.getAbsolutePath());
+        } else {
+          pb = new ProcessBuilder(exeToRun.getAbsolutePath());
+        }
         pb.directory(sketchFolder);
         pb.redirectErrorStream(false);
         // Pass sketch folder so loadImage/loadStrings find data/ assets
