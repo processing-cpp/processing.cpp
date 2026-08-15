@@ -1234,7 +1234,7 @@ public class CppBuild {
     out.append("using std::decay_t; using std::remove_reference_t; using std::common_type_t;\n");
     out.append("using std::declval; using std::void_t;\n");
     out.append("using std::index_sequence; using std::make_index_sequence;\n");
-    out.append("using std::tuple_size; using std::tuple_element; using std::get;\n");
+    out.append("using std::tuple_size; using std::tuple_element; // std::get intentionally omitted -- shadows PApplet::get()\n");
     out.append("using std::make_tuple; using std::tie; using std::apply;\n");
     out.append("using std::runtime_error; using std::logic_error; using std::exception;\n");
     out.append("using std::numeric_limits;\n");
@@ -1335,14 +1335,32 @@ public class CppBuild {
           fileScopeOnly.append(CodeGen.generateNode(item, 0));
           continue;
         }
-        // Template declarations, free functions, and ALL variables must be at
-        // file scope in static sketches -- main() cannot access Sketch members.
+        // Template declarations and free functions go to file scope.
+        // Variables: only those with no initializer or a simple literal/nullptr
+        // go to file scope. Variables with Processing API calls in their initializer
+        // must go into setup() body -- calling API functions at static init time
+        // crashes because g_papplet is null before PApplet is constructed.
         boolean isAnyFn = item instanceof FunctionDecl;
-        boolean isAnyVar = item instanceof VariableDecl;
-        boolean isTemplateTd = item instanceof TypeDef td
-            && (!td.templateParams().isEmpty() || td.name().contains("<"));
-        if (isAnyFn || isAnyVar || isTemplateTd) {
+        boolean isTemplateTd = item instanceof TypeDef td2
+            && (!td2.templateParams().isEmpty() || td2.name().contains("<"));
+        if (isAnyFn || isTemplateTd) {
           fileScopeOnly.append(CodeGen.generateNode(item, 0));
+          continue;
+        }
+        if (item instanceof VariableDecl vd2) {
+          // Safe at file scope: no initializer, nullptr, or numeric/string literal
+          Expr _init = vd2.initializer();
+          boolean safeAtFileScope = _init == null
+              || (_init instanceof Literal lit &&
+                  (lit.kind() == Literal.Kind.INT || lit.kind() == Literal.Kind.FLOAT
+                   || lit.kind() == Literal.Kind.STRING || lit.kind() == Literal.Kind.BOOL
+                   || lit.kind() == Literal.Kind.CHAR))
+              || (_init instanceof Identifier id && id.name().equals("nullptr"));
+          if (safeAtFileScope) {
+            fileScopeOnly.append(CodeGen.generateNode(item, 0));
+          } else {
+            body.append(CodeGen.generateNode(item, 2));
+          }
           continue;
         }
         String rendered = CodeGen.generateNode(item, 2);
@@ -2876,10 +2894,29 @@ public class CppBuild {
     // ââ 11. API-conflicting variable names: scale/fill/stroke/etc. âââââââââââ
     // If used as a variable (after a type keyword), rename to avoid shadowing API
     String[] apiConflicts = {
-      "scale", "stroke", "background", "translate", "rotate",
-      "map", "dist", "noise"
+      // Drawing
+      "arc", "box", "circle", "ellipse", "line", "point", "rect",
+      "square", "triangle", "vertex", "curve", "bezier",
+      // Color
+      "alpha", "blue", "brightness", "green", "hue", "red", "saturation",
+      "fill", "stroke", "background", "tint", "filter",
+      // Transform
+      "scale", "translate", "rotate", "push", "pop",
+      // Math
+      "map", "dist", "noise", "norm", "lerp", "mag", "sq",
+      "constrain", "degrees", "radians", "max", "min",
+      // Image/pixel
+      "image", "get", "set", "save",
+      // Text
+      "text",
+      // Lighting
+      "lights", "ambient", "specular", "emissive", "shininess",
+      // Camera
+      "camera", "perspective", "ortho",
+      // Misc
+      "smooth", "cursor", "loop", "random", "clear"
     };
-    String typeKw = "(?:int|float|double|bool|char|long|unsigned|auto|color|PVector)\\s+";
+    String typeKw = "(?:int|float|double|bool|char|long|unsigned|auto|color|PVector\\*?|ArrayList\\s*<[^>]+>\\*?|Array\\s*<[^>]+>\\*?)\\s+";
     for (String word : apiConflicts) {
       // Only rename if it appears as a variable declaration
       if (java.util.regex.Pattern.compile(typeKw + word + "\\b(?!\\s*\\()", java.util.regex.Pattern.MULTILINE).matcher(code).find()) {

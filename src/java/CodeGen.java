@@ -274,8 +274,22 @@ public final class CodeGen {
             // Without sentinel, ptr-to-array (empty paramTypes, dims outside)
             // and array-of-fn-ptr with no params (also empty paramTypes) are
             // indistinguishable. The sentinel is stripped before emission.
+            int ptaSentinel = bareNamePart.indexOf("__pta__");
             int arrSentinel = bareNamePart.indexOf("__arr__");
-            if (arrSentinel >= 0) {
+            if (ptaSentinel >= 0) {
+                // Array-of-ptr-to-array: e.g. "float (*kernels[8])[3]"
+                // Split: "kernels__arr__[8]__pta__[3]" ->
+                //   innerDims="[8]" (inside parens), outerDims="[3]" (after params)
+                String afterArr = bareNamePart.substring(0, ptaSentinel);
+                outerDims = bareNamePart.substring(ptaSentinel + 7);
+                int arrIdx = afterArr.indexOf("__arr__");
+                if (arrIdx >= 0) {
+                    innerDims = afterArr.substring(arrIdx + 7);
+                    bareNamePart = afterArr.substring(0, arrIdx);
+                } else {
+                    bareNamePart = afterArr;
+                }
+            } else if (arrSentinel >= 0) {
                 // Array-of-fn-ptr: dims go inside parens
                 innerDims = bareNamePart.substring(arrSentinel + 7); // after "__arr__"
                 bareNamePart = bareNamePart.substring(0, arrSentinel);

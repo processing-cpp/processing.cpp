@@ -1770,9 +1770,25 @@ public final class Parser {
             }
             // Accept: named param, variadic pack "...", anonymous param ")", or
             // reference/pointer-to-array: "int (&arr)[10]" -- ( follows the type
+            // Special case: single identifier in parens followed by ; or { is
+            // direct-init, not a param list. "Array<T> x(n);" -> variable, not fn.
+            if (checkPunct(")")) {
+                // Peek past the closing ) to see what follows
+                int closePos = pos + 1; // pos+1 because current is ")"
+                // anonymous param "void f(int)" is a param list
+                // but "Array<T> x(segments);" where next after ) is ; or { is NOT
+                // We already parsed the type -- if we consumed just one identifier
+                // and next is ), peek after ) for ; or { which means variable init
+                if (closePos < tokens.size()) {
+                    String afterClose = tokens.get(closePos).text();
+                    if (afterClose.equals(";") || afterClose.equals("{") ||
+                        afterClose.equals("=") || afterClose.equals(","))
+                        return false; // direct-init, not param list
+                }
+                return true; // anonymous param
+            }
             return check(CppLexerTokenType.IDENTIFIER)
                 || checkPunct("...")   // variadic: "Args... args" or "T..."
-                || checkPunct(")")    // anonymous param: "void f(int)"
                 || checkPunct(",")    // next param after anonymous
                 || checkPunct("(");   // reference/pointer-to-array param: "int (&arr)[10]"
         } finally {
@@ -2412,15 +2428,17 @@ public final class Parser {
         }
         expectPunct(")");
         // Pointer-to-array or reference-to-array: "int (*p)[20]" / "int (&r)[20]"
-        // Encode array dims into name for CodeGen: "&refToRow[20]"
+        // Pointer-to-array: "float (*kernels[8])[3]" -- trailing [N] after )
+        // encodedName already has "__arr__[8]" from inside parens.
+        // Append "__pta__[N]" sentinel so CodeGen emits outer dims correctly.
         if (checkPunct("[")) {
-            StringBuilder dimStr = new StringBuilder();
+            StringBuilder ptrDims = new StringBuilder();
             while (checkPunct("[")) {
-                advance(); dimStr.append("[");
-                if (!checkPunct("]")) { dimStr.append(peek().text()); parseExpr(); }
-                expectPunct("]"); dimStr.append("]");
+                advance(); ptrDims.append("[");
+                if (!checkPunct("]")) { ptrDims.append(CodeGen.renderExpr(parseExpr())); }
+                expectPunct("]"); ptrDims.append("]");
             }
-            return new NameAndFunctionPointerType(encodedName + dimStr.toString(),
+            return new NameAndFunctionPointerType(encodedName + "__pta__" + ptrDims.toString(),
                 new FunctionPointerType(returnType, List.of()));
         }
         expectPunct("(");

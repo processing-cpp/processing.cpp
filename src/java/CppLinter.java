@@ -138,76 +138,16 @@ public class CppLinter {
             CppBuild.PreparedCode prepared = CppBuild.prepareCode(sketchCode.toString());
             String code = prepared.code;
 
-            // Build lint source
-            StringBuilder sb = new StringBuilder();
-            for (String block : prepared.hasIncludeBlocks.values())
-                sb.append(block);
-            if (gch != null) {
-                // Use PCH via -include trick: include a stub that matches the PCH
-                sb.append("#include \"").append(processingH.getAbsolutePath()).append("\"\n");
-            } else {
-                sb.append("#include \"").append(processingH.getAbsolutePath()).append("\"\n");
+            // Use the real build pipeline to generate correct C++
+            String lintSource;
+            try {
+                lintSource = CppBuild.generateSketchOutput(sketchCode.toString());
+            } catch (Exception _genEx) {
+                // Parse error -- nothing to lint
+                return;
             }
-            sb.append("using namespace std;\n");
-            sb.append("namespace Processing {\n");
-            sb.append("using namespace std;\n");
-            boolean hasSetup = code.contains("void setup(") || code.contains("void draw(");
-            if (hasSetup) {
-                sb.append("#include \"Processing_api.h\"\n");
-                // Use ClassHoister (same as real build) to separate classes from sketch code
-                StringBuilder hoistedSb = new StringBuilder();
-                StringBuilder sketchSb  = new StringBuilder();
-                try {
-                    CompilationUnit lintCu = Parser.parse(code);
-                    ClassHoister.Result hr = ClassHoister.hoist(lintCu.items());
-                    for (TypeDef td : hr.hoistedClasses) {
-                        hoistedSb.append(CodeGen.generateNode(td, 0));
-                    }
-                    for (TopLevelItem item : hr.rest) {
-                        if (item instanceof VariableDecl vd && vd.name().contains("::"))
-                            hoistedSb.append(CodeGen.generateNode(item, 0));
-                        else
-                            sketchSb.append(CodeGen.generateNode(item, 0));
-                    }
-                } catch (Exception _lintEx) {
-                    sketchSb.append(code);
-                }
-                sb.append("struct _PSketch : public PApplet {\n"
-                + "  struct _W   { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->logicalW    : 0;     } } width;\n"
-                + "  struct _H   { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->logicalH    : 0;     } } height;\n"
-                + "  struct _MX  { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseX      : 0.f;   } } mouseX;\n"
-                + "  struct _MY  { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseY      : 0.f;   } } mouseY;\n"
-                + "  struct _PMX { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->pmouseX     : 0.f;   } } pmouseX;\n"
-                + "  struct _PMY { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->pmouseY     : 0.f;   } } pmouseY;\n"
-                + "  struct _FC  { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->frameCount  : 0;     } } frameCount;\n"
-                + "  struct _MP  { operator bool()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_mousePressed : false; } } _mousePressed;\n"
-                + "  struct _KP  { operator bool()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_keyPressed  : false; } } _keyPressed;\n"
-                + "  struct _K   { operator char()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->key          : 0;     } } key;\n"
-                + "  struct _KC  { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->keyCode      : 0;     } } keyCode;\n"
-                + "  struct _MB  { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseButton  : 0;     } } mouseButton;\n"
-                + "  struct _FR  { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_frameRate   : 0.f;   } } _frameRate;\n"
-                + "  struct _MDX { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseDX      : 0.f;   } } mouseDX;\n"
-                + "  struct _MDY { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseDY      : 0.f;   } } mouseDY;\n"
-                + "  bool* keysDown()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->keysDown  : nullptr; }\n"
-                + "  bool* mouseDown() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseDown : nullptr; }\n"
-                + "};\n");
-                sb.append(hoistedSb);
-                sb.append("struct _PSketchImpl : public _PSketch {\n");
-                sb.append("#line 1 \"sketch.pde\"\n");
-                sb.append(sketchSb);
-                sb.append("\n};\n");
-            } else {
-                // Static sketch: bare statements at file scope — wrap in a function
-                sb.append("struct _PSketch : public PApplet {\n");
-                sb.append("void setup() override {\n");
-                sb.append("#line 1 \"sketch.pde\"\n");
-                sb.append(code);
-                sb.append("\n}\n};\n");
-            }
-            sb.append("} // namespace Processing\n");
-
             tmp = Files.createTempFile("cppmode_lint_", ".cpp");
-            Files.writeString(tmp, sb.toString());
+            Files.writeString(tmp, lintSource);
 
             // Build g++ command
             List<String> cmd = new ArrayList<>();

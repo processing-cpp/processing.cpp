@@ -4209,7 +4209,7 @@ struct PApplet {
         { float dx=x2-x1,dy=y2-y1; return ::std::sqrt(dx*dx+dy*dy); }
     static float dist(float x1,float y1,float z1,float x2,float y2,float z2)
         { float dx=x2-x1,dy=y2-y1,dz=z2-z1; return ::std::sqrt(dx*dx+dy*dy+dz*dz); }
-    static float map(float v,float i0,float i1,float o0,float o1) { return o0+(v-i0)*(o1-o0)/(i1-i0); }
+    static float map(float v,float i0,float i1,float o0,float o1) { if (i1==i0) return o0; return o0+(v-i0)*(o1-o0)/(i1-i0); }
     static float constrain(float v,float lo,float hi) { return v<lo?lo:(v>hi?hi:v); }
     static float max(float a,float b)          { return a>b?a:b; }
     static float min(float a,float b)          { return a<b?a:b; }
