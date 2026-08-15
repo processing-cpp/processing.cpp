@@ -35,27 +35,10 @@ public class CppRunner {
         }
         ProcessBuilder pb;
         if (System.getProperty("os.name","").toLowerCase().contains("mac")) {
-          // macOS: wrap in minimal .app bundle so the process gets window server access
-          java.io.File appBundle = new java.io.File(sketchFolder, exeToRun.getName() + ".app");
-          java.io.File macosDir = new java.io.File(appBundle, "Contents/MacOS");
-          macosDir.mkdirs();
-          java.io.File bundledBin = new java.io.File(macosDir, exeToRun.getName());
-          java.nio.file.Files.copy(exeToRun.toPath(), bundledBin.toPath(),
-              java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-          bundledBin.setExecutable(true);
-          // Write minimal Info.plist
-          java.io.File plist = new java.io.File(appBundle, "Contents/Info.plist");
-          java.nio.file.Files.writeString(plist.toPath(),
-              "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-              + "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
-              + "<plist version=\"1.0\"><dict>\n"
-              + "<key>CFBundleExecutable</key><string>" + exeToRun.getName() + "</string>\n"
-              + "<key>CFBundleIdentifier</key><string>processing.cpp." + exeToRun.getName() + "</string>\n"
-              + "<key>CFBundleName</key><string>" + exeToRun.getName() + "</string>\n"
-              + "<key>NSHighResolutionCapable</key><true/>\n"
-              + "<key>NSPrincipalClass</key><string>NSApplication</string>\n"
-              + "</dict></plist>\n");
-          pb = new ProcessBuilder("open", "-W", "-n", appBundle.getAbsolutePath());
+          // macOS: launch directly -- the .app bundle approach breaks stdio piping
+          // Just run the binary directly; modern macOS allows subprocess windows
+          // as long as the parent process has screen access (Processing does).
+          pb = new ProcessBuilder(exeToRun.getAbsolutePath());
         } else {
           pb = new ProcessBuilder(exeToRun.getAbsolutePath());
         }

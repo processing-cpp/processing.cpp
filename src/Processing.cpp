@@ -3364,6 +3364,20 @@ void PApplet::run(){
     initPerlin(0); // initialize noise table with default seed
 
 #if defined(__APPLE__)
+    // Register with macOS window server -- required when launched as a subprocess
+    // (e.g. from Processing IDE). Without this, GLFW cannot create windows.
+    {
+        void* handle = dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", RTLD_LAZY);
+        if (handle) {
+            typedef int (*TFunc)(void*);
+            TFunc f = (TFunc)dlsym(handle, "TransformProcessType");
+            if (f) {
+                // kProcessTransformToForegroundApplication = 1
+                unsigned int psn[2] = {0, 1}; // kCurrentProcess
+                f(psn);
+            }
+        }
+    }
     glfwInitHint(GLFW_COCOA_CHDIR_RESOURCES, GLFW_FALSE);
 #endif
     if(!glfwInit()){
