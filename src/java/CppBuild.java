@@ -1494,9 +1494,14 @@ public class CppBuild {
           boolean isTypeSpec = item instanceof TypeDef td && td.name().contains("<");
           boolean isTemplatedVar = item instanceof VariableDecl vd
               && !vd.templateParams().isEmpty();
-          boolean isTemplateInstVar = item instanceof VariableDecl vd2
-              && vd2.type() instanceof processing.mode.cpp.NamedType nt
-              && !nt.templateArgs().isEmpty();
+          // Template-instantiated vars (e.g. ArrayList<Ball> balls) must be at namespace
+          // scope unless their initializer references sketch member variables.
+          // If initializer is a CallExpr with args, keep in sketch to avoid
+          // "segments not declared" errors (Array<Ground*> ground(segments)).
+          // Template-instantiated variables (ArrayList<Ball>, Array<Ground*>, etc.)
+          // are valid struct members -- do NOT hoist them to namespace scope.
+          // Only variable TEMPLATES (template<typename T> T pi = ...) need hoisting.
+          boolean isTemplateInstVar = false;
           if (isTypeSpec || isTemplatedVar || isTemplateInstVar) {
             templateScopeItems.add(item);
           } else {
@@ -3247,7 +3252,7 @@ public class CppBuild {
       } else if (homebrewPrefix != null) {
         cmd.add("-L" + homebrewPrefix + "/lib");
       }
-      Collections.addAll(cmd, "-lglfw", "-lGLEW", "-lm", "-pthread");
+      Collections.addAll(cmd, "-lglfw", "-lGLEW", "-lm", "-pthread", "-lobjc");
       Collections.addAll(cmd, "-framework", "OpenGL");
       Collections.addAll(cmd, "-framework", "Cocoa");
       Collections.addAll(cmd, "-framework", "IOKit");

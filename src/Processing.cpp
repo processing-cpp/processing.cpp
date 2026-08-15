@@ -25,6 +25,11 @@
 #include <sstream>
 #include <fstream>
 #include <chrono>
+#ifdef __APPLE__
+#include <objc/runtime.h>
+#include <objc/message.h>
+#include <dlfcn.h>
+#endif
 #ifndef _WIN32
 #include <thread>
 #endif
@@ -3364,17 +3369,28 @@ void PApplet::run(){
     initPerlin(0); // initialize noise table with default seed
 
 #if defined(__APPLE__)
-    // Register with macOS window server -- required when launched as a subprocess
-    // (e.g. from Processing IDE). Without this, GLFW cannot create windows.
+    // Make this process a foreground app so GLFW can create windows.
+    // Required when launched as a subprocess from the Processing IDE.
+    // Uses ObjC runtime directly -- no .m file needed.
     {
-        void* handle = dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", RTLD_LAZY);
-        if (handle) {
-            typedef int (*TFunc)(void*);
-            TFunc f = (TFunc)dlsym(handle, "TransformProcessType");
-            if (f) {
-                // kProcessTransformToForegroundApplication = 1
-                unsigned int psn[2] = {0, 1}; // kCurrentProcess
-                f(psn);
+        void* appkit = dlopen("/System/Library/Frameworks/AppKit.framework/AppKit", RTLD_LAZY);
+        if (appkit) {
+            // id NSApp = [NSApplication sharedApplication]
+            typedef void* (*id_imp)(void*, void*);
+            typedef void  (*void_imp)(void*, void*, long);
+            typedef void  (*void_imp2)(void*, void*, bool);
+            void* cls = (void*)dlsym(RTLD_DEFAULT, "OBJC_CLASS_$_NSApplication");
+            if (cls) {
+                void* sel_shared  = sel_registerName("sharedApplication");
+                void* sel_policy  = sel_registerName("setActivationPolicy:");
+                void* sel_activate = sel_registerName("activateIgnoringOtherApps:");
+                id_imp  msgSend   = (id_imp) objc_msgSend;
+                void*   app       = msgSend(cls, (void*)sel_shared);
+                if (app) {
+                    // NSApplicationActivationPolicyRegular = 0
+                    ((void_imp)objc_msgSend)(app, (void*)sel_policy, 0L);
+                    ((void_imp2)objc_msgSend)(app, (void*)sel_activate, true);
+                }
             }
         }
     }
