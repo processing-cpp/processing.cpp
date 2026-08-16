@@ -63,6 +63,14 @@ jobs:
           msystem: MINGW64
           install: mingw-w64-x86_64-gcc mingw-w64-x86_64-glfw mingw-w64-x86_64-glew
 
+      - name: Bundle gcc runtime DLLs
+        shell: msys2 {0}
+        run: |
+          mkdir -p libs/windows-x64
+          cp /mingw64/bin/libgcc_s_seh-1.dll libs/windows-x64/
+          cp /mingw64/bin/libstdc++-6.dll libs/windows-x64/
+          cp /mingw64/bin/libwinpthread-1.dll libs/windows-x64/
+          cp /mingw64/bin/libssp-0.dll libs/windows-x64/ || true
       - name: Build cache
         shell: msys2 {0}
         run: |
