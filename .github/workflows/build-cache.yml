@@ -71,6 +71,12 @@ jobs:
           cp /mingw64/bin/libstdc++-6.dll libs/windows-x64/
           cp /mingw64/bin/libwinpthread-1.dll libs/windows-x64/
           cp /mingw64/bin/libssp-0.dll libs/windows-x64/ || true
+      - name: Upload gcc runtime DLLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-runtime-dlls
+          path: libs/windows-x64/*.dll
+          retention-days: 90
       - name: Build cache
         shell: msys2 {0}
         run: |

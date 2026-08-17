@@ -79,6 +79,27 @@ def bump_version_files(tag):
             out.writelines(new_lines)
         print(f"Updated {path}: {pretty_key}={tag}, version bumped by 1")
 
+def download_windows_dlls():
+    """Download bundled Windows runtime DLLs from latest CI run."""
+    import subprocess, json
+    repo = "processing-cpp/processing.cpp"
+    r = subprocess.run(
+        ["gh", "run", "list", "--repo", repo, "--workflow", "build-cache.yml",
+         "--status", "success", "--limit", "1", "--json", "databaseId"],
+        capture_output=True, text=True)
+    if r.returncode != 0: return
+    run_id = json.loads(r.stdout)[0]["databaseId"]
+    dest = Path(__file__).parent.parent / "libs" / "windows-x64"
+    dest.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        ["gh", "run", "download", str(run_id), "--repo", repo,
+         "--name", "windows-runtime-dlls", "--dir", str(dest)],
+        capture_output=True, text=True)
+    if result.returncode == 0:
+        print(f"  windows runtime DLLs downloaded to {dest}")
+    else:
+        print(f"  WARNING: could not download windows runtime DLLs")
+
 def trigger_and_wait_cache_build():
     """Trigger a new build-cache CI run and wait for it to complete."""
     import subprocess, json, time
@@ -151,6 +172,27 @@ def download_cache_artifacts():
             print(f"  {platform}: {files}")
 
 
+def download_windows_dlls():
+    """Download bundled Windows runtime DLLs from latest CI run."""
+    import subprocess, json
+    repo = "processing-cpp/processing.cpp"
+    r = subprocess.run(
+        ["gh", "run", "list", "--repo", repo, "--workflow", "build-cache.yml",
+         "--status", "success", "--limit", "1", "--json", "databaseId"],
+        capture_output=True, text=True)
+    if r.returncode != 0: return
+    run_id = json.loads(r.stdout)[0]["databaseId"]
+    dest = Path(__file__).parent.parent / "libs" / "windows-x64"
+    dest.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        ["gh", "run", "download", str(run_id), "--repo", repo,
+         "--name", "windows-runtime-dlls", "--dir", str(dest)],
+        capture_output=True, text=True)
+    if result.returncode == 0:
+        print(f"  windows runtime DLLs downloaded to {dest}")
+    else:
+        print(f"  WARNING: could not download windows runtime DLLs")
+
 def trigger_and_wait_cache_build():
     """Trigger a new build-cache CI run and wait for it to complete."""
     import subprocess, json, time
@@ -189,6 +231,7 @@ def main():
         bump_version_files(version)
     trigger_and_wait_cache_build()
     download_cache_artifacts()
+    download_windows_dlls()
     zip_name = "CppMode.zip"
     zip_path = os.path.join(OUTPUT_DIR, zip_name)
 
