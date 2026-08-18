@@ -1000,9 +1000,40 @@ void PApplet::arc(float cx, float cy, float w, float h, float startAngle, float 
     drawEllipseGeom(cx, cy, rx, ry, startAngle, endAngle);
 }
 
-void PApplet::arc(float cx, float cy, float w, float h, float startAngle, float endAngle, int /*mode*/) {
-    // mode = OPEN / CHORD / PIE -- basic implementation uses OPEN
-    arc(cx, cy, w, h, startAngle, endAngle);
+void PApplet::arc(float cx, float cy, float w, float h, float startAngle, float endAngle, int mode) {
+    float rx = w, ry = h;
+    resolveEllipse(cx, cy, rx, ry);
+    int steps = 64;
+    float da = (endAngle - startAngle) / steps;
+    // Fill
+    if (doFill) {
+        applyFill();
+        glBegin(GL_TRIANGLE_FAN);
+        if (mode == PIE) glVertex2f(cx, cy); // PIE: fan from center
+        else             glVertex2f(cx + rx * ::std::cos(startAngle) * 0.5f,
+                                   cy + ry * ::std::sin(startAngle) * 0.5f); // CHORD/OPEN: fan from first point
+        for (int i = 0; i <= steps; i++) {
+            float a = startAngle + i * da;
+            glVertex2f(cx + rx * ::std::cos(a), cy + ry * ::std::sin(a));
+        }
+        if (mode == PIE) glVertex2f(cx, cy);
+        glEnd();
+    }
+    // Stroke
+    if (doStroke) {
+        applyStroke();
+        glBegin(GL_LINE_STRIP);
+        if (mode == PIE) { glVertex2f(cx, cy); }
+        for (int i = 0; i <= steps; i++) {
+            float a = startAngle + i * da;
+            glVertex2f(cx + rx * ::std::cos(a), cy + ry * ::std::sin(a));
+        }
+        if (mode == PIE)   { glVertex2f(cx, cy); }
+        else if (mode == CHORD) { // close the chord line
+            glVertex2f(cx + rx * ::std::cos(startAngle), cy + ry * ::std::sin(startAngle));
+        }
+        glEnd();
+    }
 }
 void PApplet::rect(float x, float y, float w, float h) {
     resolveRect(x, y, w, h);
@@ -2806,6 +2837,22 @@ void PApplet::filter(int mode, float param) {
 #ifndef __EMSCRIPTEN__
     glDrawPixels(w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
 #endif
+}
+void PApplet::loadPixels() {
+    // Copy framebuffer into pixels[]
+    int total = winWidth * winHeight;
+    pixels.resize(total);
+    ::std::vector<unsigned char> buf(total * 4);
+    glReadPixels(0, 0, winWidth, winHeight, GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
+    // Convert RGBA + flip Y (GL is bottom-up, Processing is top-down)
+    for (int y = 0; y < winHeight; y++) {
+        for (int x = 0; x < winWidth; x++) {
+            int si = (winHeight - 1 - y) * winWidth + x;
+            int di = y * winWidth + x;
+            unsigned char r=buf[si*4],g=buf[si*4+1],b=buf[si*4+2],a=buf[si*4+3];
+            pixels[di] = (a<<24)|(r<<16)|(g<<8)|b;
+        }
+    }
 }
 void PApplet::updatePixels() {
     int total = winWidth * winHeight;
