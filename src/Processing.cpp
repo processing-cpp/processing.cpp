@@ -2423,7 +2423,9 @@ void PApplet::textAlign(int alignX, int alignY) {
         if(a==37||a==20) return LEFT_ALIGN;   // LEFT or LEFT_ALIGN
         if(a==39||a==21) return RIGHT_ALIGN;  // RIGHT or RIGHT_ALIGN
         if(a==3 ||a==25) return CENTER_ALIGN; // CENTER or CENTER_ALIGN
-        if(a==0)         return BASELINE;
+        if(a==101||a==22) return TOP_ALIGN;   // TOP or TOP_ALIGN
+        if(a==102||a==23) return BOTTOM_ALIGN;// BOTTOM or BOTTOM_ALIGN
+        if(a==0)          return BASELINE;    // BASELINE
         return a;
     };
     g_textAlignX = mapAlign(alignX);

@@ -524,12 +524,12 @@ void tint(const PColor& c);
 
 static constexpr int THRESHOLD   = 1;
 static constexpr int GRAY        = 2;
-static constexpr int OPAQUE      = 3;
+static constexpr int OPAQUE      = 14;
 static constexpr int INVERT      = 4;
-static constexpr int POSTERIZE   = 5;
-static constexpr int BLUR        = 6;
-static constexpr int ERODE       = 7;
-static constexpr int DILATE      = 8;
+static constexpr int POSTERIZE   = 8;
+static constexpr int BLUR        = 11;
+static constexpr int ERODE       = 15;
+static constexpr int DILATE      = 16;
 
 // =============================================================================
 // PIMAGE  --  Pixel buffer backed by an OpenGL texture
@@ -1180,7 +1180,7 @@ static constexpr int CENTER    = 3;     // middle mouse button; also rectMode/el
 
 // Color modes
 static constexpr int RGB  = 1;
-static constexpr int HSB  = 2;
+static constexpr int HSB  = 3;
 #define ARGB 3  /* createImage(w,h,ARGB) */
 
 // Shape / rect / ellipse modes
@@ -1190,10 +1190,10 @@ static constexpr int RADIUS      = 2;
 
 // Stroke caps and joins
 static constexpr int ROUND   = 10;
-static constexpr int SQUARE  = 11;
-static constexpr int PROJECT = 12;
-static constexpr int MITER   = 13;
-static constexpr int BEVEL   = 14;
+static constexpr int SQUARE  = 1;
+static constexpr int PROJECT = 4;
+static constexpr int MITER   = 8;
+static constexpr int BEVEL   = 32;
 
 // beginShape() kinds
 static constexpr int POINTS         = 0;
@@ -1206,23 +1206,38 @@ static constexpr int QUAD_STRIP     = 6;
 static constexpr int CLOSE          = 7;
 
 // Text alignment
+// Text alignment internal constants
 static constexpr int LEFT_ALIGN   = 20;
 static constexpr int RIGHT_ALIGN  = 21;
 static constexpr int TOP_ALIGN    = 22;
 static constexpr int BOTTOM_ALIGN = 23;
-static constexpr int BASELINE     = 24;
+static constexpr int BASELINE     = 0;     // Processing Java value
 static constexpr int CENTER_ALIGN = 25;
+// Processing Java textAlign vertical aliases
+static constexpr int TOP    = 101;
+static constexpr int BOTTOM = 102;
 
 // Blend modes
-static constexpr int BLEND      = 30;
-static constexpr int ADD        = 31;
-static constexpr int SUBTRACT   = 32;
-static constexpr int MULTIPLY   = 33;
-static constexpr int SCREEN     = 34;
-static constexpr int DARKEST    = 35;
-static constexpr int LIGHTEST   = 36;
-static constexpr int DIFFERENCE = 37;
-static constexpr int EXCLUSION  = 38;
+static constexpr int BLEND      = 1;
+static constexpr int ADD        = 2;
+static constexpr int SUBTRACT   = 4;
+static constexpr int MULTIPLY   = 128;
+static constexpr int SCREEN     = 256;
+static constexpr int DARKEST    = 8;
+static constexpr int LIGHTEST   = 16;
+static constexpr int DIFFERENCE = 32;
+static constexpr int EXCLUSION  = 64;
+static constexpr int OVERLAY    = 512;
+static constexpr int HARD_LIGHT = 1024;
+static constexpr int SOFT_LIGHT = 2048;
+static constexpr int DODGE      = 4096;
+static constexpr int BURN       = 8192;
+static constexpr int REPLACE    = 0;
+// Boolean aliases
+#ifndef TRUE
+#define TRUE  true
+#define FALSE false
+#endif
 
 // Math constants (float precision)
 static constexpr float PI         = static_cast<float>(M_PI);
