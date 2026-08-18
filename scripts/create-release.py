@@ -81,7 +81,8 @@ def bump_version_files(tag):
 
 def download_windows_dlls():
     """Download bundled Windows runtime DLLs from latest CI run."""
-    import subprocess, json
+    import subprocess, json, shutil
+    from pathlib import Path
     repo = "processing-cpp/processing.cpp"
     r = subprocess.run(
         ["gh", "run", "list", "--repo", repo, "--workflow", "build-cache.yml",
@@ -91,14 +92,20 @@ def download_windows_dlls():
     run_id = json.loads(r.stdout)[0]["databaseId"]
     dest = Path(__file__).parent.parent / "libs" / "windows-x64"
     dest.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        ["gh", "run", "download", str(run_id), "--repo", repo,
-         "--name", "windows-runtime-dlls", "--dir", str(dest)],
-        capture_output=True, text=True)
-    if result.returncode == 0:
-        print(f"  windows runtime DLLs downloaded to {dest}")
-    else:
-        print(f"  WARNING: could not download windows runtime DLLs")
+    # Download to a temp dir first since gh may create subdirectory
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        result = subprocess.run(
+            ["gh", "run", "download", str(run_id), "--repo", repo,
+             "--name", "windows-runtime-dlls", "--dir", tmp],
+            capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"  WARNING: could not download windows runtime DLLs: {result.stderr}")
+            return
+        # Copy all DLLs to dest
+        for dll in Path(tmp).rglob("*.dll"):
+            shutil.copy2(dll, dest / dll.name)
+            print(f"  copied {dll.name} to libs/windows-x64/")
 
 def trigger_and_wait_cache_build():
     """Trigger a new build-cache CI run and wait for it to complete."""
@@ -137,6 +144,7 @@ def download_cache_artifacts():
     """Download precompiled .o files from latest successful build-cache CI run."""
     import subprocess, json
     from pathlib import Path
+    from pathlib import Path
     repo = "processing-cpp/processing.cpp"
     root = Path(__file__).parent.parent
     platforms = ["linux-x64", "windows-x64", "macos-arm64", "macos-x64"]
@@ -174,7 +182,8 @@ def download_cache_artifacts():
 
 def download_windows_dlls():
     """Download bundled Windows runtime DLLs from latest CI run."""
-    import subprocess, json
+    import subprocess, json, shutil
+    from pathlib import Path
     repo = "processing-cpp/processing.cpp"
     r = subprocess.run(
         ["gh", "run", "list", "--repo", repo, "--workflow", "build-cache.yml",
@@ -184,14 +193,20 @@ def download_windows_dlls():
     run_id = json.loads(r.stdout)[0]["databaseId"]
     dest = Path(__file__).parent.parent / "libs" / "windows-x64"
     dest.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        ["gh", "run", "download", str(run_id), "--repo", repo,
-         "--name", "windows-runtime-dlls", "--dir", str(dest)],
-        capture_output=True, text=True)
-    if result.returncode == 0:
-        print(f"  windows runtime DLLs downloaded to {dest}")
-    else:
-        print(f"  WARNING: could not download windows runtime DLLs")
+    # Download to a temp dir first since gh may create subdirectory
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        result = subprocess.run(
+            ["gh", "run", "download", str(run_id), "--repo", repo,
+             "--name", "windows-runtime-dlls", "--dir", tmp],
+            capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"  WARNING: could not download windows runtime DLLs: {result.stderr}")
+            return
+        # Copy all DLLs to dest
+        for dll in Path(tmp).rglob("*.dll"):
+            shutil.copy2(dll, dest / dll.name)
+            print(f"  copied {dll.name} to libs/windows-x64/")
 
 def trigger_and_wait_cache_build():
     """Trigger a new build-cache CI run and wait for it to complete."""
