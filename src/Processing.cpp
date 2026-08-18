@@ -2292,13 +2292,17 @@ void PApplet::renderText(const ::std::string& msg, float x, float y) {
     for (char c : msg) { if(c=='\n'){ls.push_back(cur);cur.clear();}else cur+=c; }
     ls.push_back(cur);
 
+    float totalH = (float)ls.size() * leading;
+    float yOff = 0;
+    if      (g_textAlignY == TOP_ALIGN)    yOff = g_textSize;
+    else if (g_textAlignY == CENTER_ALIGN) yOff = g_textSize * 0.5f - totalH * 0.5f + leading * 0.5f;
+    else if (g_textAlignY == BOTTOM_ALIGN) yOff = -totalH + leading;
     for (int li = 0; li < (int)ls.size(); li++) {
         float lw  = getLineWidth(ls[li]);
         float dx  = x;
         if      (g_textAlignX == RIGHT_ALIGN)  dx = x - lw;
         else if (g_textAlignX == CENTER_ALIGN) dx = x - lw * 0.5f;
-
-        float dy = y + li * leading;
+        float dy = y + yOff + li * leading;
 
 #if PROCESSING_HAS_STB_TRUETYPE
         if (g_ttf.loaded) { drawTTFStr(dx, dy, ls[li]); continue; }
