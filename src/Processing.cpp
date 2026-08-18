@@ -2735,67 +2735,48 @@ void PApplet::tint(float r, float g, float b, float a) {
 void PApplet::noTint(){doTint=false;}
 
 void PApplet::filter(int mode) { filter(mode, 0.5f); }
-void PApplet::filter(int mode, float /*param*/) {
-    int total = winWidth * winHeight;
+void PApplet::filter(int mode, float param) {
+    int w = winWidth, h = winHeight, total = w * h;
     ::std::vector<unsigned char> buf(total * 4);
-    glReadPixels(0, 0, winWidth, winHeight, GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
-
-    for (int i = 0; i < total; i++) {
-        int r = buf[i*4], g = buf[i*4+1], b = buf[i*4+2];
-        int grey = (r + g + b) / 3;
-
-        if (mode == GRAY) {
-            buf[i*4] = buf[i*4+1] = buf[i*4+2] = (unsigned char)grey;
-        } else if (mode == INVERT) {
-            buf[i*4]   = 255 - r;
-            buf[i*4+1] = 255 - g;
-            buf[i*4+2] = 255 - b;
-        } else if (mode == THRESHOLD) {
-            unsigned char t = (grey > 127) ? 255 : 0;
-            buf[i*4] = buf[i*4+1] = buf[i*4+2] = t;
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
+    if (mode == GRAY || mode == INVERT || mode == THRESHOLD || mode == OPAQUE) {
+        for (int i = 0; i < total; i++) {
+            int r=buf[i*4],g=buf[i*4+1],b=buf[i*4+2];
+            int grey=(r+g+b)/3;
+            if      (mode==GRAY)      { buf[i*4]=buf[i*4+1]=buf[i*4+2]=(unsigned char)grey; }
+            else if (mode==INVERT)    { buf[i*4]=255-r; buf[i*4+1]=255-g; buf[i*4+2]=255-b; }
+            else if (mode==THRESHOLD) { unsigned char t=(grey>param*255)?255:0; buf[i*4]=buf[i*4+1]=buf[i*4+2]=t; }
+            else if (mode==OPAQUE)    { buf[i*4+3]=255; }
+        }
+    } else if (mode == BLUR) {
+        int radius = ::std::max(1,(int)param);
+        ::std::vector<unsigned char> tmp(buf);
+        for (int y=0;y<h;y++) for (int x2=0;x2<w;x2++) {
+            int sr=0,sg=0,sb=0,sa=0,cnt=0;
+            for (int dy=-radius;dy<=radius;dy++) for (int dx=-radius;dx<=radius;dx++) {
+                int nx=x2+dx,ny=y+dy;
+                if(nx<0||nx>=w||ny<0||ny>=h) continue;
+                int j=(ny*w+nx)*4;
+                sr+=tmp[j]; sg+=tmp[j+1]; sb+=tmp[j+2]; sa+=tmp[j+3]; cnt++;
+            }
+            int i=(y*w+x2)*4;
+            buf[i]=sr/cnt; buf[i+1]=sg/cnt; buf[i+2]=sb/cnt; buf[i+3]=sa/cnt;
+        }
+    } else if (mode == ERODE || mode == DILATE) {
+        ::std::vector<unsigned char> tmp(buf);
+        for (int y=0;y<h;y++) for (int x2=0;x2<w;x2++) {
+            int best=-1;
+            for (int dy=-1;dy<=1;dy++) for (int dx=-1;dx<=1;dx++) {
+                int nx=x2+dx,ny=y+dy;
+                if(nx<0||nx>=w||ny<0||ny>=h) continue;
+                int j=(ny*w+nx)*4;
+                int lum=(tmp[j]+tmp[j+1]+tmp[j+2])/3;
+                if(best<0||(mode==ERODE?lum<best:lum>best)) best=lum;
+            }
+            int i=(y*w+x2)*4;
+            buf[i]=buf[i+1]=buf[i+2]=(unsigned char)best;
         }
     }
-#ifndef __EMSCRIPTEN__
-    glDrawPixels(winWidth, winHeight, GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
-#else
-    // WASM: upload pixels via texture blit
-    GLuint tex; glGenTextures(1,&tex);
-    glBindTexture(GL_TEXTURE_2D,tex);
-    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,winWidth,winHeight,0,GL_RGBA,GL_UNSIGNED_BYTE,buf.data());
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
-    glEnable(GL_TEXTURE_2D); glBindTexture(GL_TEXTURE_2D,tex);
-    glColor4f(1,1,1,1);
-    glBegin(GL_QUADS);
-    glTexCoord2f(0,1);glVertex2f(0,0);
-    glTexCoord2f(1,1);glVertex2f(winWidth,0);
-    glTexCoord2f(1,0);glVertex2f(winWidth,winHeight);
-    glTexCoord2f(0,0);glVertex2f(0,winHeight);
-    glEnd();
-    glDisable(GL_TEXTURE_2D); glDeleteTextures(1,&tex);
-#endif
-}
-void PApplet::loadPixels() {
-    int total = winWidth * winHeight;
-    pixels.resize(total);
-
-    ::std::vector<unsigned char> rgba(total * 4);
-    glReadPixels(0, 0, winWidth, winHeight, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
-
-    // glReadPixels returns rows bottom-to-top; Processing's pixels[] is
-    // top-to-bottom (row 0 = top of window), so flip rows on the way in.
-    for (int y = 0; y < winHeight; y++) {
-        for (int x = 0; x < winWidth; x++) {
-            int di = y * winWidth + x;
-            int si = (winHeight - 1 - y) * winWidth + x;
-            unsigned char r = rgba[si*4 + 0];
-            unsigned char g = rgba[si*4 + 1];
-            unsigned char b = rgba[si*4 + 2];
-            unsigned char a = rgba[si*4 + 3];
-            pixels[di] = (a << 24) | (r << 16) | (g << 8) | b;  // ARGB format
-        }
-    }
-}
 
 void PApplet::updatePixels() {
     int total = winWidth * winHeight;
