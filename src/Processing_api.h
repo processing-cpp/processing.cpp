@@ -101,18 +101,18 @@ inline void camera()                                   { if(::Processing::PApple
 inline void camera(float ex,float ey,float ez,float cx,float cy,float cz,float ux,float uy,float uz){ if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->camera(ex,ey,ez,cx,cy,cz,ux,uy,uz); }
 inline void perspective()                              { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->perspective(); }
 inline void ortho()                                    { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->ortho(); }
-inline void text(const std::string& s,float x,float y) { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->text(s,x,y); }
+inline void text(const ::std::string& s,float x,float y) { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->text(s,x,y); }
 inline void text(int v,float x,float y)                { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->text(v,x,y); }
 inline void text(float v,float x,float y)              { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->text(v,x,y); }
 inline void textSize(float s)                          { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->textSize(s); }
 inline void textAlign(int a,int b=-1)                  { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->textAlign(a,b); }
 inline void textLeading(float l)                       { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->textLeading(l); }
-inline float textWidth(const std::string& s)           { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->textWidth(s) : 0; }
+inline float textWidth(const ::std::string& s)           { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->textWidth(s) : 0; }
 inline void loadPixels()                               { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->loadPixels(); }
 inline void updatePixels()                             { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->updatePixels(); }
-inline void save(const std::string& f="")              { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->save(f); }
-inline void saveFrame(const std::string& f="frame-####.png"){ if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->saveFrame(f); }
-inline PImage* loadImage(const std::string& p)         { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->loadImage(p) : nullptr; }
+inline void save(const ::std::string& f="")              { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->save(f); }
+inline void saveFrame(const ::std::string& f="frame-####.png"){ if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->saveFrame(f); }
+inline PImage* loadImage(const ::std::string& p)         { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->loadImage(p) : nullptr; }
 inline PImage* createImage(int w,int h,int m=1)        { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->createImage(w,h,m) : nullptr; }
 inline PGraphics* createGraphics(int w,int h)          { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->createGraphics(w,h) : nullptr; }
 inline void image(PImage* img,float x,float y)         { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->image(img,x,y); }
@@ -160,8 +160,8 @@ inline void textureMode(int m)                         { if(::Processing::PApple
 inline void textureWrap(int m)                         { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->textureWrap(m); }
 inline void clip(float x,float y,float w,float h)      { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->clip(x,y,w,h); }
 inline void noClip()                                   { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->noClip(); }
-inline void windowTitle(const std::string& t)          { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->windowTitle(t); }
-inline PFont loadFont(const std::string& f)            { static PFont d; return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->loadFont(f) : d; }
+inline void windowTitle(const ::std::string& t)          { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->windowTitle(t); }
+inline PFont loadFont(const ::std::string& f)            { static PFont d; return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->loadFont(f) : d; }
 inline void textFont(const PFont& f)                   { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->textFont(f); }
 inline void textFont(const PFont& f,float s)           { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->textFont(f,s); }
 inline void set(int x,int y,color c)                   { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->set(x,y,c); }
@@ -184,3 +184,22 @@ inline void exit_sketch()                              { if(::Processing::PApple
 // For now we define them since most sketches need width/height as globals.
 // PImage members can be accessed via the struct directly: (*img).height
 // or by temporarily undefining: #undef height ... 
+// ── Environment variable accessors ───────────────────────────────────────────
+// These let user-defined classes (not inheriting _PSketch) access Processing
+// environment variables. Inside _PSketch, member variables shadow these.
+// Outside (hoisted classes), these resolve via g_papplet singleton.
+inline int   width()        { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->logicalW      : 0;    }
+inline int   height()       { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->logicalH      : 0;    }
+inline float mouseX()       { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseX        : 0.f;  }
+inline float mouseY()       { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseY        : 0.f;  }
+inline float pmouseX()      { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->pmouseX       : 0.f;  }
+inline float pmouseY()      { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->pmouseY       : 0.f;  }
+inline int   frameCount()   { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->frameCount    : 0;    }
+inline char  key()          { return ::Processing::PApplet::g_papplet ? (char)::Processing::PApplet::g_papplet->key     : 0;    }
+inline int   keyCode()      { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->keyCode       : 0;    }
+inline int   mouseButton()  { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseButton   : 0;    }
+inline bool  mousePressed() { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_mousePressed : false; }
+inline bool  keyPressed()   { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_keyPressed   : false; }
+inline float frameRate()    { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_frameRate    : 0.f;  }
+inline float mouseDX()      { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseDX       : 0.f;  }
+inline float mouseDY()      { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->mouseDY       : 0.f;  }
