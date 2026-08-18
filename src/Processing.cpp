@@ -2777,7 +2777,10 @@ void PApplet::filter(int mode, float param) {
             buf[i]=buf[i+1]=buf[i+2]=(unsigned char)best;
         }
     }
-
+#ifndef __EMSCRIPTEN__
+    glDrawPixels(w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
+#endif
+}
 void PApplet::updatePixels() {
     int total = winWidth * winHeight;
     ::std::vector<unsigned char> rgba(total * 4);
