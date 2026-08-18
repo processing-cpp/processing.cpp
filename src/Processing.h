@@ -1416,9 +1416,6 @@ inline ::std::vector<::std::string> split(const ::std::string& s, char d) {
     while (::std::getline(ss, t, d)) o.push_back(t);
     return o;
 }
-inline ::std::vector<::std::string> splitTokens(const ::std::string& s) {
-    return splitTokens(s, " \t\n\r\f");
-}
 inline ::std::vector<::std::string> splitTokens(const ::std::string& s, const ::std::string& delims) {
     ::std::vector<::std::string> o; ::std::string cur;
     for (char c:s) {
@@ -1427,6 +1424,9 @@ inline ::std::vector<::std::string> splitTokens(const ::std::string& s, const ::
     }
     if (!cur.empty()) o.push_back(cur);
     return o;
+}
+inline ::std::vector<::std::string> splitTokens(const ::std::string& s) {
+    return splitTokens(s, " \t\n\r\f");
 }
 inline ::std::string join(const ::std::vector<::std::string>& v, const ::std::string& sep) {
     ::std::string o;
