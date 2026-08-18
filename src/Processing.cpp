@@ -2715,6 +2715,27 @@ void PApplet::image(PImage* img, float x, float y, float w, float h) {
     if(!img || img->width==0 || img->height==0) return;
     drawImage_impl(img, x, y, w, h);
 }
+// Nine-argument form: image(img, dx1,dy1,dx2,dy2, sx1,sy1,sx2,sy2)
+void PApplet::image(PImage* img, float dx1,float dy1,float dx2,float dy2,
+                               float sx1,float sy1,float sx2,float sy2) {
+    if(!img || img->width==0 || img->height==0) return;
+    if(img->dirty) img->uploadTexture();
+    if(img->texID==0) return;
+    // Convert source pixel coords to UV [0,1]
+    float u1=sx1/img->width, v1=sy1/img->height;
+    float u2=sx2/img->width, v2=sy2/img->height;
+    glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_TEXTURE_2D); glBindTexture(GL_TEXTURE_2D,img->texID);
+    glColor4f(doTint?tintR:1.f,doTint?tintG:1.f,doTint?tintB:1.f,doTint?tintA:1.f);
+    glBegin(GL_QUADS);
+    glTexCoord2f(u1,v1); glVertex2f(dx1,dy1);
+    glTexCoord2f(u2,v1); glVertex2f(dx2,dy1);
+    glTexCoord2f(u2,v2); glVertex2f(dx2,dy2);
+    glTexCoord2f(u1,v2); glVertex2f(dx1,dy2);
+    glEnd();
+    glBindTexture(GL_TEXTURE_2D,0); glDisable(GL_TEXTURE_2D); glDisable(GL_BLEND);
+    glColor4f(1.f,1.f,1.f,1.f);
+}
 
 void PApplet::imageMode(int m){currentImageMode=m;}
 void PApplet::tint(float gray)           {tint(gray, colorMaxA);}
