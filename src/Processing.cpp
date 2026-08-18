@@ -2879,13 +2879,21 @@ void PApplet::blendMode(int mode) {
     // Reset equation first (SUBTRACT changes it)
     glBlendEquation(GL_FUNC_ADD);
     switch (mode) {
+        case BLEND:    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); break;
         case ADD:      glBlendFunc(GL_SRC_ALPHA, GL_ONE);                break;
         case MULTIPLY: glBlendFunc(GL_DST_COLOR, GL_ZERO);               break;
         case SCREEN:   glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_COLOR);      break;
+        case DARKEST:  glBlendFunc(GL_ONE, GL_ONE); glBlendEquation(GL_MIN); break;
+        case LIGHTEST: glBlendFunc(GL_ONE, GL_ONE); glBlendEquation(GL_MAX); break;
+        case DIFFERENCE:
+            glBlendEquation(GL_FUNC_SUBTRACT);
+            glBlendFunc(GL_ONE, GL_ONE);
+            break;
         case SUBTRACT:
             glBlendEquation(GL_FUNC_REVERSE_SUBTRACT);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE);
             break;
+        case REPLACE:  glBlendFunc(GL_ONE, GL_ZERO);                     break;
         default:       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); break;
     }
 }
