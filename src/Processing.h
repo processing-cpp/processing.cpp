@@ -4143,6 +4143,7 @@ struct PApplet {
     void imageMode(int mode);
     void image(PImage* img, float x, float y);
     void image(PImage* img, float x, float y, float w, float h);
+    void image(PImage* img, float dx1,float dy1,float dx2,float dy2,float sx1,float sy1,float sx2,float sy2);
     void image(const PImage& img, float x, float y);
     void image(const PImage& img, float x, float y, float w, float h);
     void image(const PImage* img, float x, float y) { if(img) image(*img,x,y); }
