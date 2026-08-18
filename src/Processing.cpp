@@ -2747,6 +2747,11 @@ void PApplet::filter(int mode, float param) {
             else if (mode==INVERT)    { buf[i*4]=255-r; buf[i*4+1]=255-g; buf[i*4+2]=255-b; }
             else if (mode==THRESHOLD) { unsigned char t=(grey>param*255)?255:0; buf[i*4]=buf[i*4+1]=buf[i*4+2]=t; }
             else if (mode==OPAQUE)    { buf[i*4+3]=255; }
+            else if (mode==POSTERIZE) {
+                int levels = ::std::max(2,(int)param);
+                auto post = [levels](int v){ return (int)((int)(v*(levels-1)/255.0f+0.5f)*255/(levels-1)); };
+                buf[i*4]=post(r); buf[i*4+1]=post(g); buf[i*4+2]=post(b);
+            }
         }
     } else if (mode == BLUR) {
         int radius = ::std::max(1,(int)param);
