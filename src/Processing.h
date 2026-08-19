@@ -3702,9 +3702,9 @@ inline color blendColor(color c1, color c2, int mode) {
         return colorVal(r,g,b,255);
     }
     if (mode == ADD) {
-        int r=::std::min(((c1.value>>16)&0xFF)+((c2.value>>16)&0xFF),255);
-        int g=::std::min(((c1.value>>8)&0xFF)+((c2.value>>8)&0xFF),255);
-        int b=::std::min((c1.value&0xFF)+(c2.value&0xFF),255);
+        int r=::std::min((int)(((c1.value>>16)&0xFF)+((c2.value>>16)&0xFF)),255);
+        int g=::std::min((int)(((c1.value>>8)&0xFF)+((c2.value>>8)&0xFF)),255);
+        int b=::std::min((int)((c1.value&0xFF)+(c2.value&0xFF)),255);
         return colorVal(r,g,b,255);
     }
     return c2; // fallback
