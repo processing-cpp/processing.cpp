@@ -1417,6 +1417,17 @@ inline bool        toBoolean(const ::std::string& s)  { return s=="true"||s=="1"
 inline int         toInt(const ::std::string& s)      { return ::std::stoi(s); }
 inline float       toFloat(const ::std::string& s)    { try { return ::std::stof(s); } catch (...) { return 0.0f; } }
 inline char        toChar(int v)                    { return static_cast<char>(v); }
+// randomGaussian -- Box-Muller transform
+inline float randomGaussian() {
+    static bool hasSpare = false;
+    static float spare;
+    if (hasSpare) { hasSpare = false; return spare; }
+    float u, v, s;
+    do { u = (rand()/(float)RAND_MAX)*2.f-1.f; v = (rand()/(float)RAND_MAX)*2.f-1.f; s=u*u+v*v; } while(s>=1.f||s==0.f);
+    float mul = ::std::sqrt(-2.f*::std::log(s)/s);
+    spare = v*mul; hasSpare = true;
+    return u*mul;
+}
 inline int   parseInt(const ::std::string& s)   { try { return ::std::stoi(s); } catch(...) { return 0; } }
 inline float parseFloat(const ::std::string& s) { try { return ::std::stof(s); } catch(...) { return 0.f; } }
 inline bool  parseBoolean(const ::std::string& s){ return s=="true"||s=="True"||s=="TRUE"||s=="1"; }
