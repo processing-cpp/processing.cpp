@@ -2791,7 +2791,7 @@ void PApplet::filter(int mode, float param) {
     int w = winWidth, h = winHeight, total = w * h;
     ::std::vector<unsigned char> buf(total * 4);
     glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf.data());
-    if (mode == GRAY || mode == INVERT || mode == THRESHOLD || mode == OPAQUE) {
+    if (mode == GRAY || mode == INVERT || mode == THRESHOLD || mode == OPAQUE || mode == POSTERIZE) {
         for (int i = 0; i < total; i++) {
             int r=buf[i*4],g=buf[i*4+1],b=buf[i*4+2];
             int grey=(r+g+b)/3;
