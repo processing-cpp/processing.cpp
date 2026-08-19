@@ -1372,6 +1372,16 @@ inline color colorVal(int r, int g, int b, int a=255) {
     auto clamp8=[](int v){return v<0?0:v>255?255:v;};
     return color((unsigned int)(((clamp8(a))<<24)|((clamp8(r))<<16)|((clamp8(g))<<8)|(clamp8(b))));
 }
+// color() free functions -- match Processing Java
+inline color color_(int gray)                    { return colorVal(gray,gray,gray,255); }
+inline color color_(int gray, int a)             { return colorVal(gray,gray,gray,a); }
+inline color color_(int r, int g, int b)         { return colorVal(r,g,b,255); }
+inline color color_(int r, int g, int b, int a)  { return colorVal(r,g,b,a); }
+inline color color_(float gray)                  { return colorVal((int)gray,(int)gray,(int)gray,255); }
+inline color color_(float gray, float a)         { return colorVal((int)gray,(int)gray,(int)gray,(int)a); }
+inline color color_(float r, float g, float b)   { return colorVal((int)r,(int)g,(int)b,255); }
+inline color color_(float r, float g, float b, float a){ return colorVal((int)r,(int)g,(int)b,(int)a); }
+
 
 // Color component extractors
 
@@ -2885,6 +2895,18 @@ template<typename T>
 void arrayCopy(const Array<T>& src, int srcPos, Array<T>& dst, int dstPos, int length) {
     for (int i = 0; i < length; i++) dst[dstPos + i] = src[srcPos + i];
 }
+// arrayCopy for std::vector
+template<class T> inline void arrayCopy(const ::std::vector<T>& src, ::std::vector<T>& dst) {
+    dst = src;
+}
+template<class T> inline void arrayCopy(const ::std::vector<T>& src, int srcPos, ::std::vector<T>& dst, int dstPos, int length) {
+    for (int i=0;i<length;i++) dst[dstPos+i]=src[srcPos+i];
+}
+// arrayCopy for raw arrays
+template<class T> inline void arrayCopy(const T* src, T* dst, int length) {
+    ::std::copy(src, src+length, dst);
+}
+
 
 template<typename T>
 Array<T> concat(const Array<T>& a, const Array<T>& b) {
