@@ -3651,6 +3651,17 @@ inline float dist(A x1,B y1,C x2,D y2){ float dx=(float)x2-(float)x1,dy=(float)y
 template<typename A,typename B,typename C,typename D,typename E,typename F,
     typename=::std::enable_if_t<::Processing::_is_numeric_v<A>&&::Processing::_is_numeric_v<B>&&::Processing::_is_numeric_v<C>&&::Processing::_is_numeric_v<D>&&::std::is_arithmetic_v<E>&&::std::is_arithmetic_v<F>>>
 inline float dist(A x1,B y1,C z1,D x2,E y2,F z2){ float dx=(float)x2-(float)x1,dy=(float)y2-(float)y1,dz=(float)z2-(float)z1; return ::std::sqrt(dx*dx+dy*dy+dz*dz); }
+template<class A> inline float sq(A v){ return (float)v*(float)v; }
+template<class A,class B> inline float mag(A x,B y){ return ::std::sqrt((float)x*(float)x+(float)y*(float)y); }
+template<class A,class B,class C> inline float mag(A x,B y,C z){ return ::std::sqrt((float)x*(float)x+(float)y*(float)y+(float)z*(float)z); }
+template<class A> inline float abs(A v){ return ::std::abs((float)v); }
+template<class A> inline float floor(A v){ return ::std::floor((float)v); }
+template<class A> inline float ceil(A v){ return ::std::ceil((float)v); }
+template<class A> inline float round(A v){ return ::std::round((float)v); }
+template<class A> inline float sqrt(A v){ return ::std::sqrt((float)v); }
+template<class A,class B> inline float pow(A base,B exp){ return ::std::pow((float)base,(float)exp); }
+template<class A> inline float exp(A v){ return ::std::exp((float)v); }
+template<class A> inline float log(A v){ return ::std::log((float)v); }
 
 // image() -- mixed types, value and pointer variants
 // image() -- draw a PImage to screen
