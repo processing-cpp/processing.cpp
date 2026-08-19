@@ -766,6 +766,10 @@ public:
         "Declare PImage* instead of PImage. "
         "See " PROCESSING_WEBSITE_URL "/error/E0002.html"
     )));
+    // Prevent PImage img = loadImage(...) -- must use PImage*
+    PImage(PImage*) __attribute__((error(
+        "E0002: Use PImage* not PImage. Write: PImage* img = loadImage(...);"
+    )));
     PImage& operator=(const PImage&) __attribute__((error(
         "E0002: PImage value-style assignment is not supported. "
         "Declare PImage* instead of PImage. "
