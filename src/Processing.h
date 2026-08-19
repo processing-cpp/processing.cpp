@@ -522,14 +522,14 @@ void tint(const PColor& c);
 // IMAGE FILTER CONSTANTS
 // =============================================================================
 
-static constexpr int THRESHOLD   = 1;
-static constexpr int GRAY        = 2;
+static constexpr int THRESHOLD   = 16;
+static constexpr int GRAY        = 12;
 static constexpr int OPAQUE      = 14;
-static constexpr int INVERT      = 4;
-static constexpr int POSTERIZE   = 8;
+static constexpr int INVERT      = 13;
+static constexpr int POSTERIZE   = 15;
 static constexpr int BLUR        = 11;
-static constexpr int ERODE       = 15;
-static constexpr int DILATE      = 16;
+static constexpr int ERODE       = 17;
+static constexpr int DILATE      = 18;
 
 // =============================================================================
 // PIMAGE  --  Pixel buffer backed by an OpenGL texture
@@ -1150,16 +1150,22 @@ constexpr bool _is_numeric_v =
 static constexpr int ALT       = 18;
 static constexpr int CONTROL   = 17;
 static constexpr int SHIFT     = 16;
-static constexpr int HOME_KEY  = 36;
-static constexpr int END_KEY   = 35;
+static constexpr int HOME_KEY  = 36;  static constexpr int HOME     = 36;
+static constexpr int END_KEY   = 35;  static constexpr int END      = 35;
 static constexpr int PAGE_UP   = 33;
 static constexpr int PAGE_DOWN = 34;
-static constexpr int F1_KEY    = 112;  static constexpr int F2_KEY  = 113;
-static constexpr int F3_KEY    = 114;  static constexpr int F4_KEY  = 115;
-static constexpr int F5_KEY    = 116;  static constexpr int F6_KEY  = 117;
-static constexpr int F7_KEY    = 118;  static constexpr int F8_KEY  = 119;
-static constexpr int F9_KEY    = 120;  static constexpr int F10_KEY = 121;
-static constexpr int F11_KEY   = 122;  static constexpr int F12_KEY = 123;
+static constexpr int F1_KEY    = 112; static constexpr int F1  = 112;
+static constexpr int F2_KEY    = 113; static constexpr int F2  = 113;
+static constexpr int F3_KEY    = 114; static constexpr int F3  = 114;
+static constexpr int F4_KEY    = 115; static constexpr int F4  = 115;
+static constexpr int F5_KEY    = 116; static constexpr int F5  = 116;
+static constexpr int F6_KEY    = 117; static constexpr int F6  = 117;
+static constexpr int F7_KEY    = 118; static constexpr int F7  = 118;
+static constexpr int F8_KEY    = 119; static constexpr int F8  = 119;
+static constexpr int F9_KEY    = 120; static constexpr int F9  = 120;
+static constexpr int F10_KEY   = 121; static constexpr int F10 = 121;
+static constexpr int F11_KEY   = 122; static constexpr int F11 = 122;
+static constexpr int F12_KEY   = 123; static constexpr int F12 = 123;
 
 // Non-coded keys: use `key` directly (not keyCode) for these
 static constexpr char BACKSPACE = 8;
@@ -1202,8 +1208,8 @@ static constexpr int LINES          = 5;
 static constexpr int TRIANGLES      = 9;
 static constexpr int TRIANGLE_FAN   = 11;
 static constexpr int TRIANGLE_STRIP = 10;
-static constexpr int QUADS          = 16;
-static constexpr int QUAD_STRIP     = 17;
+static constexpr int QUADS          = 17;
+static constexpr int QUAD_STRIP     = 18;
 static constexpr int CLOSE          = 2;
 // Arc modes
 static constexpr int OPEN           = 1;
