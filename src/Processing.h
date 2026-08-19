@@ -3680,6 +3680,11 @@ inline float blue(color c)       { return (float)(c.value&0xFF); }
 inline float brightness(color c) { float r=red(c)/255.f,g=green(c)/255.f,b=blue(c)/255.f; return ::std::max({r,g,b})*255.f; }
 inline float hue(color c)        { float r=red(c)/255.f,g=green(c)/255.f,b=blue(c)/255.f; float mx=::std::max({r,g,b}),mn=::std::min({r,g,b}); if(mx==mn) return 0; float h=0; if(mx==r) h=(g-b)/(mx-mn); else if(mx==g) h=2+(b-r)/(mx-mn); else h=4+(r-g)/(mx-mn); h*=60; if(h<0) h+=360; return h/360.f*255.f; }
 inline float saturation(color c) { float r=red(c)/255.f,g=green(c)/255.f,b=blue(c)/255.f; float mx=::std::max({r,g,b}),mn=::std::min({r,g,b}); return mx==0?0:(mx-mn)/mx*255.f; }
+// min/max -- 2 and 3 argument versions like Processing Java
+template<class A,class B> inline auto min(A a,B b)->decltype((float)a){ return (float)a<(float)b?(float)a:(float)b; }
+template<class A,class B,class C> inline auto min(A a,B b,C c)->decltype((float)a){ float fa=(float)a,fb=(float)b,fc=(float)c; return fa<fb?(fa<fc?fa:fc):(fb<fc?fb:fc); }
+template<class A,class B> inline auto max(A a,B b)->decltype((float)a){ return (float)a>(float)b?(float)a:(float)b; }
+template<class A,class B,class C> inline auto max(A a,B b,C c)->decltype((float)a){ float fa=(float)a,fb=(float)b,fc=(float)c; return fa>fb?(fa>fc?fa:fc):(fb>fc?fb:fc); }
 
 // image() -- mixed types, value and pointer variants
 // image() -- draw a PImage to screen
