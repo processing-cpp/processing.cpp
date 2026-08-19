@@ -3593,6 +3593,8 @@ inline float constrain(V val,A lo,B hi){ return _api::constrain((float)val,(floa
 template<typename A,typename B,typename C,
     typename=::std::enable_if_t<::Processing::_is_numeric_v<A>&&::Processing::_is_numeric_v<B>&&::Processing::_is_numeric_v<C>>>
 inline float lerp(A a,B b2,C t){ return _api::lerp((float)a,(float)b2,(float)t); }
+template<class V,class A,class B>
+inline float norm(V value,A start,B stop){ return map((float)value,(float)start,(float)stop,0.0f,1.0f); }
 
 // bezier() -- 8 arithmetic params
 template<typename A,typename B,typename C,typename D,
