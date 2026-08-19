@@ -3662,6 +3662,24 @@ template<class A> inline float sqrt(A v){ return ::std::sqrt((float)v); }
 template<class A,class B> inline float pow(A base,B exp){ return ::std::pow((float)base,(float)exp); }
 template<class A> inline float exp(A v){ return ::std::exp((float)v); }
 template<class A> inline float log(A v){ return ::std::log((float)v); }
+// Trig
+inline float sin(float x)     { return ::std::sin(x); }
+inline float cos(float x)     { return ::std::cos(x); }
+inline float tan(float x)     { return ::std::tan(x); }
+inline float asin(float x)    { return ::std::asin(x); }
+inline float acos(float x)    { return ::std::acos(x); }
+inline float atan(float x)    { return ::std::atan(x); }
+template<class A,class B> inline float atan2(A y,B x){ return ::std::atan2((float)y,(float)x); }
+inline float degrees(float r) { return r*180.f/PI; }
+inline float radians(float d) { return d*PI/180.f; }
+// Color channel accessors
+inline float alpha(color c)      { return (float)((c.value>>24)&0xFF); }
+inline float red(color c)        { return (float)((c.value>>16)&0xFF); }
+inline float green(color c)      { return (float)((c.value>>8)&0xFF); }
+inline float blue(color c)       { return (float)(c.value&0xFF); }
+inline float brightness(color c) { float r=red(c)/255.f,g=green(c)/255.f,b=blue(c)/255.f; return ::std::max({r,g,b})*255.f; }
+inline float hue(color c)        { float r=red(c)/255.f,g=green(c)/255.f,b=blue(c)/255.f; float mx=::std::max({r,g,b}),mn=::std::min({r,g,b}); if(mx==mn) return 0; float h=0; if(mx==r) h=(g-b)/(mx-mn); else if(mx==g) h=2+(b-r)/(mx-mn); else h=4+(r-g)/(mx-mn); h*=60; if(h<0) h+=360; return h/360.f*255.f; }
+inline float saturation(color c) { float r=red(c)/255.f,g=green(c)/255.f,b=blue(c)/255.f; float mx=::std::max({r,g,b}),mn=::std::min({r,g,b}); return mx==0?0:(mx-mn)/mx*255.f; }
 
 // image() -- mixed types, value and pointer variants
 // image() -- draw a PImage to screen
