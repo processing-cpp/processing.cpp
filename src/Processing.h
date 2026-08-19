@@ -3709,6 +3709,18 @@ inline color blendColor(color c1, color c2, int mode) {
     }
     return c2; // fallback
 }
+// Array utility functions matching Processing Java
+template<class T> inline ::std::vector<T> append(::std::vector<T> arr, T val) { arr.push_back(val); return arr; }
+template<class T> inline ::std::vector<T> expand(::std::vector<T> arr) { arr.resize(arr.size()*2); return arr; }
+template<class T> inline ::std::vector<T> expand(::std::vector<T> arr, int n) { arr.resize(n); return arr; }
+template<class T> inline ::std::vector<T> shorten(::std::vector<T> arr) { if(!arr.empty()) arr.pop_back(); return arr; }
+template<class T> inline ::std::vector<T> subset(const ::std::vector<T>& arr, int start) { return ::std::vector<T>(arr.begin()+start,arr.end()); }
+template<class T> inline ::std::vector<T> subset(const ::std::vector<T>& arr, int start, int count) { return ::std::vector<T>(arr.begin()+start,arr.begin()+start+count); }
+template<class T> inline ::std::vector<T> concat(::std::vector<T> a, const ::std::vector<T>& b) { a.insert(a.end(),b.begin(),b.end()); return a; }
+template<class T> inline ::std::vector<T> reverse(::std::vector<T> arr) { ::std::reverse(arr.begin(),arr.end()); return arr; }
+template<class T> inline ::std::vector<T> sort(::std::vector<T> arr) { ::std::sort(arr.begin(),arr.end()); return arr; }
+template<class T> inline ::std::vector<T> sort(::std::vector<T> arr, int count) { ::std::sort(arr.begin(),arr.begin()+::std::min((int)arr.size(),count)); return arr; }
+
 
 // image() -- mixed types, value and pointer variants
 // image() -- draw a PImage to screen
