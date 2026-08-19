@@ -1197,13 +1197,13 @@ static constexpr int MITER   = 8;
 static constexpr int BEVEL   = 32;
 
 // beginShape() kinds
-static constexpr int POINTS         = 0;
-static constexpr int LINES          = 1;
-static constexpr int TRIANGLES      = 2;
-static constexpr int TRIANGLE_FAN   = 3;
-static constexpr int TRIANGLE_STRIP = 4;
-static constexpr int QUADS          = 5;
-static constexpr int QUAD_STRIP     = 6;
+static constexpr int POINTS         = 3;
+static constexpr int LINES          = 5;
+static constexpr int TRIANGLES      = 9;
+static constexpr int TRIANGLE_FAN   = 11;
+static constexpr int TRIANGLE_STRIP = 10;
+static constexpr int QUADS          = 16;
+static constexpr int QUAD_STRIP     = 17;
 static constexpr int CLOSE          = 2;
 // Arc modes
 static constexpr int OPEN           = 1;
