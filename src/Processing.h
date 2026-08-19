@@ -3685,6 +3685,30 @@ template<class A,class B> inline auto min(A a,B b)->decltype((float)a){ return (
 template<class A,class B,class C> inline auto min(A a,B b,C c)->decltype((float)a){ float fa=(float)a,fb=(float)b,fc=(float)c; return fa<fb?(fa<fc?fa:fc):(fb<fc?fb:fc); }
 template<class A,class B> inline auto max(A a,B b)->decltype((float)a){ return (float)a>(float)b?(float)a:(float)b; }
 template<class A,class B,class C> inline auto max(A a,B b,C c)->decltype((float)a){ float fa=(float)a,fb=(float)b,fc=(float)c; return fa>fb?(fa>fc?fa:fc):(fb>fc?fb:fc); }
+// lerpColor and blendColor as free functions
+inline color lerpColor(color c1, color c2, float t) {
+    int r1=(c1.value>>16)&0xFF, g1=(c1.value>>8)&0xFF, b1=c1.value&0xFF, a1=(c1.value>>24)&0xFF;
+    int r2=(c2.value>>16)&0xFF, g2=(c2.value>>8)&0xFF, b2=c2.value&0xFF, a2=(c2.value>>24)&0xFF;
+    int r=(int)(r1+(r2-r1)*t), g=(int)(g1+(g2-g1)*t), b=(int)(b1+(b2-b1)*t), a=(int)(a1+(a2-a1)*t);
+    return colorVal(r,g,b,a);
+}
+inline color blendColor(color c1, color c2, int mode) {
+    if (mode == REPLACE) return c2;
+    if (mode == BLEND) {
+        float a=((c2.value>>24)&0xFF)/255.f;
+        int r=(int)(((c1.value>>16)&0xFF)*(1-a)+((c2.value>>16)&0xFF)*a);
+        int g=(int)(((c1.value>>8)&0xFF)*(1-a)+((c2.value>>8)&0xFF)*a);
+        int b=(int)((c1.value&0xFF)*(1-a)+(c2.value&0xFF)*a);
+        return colorVal(r,g,b,255);
+    }
+    if (mode == ADD) {
+        int r=::std::min(((c1.value>>16)&0xFF)+((c2.value>>16)&0xFF),255);
+        int g=::std::min(((c1.value>>8)&0xFF)+((c2.value>>8)&0xFF),255);
+        int b=::std::min((c1.value&0xFF)+(c2.value&0xFF),255);
+        return colorVal(r,g,b,255);
+    }
+    return c2; // fallback
+}
 
 // image() -- mixed types, value and pointer variants
 // image() -- draw a PImage to screen
