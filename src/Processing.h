@@ -1417,6 +1417,9 @@ inline bool        toBoolean(const ::std::string& s)  { return s=="true"||s=="1"
 inline int         toInt(const ::std::string& s)      { return ::std::stoi(s); }
 inline float       toFloat(const ::std::string& s)    { try { return ::std::stof(s); } catch (...) { return 0.0f; } }
 inline char        toChar(int v)                    { return static_cast<char>(v); }
+inline int   parseInt(const ::std::string& s)   { try { return ::std::stoi(s); } catch(...) { return 0; } }
+inline float parseFloat(const ::std::string& s) { try { return ::std::stof(s); } catch(...) { return 0.f; } }
+inline bool  parseBoolean(const ::std::string& s){ return s=="true"||s=="True"||s=="TRUE"||s=="1"; }
 inline ::std::string toUpperCase(::std::string s) { for(auto& c:s) c=::std::toupper((unsigned char)c); return s; }
 inline ::std::string toLowerCase(::std::string s) { for(auto& c:s) c=::std::tolower((unsigned char)c); return s; }
 inline ::std::string trim(const ::std::string& s) {
