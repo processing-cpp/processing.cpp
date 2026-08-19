@@ -670,6 +670,12 @@ public class CppBuild {
     dllSources.add(bundledDir);
     for (String msysDir : new String[]{"C:\\msys64\\mingw64\\bin","C:\\msys2\\mingw64\\bin"})
       dllSources.add(new File(msysDir));
+    // Also search system PATH entries for gcc runtime DLLs
+    String syspath = System.getenv("PATH");
+    if (syspath != null) {
+      for (String dir : syspath.split(";"))
+        dllSources.add(new File(dir.trim()));
+    }
 
     for (String dll : allDlls) {
       for (File sourceDir : dllSources) {

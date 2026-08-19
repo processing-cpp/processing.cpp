@@ -110,8 +110,13 @@ final class DependencyHoister {
                 if (lifecycleNames.contains(vd.name())) continue;
                 if (result.hoistedVariables.contains(vd)) continue;
 
-                boolean referencedFromHoisted = isBareIdentifierReferencedByAnyTypeDef(vd.name(), hoistedClasses)
-                    || isBareIdentifierReferencedByAnyFunctionDecl(vd.name(), result.hoistedFunctions);
+                // Only hoist if referenced as a VALUE (not as a function call).
+                // "flock(boids)" is a method call, not a reference to Flock* flock.
+                boolean referencedFromHoisted =
+                    (isBareIdentifierReferencedByAnyTypeDef(vd.name(), hoistedClasses)
+                     && !isOnlyCalledByAnyTypeDef(vd.name(), hoistedClasses))
+                    || (isBareIdentifierReferencedByAnyFunctionDecl(vd.name(), result.hoistedFunctions)
+                     && !isOnlyCalledByAnyFunctionDecl(vd.name(), result.hoistedFunctions));
                 if (!referencedFromHoisted) continue;
 
                 result.hoistedVariables.add(vd);
@@ -139,6 +144,21 @@ final class DependencyHoister {
         return false;
     }
 
+    private static boolean isOnlyCalledByAnyTypeDef(String name, List<TypeDef> typeDefs) {
+        // True if name appears ONLY as a callee (never as a bare value reference)
+        for (TypeDef td : typeDefs) {
+            if (NameUsageScanner.containsIdentifier(td, name)
+                    && !NameUsageScanner.containsNonCallIdentifier(td, name)) return true;
+        }
+        return false;
+    }
+    private static boolean isOnlyCalledByAnyFunctionDecl(String name, List<FunctionDecl> fns) {
+        for (FunctionDecl fd : fns) {
+            if (NameUsageScanner.containsIdentifier(fd, name)
+                    && !NameUsageScanner.containsNonCallIdentifier(fd, name)) return true;
+        }
+        return false;
+    }
     private static boolean isBareIdentifierReferencedByAnyTypeDef(String name, List<TypeDef> typeDefs) {
         for (TypeDef td : typeDefs) {
             if (NameUsageScanner.containsIdentifier(td, name)) return true;

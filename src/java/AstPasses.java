@@ -102,27 +102,72 @@ final class ClassHoister {
         classBlocks = new ArrayList<>();
         for (String n : order) classBlocks.add(best.get(n));
 
+        // Build set of class names for dependency detection
+        java.util.Set<String> classNames = new java.util.HashSet<>();
+        for (TypeDef td : classBlocks) classNames.add(td.name());
+        // Sort: base classes and member-access dependencies before dependent classes
         boolean changed = true;
         for (int pass = 0; pass < classBlocks.size() * 2 && changed; pass++) {
             changed = false;
             for (int a = 0; a < classBlocks.size(); a++) {
                 TypeDef blockA = classBlocks.get(a);
-                if (blockA.baseClasses().isEmpty()) continue;
-                String aBase = blockA.baseClasses().get(0);
+                // Check base class ordering
+                for (String aBase : blockA.baseClasses()) {
+                    String baseName = aBase.replaceAll("\b(virtual|public|protected|private)\b\s*", "").trim();
+                    int lt = baseName.indexOf('<'); if (lt >= 0) baseName = baseName.substring(0, lt).trim();
+                    for (int b = a + 1; b < classBlocks.size(); b++) {
+                        if (classBlocks.get(b).name().equals(baseName)) {
+                            classBlocks.add(a, classBlocks.remove(b));
+                            changed = true; break;
+                        }
+                    }
+                    if (changed) break;
+                }
+                if (changed) break;
+                // Check member-access dependency: if A uses B's members, B must come first
                 for (int b = a + 1; b < classBlocks.size(); b++) {
                     TypeDef blockB = classBlocks.get(b);
-                    if (blockB.name().equals(aBase)) {
-                        classBlocks.set(a, blockB);
-                        classBlocks.set(b, blockA);
-                        changed = true;
-                        break;
+                    if (classDependsOnFull(blockA, blockB.name())) {
+                        classBlocks.add(a, classBlocks.remove(b));
+                        changed = true; break;
                     }
                 }
                 if (changed) break;
             }
         }
-
         return new Result(classBlocks, rest);
+    }
+    /** True if class A accesses members of class B via a B* or B& parameter. */
+    private static boolean classDependsOnFull(TypeDef a, String bName) {
+        for (TopLevelItem member : a.members()) {
+            if (!(member instanceof FunctionDecl fd)) continue;
+            boolean hasBParam = false;
+            for (Param p : fd.params()) {
+                if (p.type() instanceof NamedType nt && nt.baseName().equals(bName)) {
+                    hasBParam = true; break;
+                }
+            }
+            if (!hasBParam) continue;
+            if (fd.body() != null && containsMemberAccess(fd.body())) return true;
+        }
+        return false;
+    }
+    private static boolean containsMemberAccess(Node n) {
+        if (n == null) return false;
+        if (n instanceof MemberAccessExpr) return true;
+        if (n instanceof Block b) { for (Statement s : b.statements()) if (containsMemberAccess(s)) return true; return false; }
+        if (n instanceof ExprStatement es) return containsMemberAccess(es.expr());
+        if (n instanceof ReturnStatement rs) return containsMemberAccess(rs.value());
+        if (n instanceof IfStatement ifs) return containsMemberAccess(ifs.condition()) || containsMemberAccess(ifs.thenBranch()) || containsMemberAccess(ifs.elseBranch());
+        if (n instanceof ForStatement fs) return containsMemberAccess(fs.init()) || containsMemberAccess(fs.condition()) || containsMemberAccess(fs.update()) || containsMemberAccess(fs.body());
+        if (n instanceof WhileStatement ws) return containsMemberAccess(ws.condition()) || containsMemberAccess(ws.body());
+        if (n instanceof BinaryExpr be) return containsMemberAccess(be.left()) || containsMemberAccess(be.right());
+        if (n instanceof AssignExpr ae) return containsMemberAccess(ae.target()) || containsMemberAccess(ae.value());
+        if (n instanceof CallExpr c) { if (containsMemberAccess(c.callee())) return true; for (Expr a2 : c.args()) if (containsMemberAccess(a2)) return true; return false; }
+        if (n instanceof DeclStatement ds) return containsMemberAccess(ds.initializer());
+        if (n instanceof UnaryExpr u) return containsMemberAccess(u.operand());
+        if (n instanceof TernaryExpr t) return containsMemberAccess(t.condition()) || containsMemberAccess(t.thenExpr()) || containsMemberAccess(t.elseExpr());
+        return false;
     }
 }
 
@@ -332,6 +377,10 @@ final class NameUsageScanner {
     public static boolean containsCall(Node root, String name) {
         return new Finder(name, true).visit(root);
     }
+    /** True if name appears as a non-call identifier (value reference, not function call) */
+    public static boolean containsNonCallIdentifier(Node root, String name) {
+        return new NonCallFinder(name).visit(root);
+    }
 
     public static boolean containsBareFunctionCall(Node root) {
         return new BareFunctionCallFinder().visit(root);
@@ -362,6 +411,38 @@ final class NameUsageScanner {
         }
     }
 
+    private static final class NonCallFinder {
+        final String name;
+        NonCallFinder(String name) { this.name = name; }
+        boolean visit(Node n) {
+            if (n == null) return false;
+            if (n instanceof Identifier id) return id.name().equals(name);
+            if (n instanceof CallExpr c) {
+                // Skip callee -- we only want non-call uses
+                boolean calleeIsTarget = c.callee() instanceof Identifier id && id.name().equals(name);
+                if (!calleeIsTarget && visit(c.callee())) return true;
+                for (Expr a : c.args()) if (visit(a)) return true;
+                return false;
+            }
+            if (n instanceof TypeDef td) { for (TopLevelItem m : td.members()) if (visit(m)) return true; return false; }
+            if (n instanceof FunctionDecl fd) { return fd.body() != null && visit(fd.body()); }
+            if (n instanceof VariableDecl vd) { return vd.initializer() != null && visit(vd.initializer()); }
+            if (n instanceof Block b) { for (Statement s : b.statements()) if (visit(s)) return true; return false; }
+            if (n instanceof ExprStatement es) return visit(es.expr());
+            if (n instanceof ReturnStatement rs) return visit(rs.value());
+            if (n instanceof IfStatement ifs) return visit(ifs.condition()) || visit(ifs.thenBranch()) || visit(ifs.elseBranch());
+            if (n instanceof WhileStatement ws) return visit(ws.condition()) || visit(ws.body());
+            if (n instanceof ForStatement fs) return visit(fs.init()) || visit(fs.condition()) || visit(fs.update()) || visit(fs.body());
+            if (n instanceof DeclStatement ds) return ds.initializer() != null && visit(ds.initializer());
+            if (n instanceof BinaryExpr b) return visit(b.left()) || visit(b.right());
+            if (n instanceof UnaryExpr u) return visit(u.operand());
+            if (n instanceof AssignExpr ae) return visit(ae.target()) || visit(ae.value());
+            if (n instanceof MemberAccessExpr m) return visit(m.target());
+            if (n instanceof TernaryExpr t) return visit(t.condition()) || visit(t.thenExpr()) || visit(t.elseExpr());
+            if (n instanceof TopLevelStatement ts) return visit(ts.statement());
+            return false;
+        }
+    }
     private static final class Finder {
         final String name;
         final boolean callOnly;

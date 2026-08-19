@@ -1788,6 +1788,7 @@ public final class Parser {
                 return true; // anonymous param
             }
             return check(CppLexerTokenType.IDENTIFIER)
+                || checkOp("&") || checkOp("*") || checkOp("&&") // ref/ptr param
                 || checkPunct("...")   // variadic: "Args... args" or "T..."
                 || checkPunct(",")    // next param after anonymous
                 || checkPunct("(");   // reference/pointer-to-array param: "int (&arr)[10]"
