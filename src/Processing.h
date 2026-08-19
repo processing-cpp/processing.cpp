@@ -1172,9 +1172,6 @@ static constexpr char ENTER     = 10;   // PC/Unix enter key
 #ifdef DELETE
 #  undef DELETE
 #endif
-static constexpr int BACKSPACE = 8;
-static constexpr int TAB       = 9;
-static constexpr int ENTER     = 10;
 static constexpr int RETURN    = 13;   // Mac return key (same key as ENTER on most systems)
 static constexpr int ESC       = 27;
 static constexpr int DELETE    = 127;
