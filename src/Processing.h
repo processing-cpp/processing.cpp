@@ -1300,6 +1300,18 @@ inline unsigned long millis() {
     static auto start = steady_clock::now();
     return static_cast<unsigned long>(duration_cast<milliseconds>(steady_clock::now()-start).count());
 }
+// sketchPath/dataPath -- returns path relative to sketch folder
+inline ::std::string sketchPath(const ::std::string& where="") {
+    const char* p = ::std::getenv("PROCESSING_SKETCH_PATH");
+    ::std::string base = p ? p : ".";
+    return where.empty() ? base : base + "/" + where;
+}
+inline ::std::string dataPath(const ::std::string& where="") {
+    return sketchPath(where.empty() ? "data" : "data/" + where);
+}
+inline ::std::string sketchFile(const ::std::string& where) { return sketchPath(where); }
+inline ::std::string dataFile(const ::std::string& where)   { return dataPath(where); }
+
 inline int second() { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_sec;      }
 inline int minute() { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_min;      }
 inline int hour()   { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_hour;     }
