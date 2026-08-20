@@ -1217,6 +1217,13 @@ static constexpr int MITER   = 8;
 static constexpr int BEVEL   = 32;
 
 // beginShape() kinds
+// Vertex type constants
+static constexpr int VERTEX           = 0;
+static constexpr int BEZIER_VERTEX    = 1;
+static constexpr int QUADRATIC_VERTEX = 2;
+static constexpr int CURVE_VERTEX     = 3;
+static constexpr int BREAK            = 4;
+
 // Shape primitive type constants (for createShape/PShape)
 static constexpr int GROUP    = 0;
 static constexpr int POINT    = 2;
