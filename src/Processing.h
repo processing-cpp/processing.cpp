@@ -3651,7 +3651,12 @@ public:
     ::std::vector<K> keySet() const            { ::std::vector<K> r; for(auto& p:data) r.push_back(p.first); return r; }
     ::std::vector<V> values() const            { ::std::vector<V> r; for(auto& p:data) r.push_back(p.second); return r; }
     V& operator[](const K& k)               { return data[k]; }
+    V  getOrDefault(const K& k, const V& def) const { auto it=data.find(k); return it!=data.end()?it->second:def; }
+    void putAll(const HashMap<K,V>& m)      { for(auto& p:m.data) data[p.first]=p.second; }
+    void putIfAbsent(const K& k, const V& v){ if(!data.count(k)) data[k]=v; }
+    ::std::vector<::std::pair<K,V>> entrySet() const { ::std::vector<::std::pair<K,V>> r; for(auto& p:data) r.push_back(p); return r; }
 };
+
 
 // =============================================================================
 // TABLEROW  --  single row accessor for Table iteration
