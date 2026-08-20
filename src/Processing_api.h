@@ -4,6 +4,10 @@
 #pragma once
 #include "Processing.h"
 #include <string>
+// Suppress stdlib random() which conflicts with Processing random(float)
+#ifdef random
+#  undef random
+#endif
 
 // ── Math (static, no instance needed) ────────────────────────────────────────
 inline float radians(float d)              { return PApplet::radians(d); }
