@@ -1193,8 +1193,15 @@ static constexpr int DELETE    = 127;
 static constexpr int CENTER    = 3;     // middle mouse button; also rectMode/ellipseMode CENTER
 
 // Color modes
-static constexpr int RGB  = 1;
-static constexpr int HSB  = 3;
+static constexpr int RGB   = 1;
+static constexpr int ARGB  = 2;
+static constexpr int HSB   = 3;
+static constexpr int ALPHA = 4;
+// Image file type constants
+static constexpr int TIFF  = 0;
+static constexpr int TARGA = 1;
+static constexpr int JPEG  = 2;
+static constexpr int GIF   = 3;
 #define ARGB 3  /* createImage(w,h,ARGB) */
 
 // Shape / rect / ellipse modes
