@@ -1,16 +1,15 @@
 // Processing_api.h
 // Included in user-defined classes that don't inherit from PApplet.
-// Brings all Processing free functions into scope via using directive.
-// Sketch state variables (width, height, mouseX, etc.) are accessible
-// through the inline accessors below.
+// Exposes all Processing API functions via using directives.
+// Zero maintenance: add functions to _api namespace, they appear here automatically.
 #pragma once
 #include "Processing.h"
 #include <string>
 
 using namespace ::Processing;
+using namespace ::Processing::_api;
 
-// ── Sketch state accessors ────────────────────────────────────────────────────
-// These expose PApplet member variables as free functions for hoisted classes.
+// ── Sketch state accessors (PApplet member variables) ─────────────────────────
 inline int   width()        { return PApplet::g_papplet ? PApplet::g_papplet->logicalW      : 0;    }
 inline int   height()       { return PApplet::g_papplet ? PApplet::g_papplet->logicalH      : 0;    }
 inline float mouseX()       { return PApplet::g_papplet ? PApplet::g_papplet->mouseX        : 0.f;  }
