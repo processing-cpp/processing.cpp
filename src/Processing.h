@@ -930,6 +930,7 @@ public:
     void ellipse(float x, float y, float w, float h);
     void rect(float x, float y, float w, float h);
     void rect(float x, float y, float w, float h, float r);
+    void rect(float x, float y, float w, float h, float tl, float tr, float br, float bl);
     void line(float x1, float y1, float x2, float y2);
     void point(float x, float y);
     void triangle(float x1,float y1,float x2,float y2,float x3,float y3);
@@ -4107,6 +4108,7 @@ struct PApplet {
     void circle(float cx, float cy, float d);
     void rect(float x, float y, float w, float h);
     void rect(float x, float y, float w, float h, float r);
+    void rect(float x, float y, float w, float h, float tl, float tr, float br, float bl);
     void square(float x, float y, float s);
     void triangle(float x1, float y1, float x2, float y2, float x3, float y3);
     void quad(float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4);

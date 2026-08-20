@@ -1,4 +1,20 @@
-#if __has_include("stb_truetype.h")
+#
+void PApplet::rect(float x,float y,float w,float h,float tl,float tr,float br,float bl){
+    // Draw rect with 4 different corner radii
+    if(!doFill && !doStroke) return;
+    float x2=x+w, y2=y+h;
+    beginShape();
+    vertex(x+tl,y);   vertex(x2-tr,y);   // top
+    if(tr>0){for(int i=0;i<=8;i++){float a=PI+HALF_PI+HALF_PI*i/8.f;vertex(x2-tr+::std::cos(a)*tr,y+tr+::std::sin(a)*tr);}}
+    vertex(x2,y+tr);  vertex(x2,y2-br);  // right
+    if(br>0){for(int i=0;i<=8;i++){float a=0+HALF_PI*i/8.f;vertex(x2-br+::std::cos(a)*br,y2-br+::std::sin(a)*br);}}
+    vertex(x2-br,y2); vertex(x+bl,y2);   // bottom
+    if(bl>0){for(int i=0;i<=8;i++){float a=HALF_PI+HALF_PI*i/8.f;vertex(x+bl+::std::cos(a)*bl,y2-bl+::std::sin(a)*bl);}}
+    vertex(x,y2-bl);  vertex(x,y+tl);    // left
+    if(tl>0){for(int i=0;i<=8;i++){float a=PI+HALF_PI*i/8.f;vertex(x+tl+::std::cos(a)*tl,y+tl+::std::sin(a)*tl);}}
+    endShape(CLOSE);
+}
+if __has_include("stb_truetype.h")
 #  define PROCESSING_HAS_STB_TRUETYPE 1
 #  define STB_TRUETYPE_IMPLEMENTATION
 #  include "stb_truetype.h"
