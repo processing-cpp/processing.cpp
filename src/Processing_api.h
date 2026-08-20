@@ -11,6 +11,18 @@ inline float degrees(float r)              { return PApplet::degrees(r); }
 inline float sq(float x)                   { return PApplet::sq(x); }
 inline float lerp(float a,float b,float t) { return PApplet::lerp(a,b,t); }
 inline bool* getKeysDown()  { return PApplet::g_papplet ? PApplet::g_papplet->keysDown  : nullptr; }
+inline JSONValue loadJSON(const ::std::string& p) {
+    static JSONValue e; return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->loadJSON(p) : e;
+}
+inline bool saveJSON(const JSONValue& j, const ::std::string& p) {
+    return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->saveJSON(j,p) : false;
+}
+inline Table* loadTable(const ::std::string& p, const ::std::string& opts="") {
+    return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->loadTable(p,opts) : nullptr;
+}
+inline XML loadXML(const ::std::string& p) {
+    return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->loadXML(p) : XML();
+}
 inline ::std::vector<::std::string> loadStrings(const ::std::string& p) {
     return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->loadStrings(p) : ::std::vector<::std::string>{};
 }
