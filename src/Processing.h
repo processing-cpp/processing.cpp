@@ -4292,9 +4292,7 @@ struct PApplet {
     void fullScreen();
     void fullScreen(int mode);
     void  frameRate(int fps);
-    float getFrameRate() const { return _frameRate; }
-    int   getWidth()     const { return winWidth; }
-    int   getHeight()    const { return winHeight; }
+    float getFrameRate() const { return _frameRate; } // convenience, not in Processing Java
     void noLoop();
     void loop();
     void redraw();
