@@ -3669,6 +3669,7 @@ public:
     auto end()   { return data.end(); }
 };
 
+template<typename K, typename V>
 class HashMap {
 public:
     ::std::map<K,V> data;
