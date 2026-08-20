@@ -3635,7 +3635,6 @@ public:
 
 
 
-template<typename K, typename V>
 // Java collection stubs
 template<class T>
 class HashSet {
