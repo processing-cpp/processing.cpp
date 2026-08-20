@@ -2187,6 +2187,7 @@ public:
 };
 
 
+
 // =============================================================================
 // TYPED LISTS / DICTS  --  match Processing Java's IntList, FloatDict, etc.
 // =============================================================================
@@ -3808,6 +3809,18 @@ public:
 // =============================================================================
 // PVECTOR HELPER  --  matches Processing Java's createVector()
 // =============================================================================
+
+// Table::getRow() -- defined here after TableRow
+inline TableRow Table_getRow_impl(Table& t, int i) {
+    if(i<0||i>=(int)t.rows.size()) return TableRow();
+    return TableRow(t.rows[i], t.columns);
+}
+
+// Table getRow() free helper -- use t.getRow(i) via macro or just call this
+inline TableRow tableGetRow(Table& t, int i) {
+    if(i<0||i>=(int)t.rows.size()) return TableRow();
+    return TableRow(t.rows[i], t.columns);
+}
 
 inline PVector createVector(float x, float y, float z=0) { return PVector(x, y, z); }
 
