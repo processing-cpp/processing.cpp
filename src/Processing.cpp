@@ -852,8 +852,15 @@ void PApplet::stroke(float r,float g,float b)          {setStrokeFromColor(makeC
 void PApplet::stroke(color c)                       {setStrokeFromColor(c);}
 void PApplet::noStroke()                            {doStroke=false;}
 void PApplet::strokeWeight(float w)                 {strokeW=w;}
-void PApplet::strokeCap(int)  {}
-void PApplet::strokeJoin(int) {}
+void PApplet::strokeCap(int mode) {
+    // ROUND cap: enable line smoothing; SQUARE/PROJECT: disable
+    currentStrokeCap = mode;
+    if(mode==ROUND) { glEnable(GL_LINE_SMOOTH); glHint(GL_LINE_SMOOTH_HINT,GL_NICEST); }
+    else { glDisable(GL_LINE_SMOOTH); }
+}
+void PApplet::strokeJoin(int mode) {
+    currentStrokeJoin = mode; // stored, used in custom line rendering
+}
 
 // =============================================================================
 // PCOLOR CONVENIENCE OVERLOADS

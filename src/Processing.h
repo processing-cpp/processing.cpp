@@ -4076,6 +4076,8 @@ struct PApplet {
     int   currentRectMode = CORNER;
     int   currentEllipseMode = CENTER;
     int   currentImageMode = CORNER;
+    int   currentStrokeCap  = ROUND;
+    int   currentStrokeJoin = MITER;
 
     float tintR = 1, tintG = 1, tintB = 1, tintA = 1;
     bool  doTint = false;
