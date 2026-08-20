@@ -6,6 +6,21 @@
 #include <string>
 
 // ── Math (static, no instance needed) ────────────────────────────────────────
+inline float sin(float x)    { return ::std::sin(x); }
+inline float cos(float x)    { return ::std::cos(x); }
+inline float tan(float x)    { return ::std::tan(x); }
+inline float asin(float x)   { return ::std::asin(x); }
+inline float acos(float x)   { return ::std::acos(x); }
+inline float atan(float x)   { return ::std::atan(x); }
+inline float atan2(float y, float x) { return ::std::atan2(y,x); }
+inline float abs(float x)    { return ::std::abs(x); }
+inline float floor(float x)  { return ::std::floor(x); }
+inline float ceil(float x)   { return ::std::ceil(x); }
+inline float round(float x)  { return ::std::round(x); }
+inline float sqrt(float x)   { return ::std::sqrt(x); }
+inline float pow(float a, float b) { return ::std::pow(a,b); }
+inline float exp(float x)    { return ::std::exp(x); }
+inline float log(float x)    { return ::std::log(x); }
 inline float radians(float d)              { return PApplet::radians(d); }
 inline float degrees(float r)              { return PApplet::degrees(r); }
 inline float sq(float x)                   { return PApplet::sq(x); }
