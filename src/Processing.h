@@ -4152,6 +4152,7 @@ struct PApplet {
     void bezierVertex(float cx1, float cy1, float cx2, float cy2, float x, float y);
      void bezierVertex(float cx1,float cy1,float cz1,float cx2,float cy2,float cz2,float x,float y,float z);
     void quadraticVertex(float cx, float cy, float x, float y);
+    void quadraticVertex(float cx, float cy, float cz, float x, float y, float z);
     void curveVertex(float x, float y);
      void curveVertex(float x, float y, float z);
     void beginContour();

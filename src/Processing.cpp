@@ -1655,6 +1655,15 @@ void PApplet::quadraticVertex(float cx,float cy,float x,float y){
     auto[x0,y0]=shapeVerts.back();const int sg=bezierDetailVal;
     for(int i=1;i<=sg;i++){float t=i/(float)sg,u=1-t;float qx=u*u*x0+2*u*t*cx+t*t*x,qy=u*u*y0+2*u*t*cy+t*t*y;shapeVerts.push_back({qx,qy});shapeVerts3D.push_back({qx,qy,0.0f});}
 }
+void PApplet::quadraticVertex(float cx,float cy,float cz,float x,float y,float z){
+    // Convert quadratic to cubic bezier
+    if(!inShape||shapeVerts3D.empty()) return;
+    float ax=shapeVerts3D.back()[0],ay=shapeVerts3D.back()[1],az=shapeVerts3D.back()[2];
+    float cx1=ax+(2.f/3.f)*(cx-ax), cy1=ay+(2.f/3.f)*(cy-ay), cz1=az+(2.f/3.f)*(cz-az);
+    float cx2=x+(2.f/3.f)*(cx-x),   cy2=y+(2.f/3.f)*(cy-y),   cz2=z+(2.f/3.f)*(cz-z);
+    bezierVertex(cx1,cy1,cz1,cx2,cy2,cz2,x,y,z);
+}
+
 void PApplet::curveVertex(float x,float y){if(inShape){shapeVerts.push_back({x,y});shapeVerts3D.push_back({x,y,0.0f});}}
 void PApplet::curveVertex(float x,float y,float z){if(inShape){shapeVerts.push_back({x,y});shapeVerts3D.push_back({x,y,z});}}
 void PApplet::bezierVertex(float cx1,float cy1,float cz1,float cx2,float cy2,float cz2,float x,float y,float z){
