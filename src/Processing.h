@@ -4211,6 +4211,7 @@ struct PApplet {
 
     int   frameCount = 1;
     float _frameRate = 60.0f;
+    float deltaTime  = 0.016f; // seconds since last frame (like p5.js deltaTime/1000)
     bool  looping = true;
 
 
@@ -4290,7 +4291,8 @@ struct PApplet {
     void size(int w, int h, int renderer);
     void fullScreen();
     void fullScreen(int mode);
-    void frameRate(int fps);
+    void  frameRate(int fps);
+    float getFrameRate() const { return _frameRate; }
     void noLoop();
     void loop();
     void redraw();
