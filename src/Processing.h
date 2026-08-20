@@ -2132,6 +2132,11 @@ struct XML {
     ::std::vector<XML*> getChildren(const ::std::string& n){ ::std::vector<XML*> r; for(auto& c:children) if(c.name==n) r.push_back(&c); return r; }
 
     ::std::string toString(int indent=0) const;
+    void setName(const ::std::string& n) { name=n; }
+    void removeChild(XML* c) { children.erase(::std::remove_if(children.begin(),children.end(),[c](const XML& x){return &x==c;}),children.end()); }
+    ::std::vector<::std::string> getAttributeNames() const { ::std::vector<::std::string> r; for(auto& p:attributes) r.push_back(p.first); return r; }
+    void setAttributeInt(const ::std::string& k, int v)   { attributes[k]=::std::to_string(v); }
+    void setAttributeFloat(const ::std::string& k, float v){ attributes[k]=::std::to_string(v); }
 };
 
 
