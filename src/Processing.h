@@ -1258,6 +1258,16 @@ static constexpr int REPLACE    = 0;
 #endif
 
 // Math constants (float precision)
+// Processing Java numeric constants
+static constexpr float  MAX_FLOAT = ::std::numeric_limits<float>::max();
+static constexpr float  MIN_FLOAT = -::std::numeric_limits<float>::max();
+static constexpr int    MAX_INT   = ::std::numeric_limits<int>::max();
+static constexpr int    MIN_INT   = ::std::numeric_limits<int>::min();
+static constexpr float  EPSILON   = 0.0001f;
+// isNaN / isInfinite
+inline bool isNaN(float v)      { return ::std::isnan(v); }
+inline bool isInfinite(float v) { return ::std::isinf(v); }
+
 static constexpr float PI         = static_cast<float>(M_PI);
 static constexpr float TWO_PI     = static_cast<float>(M_PI * 2.0);
 static constexpr float HALF_PI    = static_cast<float>(M_PI / 2.0);
