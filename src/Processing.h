@@ -3509,6 +3509,10 @@ struct PFont {
 
     PFont() = default;
     PFont(const ::std::string& n, float s) : name(n), size(s), loaded(true) {}
+    float       getSize()   const { return size; }
+    ::std::string getName() const { return name; }
+    bool        isSmooth()  const { return true; }
+    int         getWidth(char c) const { return (int)(size*0.6f); } // approximation
 };
 
 
