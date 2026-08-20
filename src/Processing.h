@@ -3635,6 +3635,26 @@ public:
 
 
 
+// Java Random class
+class Random {
+    ::std::mt19937 rng;
+public:
+    Random() : rng(::std::random_device{}()) {}
+    explicit Random(long seed) : rng((unsigned)seed) {}
+    float nextFloat()  { return ::std::uniform_real_distribution<float>(0,1)(rng); }
+    double nextDouble(){ return ::std::uniform_real_distribution<double>(0,1)(rng); }
+    int  nextInt()     { return (int)rng(); }
+    int  nextInt(int n){ return ::std::uniform_int_distribution<int>(0,n-1)(rng); }
+    long nextLong()    { return (long)rng(); }
+    bool nextBoolean() { return rng()&1; }
+    float nextGaussian() {
+        float u=nextFloat()*2-1, v=nextFloat()*2-1, s=u*u+v*v;
+        if(s>=1||s==0) return nextGaussian();
+        float m=::std::sqrt(-2*::std::log(s)/s); return u*m;
+    }
+    void setSeed(long seed) { rng.seed((unsigned)seed); }
+};
+
 // Java StringBuilder
 class StringBuilder {
     ::std::string buf;
