@@ -3979,6 +3979,14 @@ struct MouseEvent {
     float getX()         const { return x;           }
     float getY()         const { return y;           }
     int  getAction()     const { return action;      }
+    int  getModifiers()  const {
+        int m=0;
+        if(shiftDown)   m|=1;
+        if(controlDown) m|=2;
+        if(altDown)     m|=4;
+        if(metaDown)    m|=8;
+        return m;
+    }
 };
 
 struct KeyEvent {
@@ -3998,6 +4006,14 @@ struct KeyEvent {
     bool isMetaDown()    const { return metaDown;    }
     char16_t getKey()    const { return key;         }
     int  getKeyCode()    const { return keyCode;     }
+    int  getModifiers()  const {
+        int m=0;
+        if(shiftDown)   m|=1;
+        if(controlDown) m|=2;
+        if(altDown)     m|=4;
+        if(metaDown)    m|=8;
+        return m;
+    }
     int  getAction()     const { return action;      }
 };
 
