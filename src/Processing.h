@@ -1273,6 +1273,9 @@ static constexpr float TWO_PI     = static_cast<float>(M_PI * 2.0);
 static constexpr float HALF_PI    = static_cast<float>(M_PI / 2.0);
 static constexpr float QUARTER_PI = static_cast<float>(M_PI / 4.0);
 static constexpr float TAU        = TWO_PI; // alias
+static constexpr float THIRD_PI   = static_cast<float>(M_PI / 3.0);
+static constexpr float DEG_TO_RAD = static_cast<float>(M_PI / 180.0);
+static constexpr float RAD_TO_DEG = static_cast<float>(180.0 / M_PI);
 
 // Renderer flags for size()
 static constexpr int P2D = 2;
