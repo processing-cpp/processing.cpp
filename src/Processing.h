@@ -3437,7 +3437,11 @@ public:
 
     void beginShape(int k=-1)         { kind=k; verts.clear(); }
     void endShape(bool close=false)   { closed=close; }
+    void beginShape(int kind=0) { kind_=kind; verts.clear(); }
+    void endShape(int mode=0)   { closed_=(mode==CLOSE); }
     void vertex(float x,float y,float z=0,float u=0,float v=0) { verts.push_back({x,y,z,u,v}); }
+    int  kind_   = 0;
+    bool closed_ = true;
     void addChild(const PShape& s)    { children.push_back(s); }
     void addChild(const PShape* s)    { if (s) addChild(*s); }
     ::std::string name; // id/name attribute from SVG
