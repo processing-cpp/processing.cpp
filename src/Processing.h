@@ -1362,17 +1362,29 @@ static constexpr int MODEL    = 4;   // textMode
 static constexpr int SHAPE    = 5;   // textMode
 static constexpr int DIAMETER = 3;   // synonym for CENTER in ellipseMode
 
-// hint() flags
-static constexpr int ENABLE_DEPTH_TEST         =  1;
-static constexpr int DISABLE_DEPTH_TEST        = -1;
-static constexpr int ENABLE_DEPTH_SORT         =  2;
-static constexpr int DISABLE_DEPTH_SORT        = -2;
-static constexpr int ENABLE_OPENGL_ERRORS      =  3;
-static constexpr int DISABLE_OPENGL_ERRORS     = -3;
-static constexpr int ENABLE_STROKE_PERSPECTIVE =  4;
-static constexpr int DISABLE_STROKE_PERSPECTIVE= -4;
-static constexpr int ENABLE_TEXTURE_MIPMAPS    =  5;
-static constexpr int DISABLE_TEXTURE_MIPMAPS   = -5;
+// hint() flags -- values match Processing Java PConstants exactly
+static constexpr int DISABLE_DEPTH_TEST        =  2;
+static constexpr int ENABLE_DEPTH_TEST         = -2;
+static constexpr int ENABLE_DEPTH_SORT         =  3;
+static constexpr int DISABLE_DEPTH_SORT        = -3;
+static constexpr int DISABLE_OPENGL_ERRORS     =  4;
+static constexpr int ENABLE_OPENGL_ERRORS      = -4;
+static constexpr int DISABLE_DEPTH_MASK        =  5;
+static constexpr int ENABLE_DEPTH_MASK         = -5;
+static constexpr int DISABLE_OPTIMIZED_STROKE  =  6;
+static constexpr int ENABLE_OPTIMIZED_STROKE   = -6;
+static constexpr int ENABLE_STROKE_PERSPECTIVE =  7;
+static constexpr int DISABLE_STROKE_PERSPECTIVE= -7;
+static constexpr int DISABLE_TEXTURE_MIPMAPS   =  8;
+static constexpr int ENABLE_TEXTURE_MIPMAPS    = -8;
+static constexpr int ENABLE_STROKE_PURE        =  9;
+static constexpr int DISABLE_STROKE_PURE       = -9;
+static constexpr int ENABLE_BUFFER_READING     =  10;
+static constexpr int DISABLE_BUFFER_READING    = -10;
+static constexpr int DISABLE_KEY_REPEAT        =  11;
+static constexpr int ENABLE_KEY_REPEAT         = -11;
+static constexpr int DISABLE_ASYNC_SAVEFRAME   =  12;
+static constexpr int ENABLE_ASYNC_SAVEFRAME    = -12;
 
 // Cursor shapes (map to GLFW)
 static constexpr int ARROW       = GLFW_ARROW_CURSOR;
