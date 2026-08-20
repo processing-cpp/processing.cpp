@@ -2306,6 +2306,29 @@ public:
     String toString() const { return String(::std::to_string(v)); }
 };
 
+// Java System class -- minimal stub for sketches that use System.currentTimeMillis() etc.
+class System {
+public:
+    static long long currentTimeMillis() {
+        using namespace ::std::chrono;
+        return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+    }
+    static long long nanoTime() {
+        using namespace ::std::chrono;
+        return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+    }
+    static void exit(int code=0) { ::exit(code); }
+    struct _Out {
+        template<class T> void println(const T& v) { ::std::cout << v << "\n"; ::std::cout.flush(); }
+        void println() { ::std::cout << "\n"; }
+        template<class T> void print(const T& v) { ::std::cout << v; ::std::cout.flush(); }
+    } out;
+    struct _Err {
+        template<class T> void println(const T& v) { ::std::cerr << v << "\n"; }
+        template<class T> void print(const T& v) { ::std::cerr << v; }
+    } err;
+};
+
 // Java Math class -- static methods for sketches that use Math.sin() etc.
 class Math {
 public:
