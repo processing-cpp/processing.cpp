@@ -6,40 +6,11 @@
 #include <string>
 
 // ── Math (static, no instance needed) ────────────────────────────────────────
-inline float sin(float x)    { return ::std::sin(x); }
-inline float cos(float x)    { return ::std::cos(x); }
-inline float tan(float x)    { return ::std::tan(x); }
-inline float asin(float x)   { return ::std::asin(x); }
-inline float acos(float x)   { return ::std::acos(x); }
-inline float atan(float x)   { return ::std::atan(x); }
-inline float atan2(float y, float x) { return ::std::atan2(y,x); }
-inline float abs(float x)    { return ::std::abs(x); }
-inline float floor(float x)  { return ::std::floor(x); }
-inline float ceil(float x)   { return ::std::ceil(x); }
-inline float round(float x)  { return ::std::round(x); }
-inline float sqrt(float x)   { return ::std::sqrt(x); }
-inline float pow(float a, float b) { return ::std::pow(a,b); }
-inline float exp(float x)    { return ::std::exp(x); }
-inline float log(float x)    { return ::std::log(x); }
 inline float radians(float d)              { return PApplet::radians(d); }
 inline float degrees(float r)              { return PApplet::degrees(r); }
 inline float sq(float x)                   { return PApplet::sq(x); }
 inline float lerp(float a,float b,float t) { return PApplet::lerp(a,b,t); }
 inline bool* getKeysDown()  { return PApplet::g_papplet ? PApplet::g_papplet->keysDown  : nullptr; }
-// print/println for hoisted classes
-template<typename T> inline void print(const T& v)    { ::std::cout << v; ::std::cout.flush(); }
-template<typename T> inline void println(const T& v)  { ::std::cout << v << "\n"; ::std::cout.flush(); }
-inline                       void println()             { ::std::cout << "\n"; ::std::cout.flush(); }
-template<typename T> inline void printArray(const ::std::vector<T>& a) {
-    for(int i=0;i<(int)a.size();i++) ::std::cout<<"["<<i<<"] "<<a[i]<<"\n";
-    ::std::cout.flush();
-}
-
-// File/IO functions for hoisted classes
-inline ::std::string sketchPath(const ::std::string& w="") { return ::Processing::sketchPath(w); }
-inline ::std::string dataPath(const ::std::string& w="")   { return ::Processing::dataPath(w); }
-inline ::std::string sketchFile(const ::std::string& w)    { return ::Processing::sketchPath(w); }
-inline ::std::string dataFile(const ::std::string& w)      { return ::Processing::dataPath(w); }
 inline ::std::vector<::std::string> loadStrings(const ::std::string& p) {
     return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->loadStrings(p) : ::std::vector<::std::string>{};
 }
@@ -47,14 +18,6 @@ inline ::std::vector<unsigned char> loadBytes(const ::std::string& p) {
     return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->loadBytes(p) : ::std::vector<unsigned char>{};
 }
 
-// Time functions
-inline unsigned long millis()  { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->millis() : 0; }
-inline int second() { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_sec; }
-inline int minute() { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_min; }
-inline int hour()   { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_hour; }
-inline int day()    { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_mday; }
-inline int month()  { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_mon+1; }
-inline int year()   { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_year+1900; }
 inline bool isKeyDown(int keyCode) {
     if(!PApplet::g_papplet) return false;
     if(keyCode<0||keyCode>=256) return false;
