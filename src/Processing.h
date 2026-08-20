@@ -5288,7 +5288,6 @@ inline void PGraphics::beginShape()                                 { if(PApplet
 inline void PGraphics::endShape(int mode)                           { if(PApplet::g_papplet) PApplet::g_papplet->endShape(mode); }
 inline void PGraphics::vertex(float x, float y)                     { if(PApplet::g_papplet) PApplet::g_papplet->vertex(x,y); }
 inline void PGraphics::vertex(float x, float y, float z)             { if(PApplet::g_papplet) PApplet::g_papplet->vertex(x,y,z); }
-inline void PGraphics::vertex(float x, float y, float u, float v)    { if(PApplet::g_papplet) PApplet::g_papplet->vertex(x,y,u,v); }
 inline void PGraphics::vertex(float x, float y, float z, float u, float v){ if(PApplet::g_papplet) PApplet::g_papplet->vertex(x,y,z,u,v); }
 inline void PGraphics::bezierVertex(float cx1,float cy1,float cx2,float cy2,float x,float y)
                                                        { if(PApplet::g_papplet) PApplet::g_papplet->bezierVertex(cx1,cy1,cx2,cy2,x,y); }
