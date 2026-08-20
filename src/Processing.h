@@ -2075,7 +2075,28 @@ struct JSONValue {
     JSONValue& operator[](int i)                { return (*arr)[i]; }
     int  size()             const { if(isArray())return (int)arr->size(); if(isObject())return (int)obj->size(); return 0; }
     bool hasKey(const ::std::string& k) const     { return isObject() && obj->count(k); }
+    // Processing Java JSONObject interface
+    bool getBoolean(const ::std::string& k) const { return isObject()&&obj->count(k)?(*obj).at(k).getBool():false; }
+    int  getInt(const ::std::string& k)     const { return isObject()&&obj->count(k)?(int)(*obj).at(k).n:0; }
+    float getFloat(const ::std::string& k)  const { return isObject()&&obj->count(k)?(float)(*obj).at(k).n:0; }
+    ::std::string getString(const ::std::string& k) const { return isObject()&&obj->count(k)?(*obj).at(k).s:""; }
+    JSONObject& getJSONObject(const ::std::string& k) { return *(*obj)[k].obj; }
+    JSONArray&  getJSONArray(const ::std::string& k)  { return *(*obj)[k].arr; }
+    void setBoolean(const ::std::string& k, bool v)          { (*obj)[k]=JSONValue(v); }
+    void setInt(const ::std::string& k, int v)               { (*obj)[k]=JSONValue(v); }
+    void setFloat(const ::std::string& k, float v)           { (*obj)[k]=JSONValue((double)v); }
+    void setString(const ::std::string& k, const ::std::string& v){ (*obj)[k]=JSONValue(v); }
+    // JSONArray interface
+    bool getBoolean(int i) const { return isArray()&&i<(int)arr->size()?(*arr)[i].getBool():false; }
+    int  getInt(int i)     const { return isArray()&&i<(int)arr->size()?(int)(*arr)[i].n:0; }
+    float getFloat(int i)  const { return isArray()&&i<(int)arr->size()?(float)(*arr)[i].n:0; }
+    ::std::string getString(int i) const { return isArray()&&i<(int)arr->size()?(*arr)[i].s:""; }
+    void append(bool v)               { if(isArray()) arr->push_back(JSONValue(v)); }
+    void append(int v)                { if(isArray()) arr->push_back(JSONValue(v)); }
+    void append(float v)              { if(isArray()) arr->push_back(JSONValue((double)v)); }
+    void append(const ::std::string& v){ if(isArray()) arr->push_back(JSONValue(v)); }
 };
+
 
 
 // =============================================================================
