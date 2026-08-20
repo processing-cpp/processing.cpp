@@ -1217,6 +1217,22 @@ static constexpr int MITER   = 8;
 static constexpr int BEVEL   = 32;
 
 // beginShape() kinds
+// Lighting constants
+static constexpr int AMBIENT     = 0;
+static constexpr int DIRECTIONAL = 1;
+static constexpr int SPOT        = 3;
+// Matrix type constants
+static constexpr int PROJECTION  = 0;
+static constexpr int MODELVIEW   = 1;
+// Projection type constants
+static constexpr int CUSTOM       = 0;
+static constexpr int ORTHOGRAPHIC = 2;
+static constexpr int PERSPECTIVE  = 3;
+// Message constants
+static constexpr int CHATTER  = 0;
+static constexpr int COMPLAINT = 1;
+static constexpr int PROBLEM  = 2;
+
 // Vertex type constants
 static constexpr int VERTEX           = 0;
 static constexpr int BEZIER_VERTEX    = 1;
