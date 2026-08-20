@@ -4308,6 +4308,7 @@ struct PApplet {
     void hint(int which);
     void cursor();
     void cursor(int type);
+    void cursor(PImage* img, int x=0, int y=0) { cursor(); } // custom cursor stub
     void noCursor();
     void captureMouse();
     void releaseMouse();
