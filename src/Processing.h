@@ -1308,10 +1308,13 @@ static constexpr int LANDSCAPE = 2;
 static constexpr int SPAN      = 0;
 
 // Texture / image modes
-static constexpr int IMAGE  = 100;
-static constexpr int NORMAL = 101;
-static constexpr int CLAMP  = 102;
-static constexpr int REPEAT = 103;
+static constexpr int IMAGE    = 2;
+static constexpr int NORMAL   = 1;
+static constexpr int CLAMP    = 0;
+static constexpr int REPEAT   = 1;
+static constexpr int MODEL    = 4;   // textMode
+static constexpr int SHAPE    = 5;   // textMode
+static constexpr int DIAMETER = 3;   // synonym for CENTER in ellipseMode
 
 // hint() flags
 static constexpr int ENABLE_DEPTH_TEST         =  1;
