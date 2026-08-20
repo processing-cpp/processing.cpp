@@ -1656,6 +1656,19 @@ void PApplet::quadraticVertex(float cx,float cy,float x,float y){
     for(int i=1;i<=sg;i++){float t=i/(float)sg,u=1-t;float qx=u*u*x0+2*u*t*cx+t*t*x,qy=u*u*y0+2*u*t*cy+t*t*y;shapeVerts.push_back({qx,qy});shapeVerts3D.push_back({qx,qy,0.0f});}
 }
 void PApplet::curveVertex(float x,float y){if(inShape){shapeVerts.push_back({x,y});shapeVerts3D.push_back({x,y,0.0f});}}
+void PApplet::curveVertex(float x,float y,float z){if(inShape){shapeVerts.push_back({x,y});shapeVerts3D.push_back({x,y,z});}}
+void PApplet::bezierVertex(float cx1,float cy1,float cz1,float cx2,float cy2,float cz2,float x,float y,float z){
+    if(!inShape) return;
+    float ax=shapeVerts3D.back()[0],ay=shapeVerts3D.back()[1],az=shapeVerts3D.back()[2];
+    int steps=20;
+    for(int i=1;i<=steps;i++){
+        float t=(float)i/steps,t2=t*t,t3=t2*t,mt=1-t,mt2=mt*mt,mt3=mt2*mt;
+        float px=mt3*ax+3*mt2*t*cx1+3*mt*t2*cx2+t3*x;
+        float py=mt3*ay+3*mt2*t*cy1+3*mt*t2*cy2+t3*y;
+        float pz=mt3*az+3*mt2*t*cz1+3*mt*t2*cz2+t3*z;
+        shapeVerts.push_back({px,py}); shapeVerts3D.push_back({px,py,pz});
+    }
+}
 
 void PApplet::bezier(float x1,float y1,float cx1,float cy1,float cx2,float cy2,float x2,float y2){
     if(!doStroke)return;applyStroke();glLineWidth(strokeW);glBegin(GL_LINE_STRIP);
