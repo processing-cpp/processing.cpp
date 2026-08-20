@@ -2306,6 +2306,23 @@ public:
     String toString() const { return String(::std::to_string(v)); }
 };
 
+// Java Collections and Arrays -- minimal stubs
+class Collections {
+public:
+    template<class T> static void sort(::std::vector<T>& v) { ::std::sort(v.begin(),v.end()); }
+    template<class T> static void reverse(::std::vector<T>& v) { ::std::reverse(v.begin(),v.end()); }
+    template<class T> static void shuffle(::std::vector<T>& v) { ::std::shuffle(v.begin(),v.end(),::std::default_random_engine(rand())); }
+    template<class T> static T min(const ::std::vector<T>& v) { return *::std::min_element(v.begin(),v.end()); }
+    template<class T> static T max(const ::std::vector<T>& v) { return *::std::max_element(v.begin(),v.end()); }
+};
+class Arrays {
+public:
+    template<class T> static void sort(::std::vector<T>& v) { ::std::sort(v.begin(),v.end()); }
+    template<class T> static ::std::string toString(const ::std::vector<T>& v) {
+        ::std::string s="["; for(int i=0;i<(int)v.size();i++){if(i)s+=", ";s+=::std::to_string(v[i]);} return s+"]";
+    }
+};
+
 // Java System class -- minimal stub for sketches that use System.currentTimeMillis() etc.
 class System {
 public:
