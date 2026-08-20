@@ -4664,8 +4664,6 @@ struct PApplet {
     PShape  createShape(int kind=-1);
     PShape* loadShape(const ::std::string& path);
     PShape  createShape(int kind, float a, float b, float c, float d);
-    PShape  createShape(int kind, float a, float b, float c, float d);
-    PShape  createShape(int kind, float a, float b, float c, float d);
     void shape(const PShape& s, float x=0, float y=0);
     void shape(const PShape& s, float x, float y, float w, float h);
     void shape(const PShape* s, float x=0, float y=0) { if(s) shape(*s,x,y); }
