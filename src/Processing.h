@@ -3438,7 +3438,6 @@ public:
     void beginShape(int k=-1)         { kind=k; verts.clear(); }
     void endShape(bool close=false)   { closed=close; }
     ::std::vector<float> params; // for primitive shapes (ELLIPSE, RECT, etc.)
-    ::std::vector<float> params; // for primitive shapes (ELLIPSE, RECT, etc.)
     void vertex(float x,float y,float z=0,float u=0,float v=0) { verts.push_back({x,y,z,u,v}); }
     void addChild(const PShape& s)    { children.push_back(s); }
     void addChild(const PShape* s)    { if (s) addChild(*s); }
