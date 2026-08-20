@@ -3635,6 +3635,26 @@ public:
 
 
 
+// Java StringBuilder
+class StringBuilder {
+    ::std::string buf;
+public:
+    StringBuilder() = default;
+    StringBuilder(const ::std::string& s) : buf(s) {}
+    template<class T> StringBuilder& append(T v) { buf += ::std::to_string(v); return *this; }
+    StringBuilder& append(const ::std::string& s) { buf += s; return *this; }
+    StringBuilder& append(const char* s)          { buf += s; return *this; }
+    StringBuilder& append(char c)                 { buf += c; return *this; }
+    StringBuilder& insert(int idx, const ::std::string& s) { buf.insert(idx,s); return *this; }
+    StringBuilder& deleteCharAt(int idx) { buf.erase(idx,1); return *this; }
+    StringBuilder& reverse() { ::std::reverse(buf.begin(),buf.end()); return *this; }
+    void setCharAt(int idx, char c) { buf[idx]=c; }
+    char charAt(int idx) const { return buf[idx]; }
+    int  length() const { return (int)buf.size(); }
+    ::std::string toString() const { return buf; }
+    operator ::std::string() const { return buf; }
+};
+
 // Java collection stubs
 template<class T>
 class HashSet {
