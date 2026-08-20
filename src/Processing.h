@@ -1280,6 +1280,13 @@ static constexpr float RAD_TO_DEG = static_cast<float>(180.0 / M_PI);
 // Renderer flags for size()
 static constexpr int P2D = 2;
 static constexpr int P3D = 3;
+// Renderer string constants (ignored in CppMode, accepted for compatibility)
+static constexpr const char* JAVA2D = "processing.awt.PGraphicsJava2D";
+static constexpr const char* FX2D   = "processing.javafx.PGraphicsFX2D";
+static constexpr const char* SVG    = "processing.svg.PGraphicsSVG";
+static constexpr const char* PDF    = "processing.pdf.PGraphicsPDF";
+static constexpr const char* DXF    = "processing.dxf.RawDXF";
+static constexpr const char* WEBGL  = "processing.webgl.PGraphicsWebGL";
 
 // Texture / image modes
 static constexpr int IMAGE  = 100;
