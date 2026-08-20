@@ -11,6 +11,14 @@ inline float degrees(float r)              { return PApplet::degrees(r); }
 inline float sq(float x)                   { return PApplet::sq(x); }
 inline float lerp(float a,float b,float t) { return PApplet::lerp(a,b,t); }
 inline bool* getKeysDown()  { return PApplet::g_papplet ? PApplet::g_papplet->keysDown  : nullptr; }
+// Time functions
+inline unsigned long millis()  { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->millis() : 0; }
+inline int second() { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_sec; }
+inline int minute() { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_min; }
+inline int hour()   { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_hour; }
+inline int day()    { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_mday; }
+inline int month()  { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_mon+1; }
+inline int year()   { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_year+1900; }
 inline bool isKeyDown(int keyCode) {
     if(!PApplet::g_papplet) return false;
     if(keyCode<0||keyCode>=256) return false;
