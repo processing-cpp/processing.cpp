@@ -3234,6 +3234,8 @@ public:
         ::std::vector<T> snapshot = other.data;
         data.insert(data.begin()+idx, snapshot.begin(), snapshot.end());
     }
+    ::std::vector<T> toArray() const { return data; }
+    T* toArray(T* arr) const { ::std::copy(data.begin(),data.end(),arr); return arr; }
     ArrayList<T,false> subList(int from, int to) const {
         // Real java.util.ArrayList.subList() throws IndexOutOfBoundsException
         // for fromIndex<0, toIndex>size(), or fromIndex>toIndex. Without this
