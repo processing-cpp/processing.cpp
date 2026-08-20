@@ -1287,6 +1287,15 @@ static constexpr const char* SVG    = "processing.svg.PGraphicsSVG";
 static constexpr const char* PDF    = "processing.pdf.PGraphicsPDF";
 static constexpr const char* DXF    = "processing.dxf.RawDXF";
 static constexpr const char* WEBGL  = "processing.webgl.PGraphicsWebGL";
+// Platform constants
+static constexpr int OTHER   = 0;
+static constexpr int WINDOWS = 1;
+static constexpr int MACOS   = 2;
+static constexpr int LINUX   = 3;
+// Orientation constants (Android/mobile)
+static constexpr int PORTRAIT  = 1;
+static constexpr int LANDSCAPE = 2;
+static constexpr int SPAN      = 0;
 
 // Texture / image modes
 static constexpr int IMAGE  = 100;
