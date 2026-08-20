@@ -3635,6 +3635,12 @@ public:
 
 
 
+// Java TreeMap and TreeSet
+template<class K, class V>
+class TreeMap : public HashMap<K,V> {}; // already sorted (std::map)
+template<class T>
+class TreeSet : public HashSet<T> {};   // sorted via std::set under HashSet
+
 // Java Random class
 class Random {
     ::std::mt19937 rng;
