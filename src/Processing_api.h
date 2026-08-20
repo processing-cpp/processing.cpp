@@ -10,8 +10,6 @@
 #endif
 
 // ── Math (static, no instance needed) ────────────────────────────────────────
-inline float radians(float d)              { return PApplet::radians(d); }
-inline float degrees(float r)              { return PApplet::degrees(r); }
 inline float sq(float x)                   { return PApplet::sq(x); }
 inline float lerp(float a,float b,float t) { return PApplet::lerp(a,b,t); }
 inline bool* getKeysDown()  { return PApplet::g_papplet ? PApplet::g_papplet->keysDown  : nullptr; }
@@ -129,21 +127,11 @@ inline void image(PImage* img,float x,float y,float w,float h){ if(::Processing:
 inline void filter(int m)                              { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->filter(m); }
 inline float random(float hi)                          { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->random(hi) : 0; }
 inline float random(float lo,float hi)                 { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->random(lo,hi) : 0; }
-inline float randomGaussian()                          { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->randomGaussian() : 0; }
-inline void randomSeed(long s)                         { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->randomSeed(s); }
 inline float noise(float x)                            { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->noise(x) : 0; }
 inline float noise(float x,float y)                    { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->noise(x,y) : 0; }
 inline float noise(float x,float y,float z)            { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->noise(x,y,z) : 0; }
 inline void noiseSeed(int s)                           { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->noiseSeed(s); }
 inline void noiseDetail(int o,float f=0.5f)            { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->noiseDetail(o,f); }
-inline color lerpColor(color a,color b,float t)        { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->lerpColor(a,b,t) : a; }
-inline float red(color c)        { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->red(c)        : 0; }
-inline float green(color c)      { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->green(c)      : 0; }
-inline float blue(color c)       { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->blue(c)       : 0; }
-inline float alpha(color c)      { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->alpha(c)      : 0; }
-inline float hue(color c)        { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->hue(c)        : 0; }
-inline float saturation(color c) { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->saturation(c) : 0; }
-inline float brightness(color c) { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->brightness(c) : 0; }
 inline color makeColor(float a,float b,float c,float d=255){ return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->makeColor(a,b,c,d) : colorVal(0,0,0,255); }
 inline void stroke(float g,float a)                    { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->stroke(g,a); }
 inline void fill(float g,float a)                      { if(::Processing::PApplet::g_papplet) ::Processing::PApplet::g_papplet->fill(g,a); }
