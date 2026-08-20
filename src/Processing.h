@@ -3636,6 +3636,40 @@ public:
 
 
 template<typename K, typename V>
+// Java collection stubs
+template<class T>
+class HashSet {
+public:
+    ::std::unordered_set<T> data;
+    bool add(const T& v)          { return data.insert(v).second; }
+    bool remove(const T& v)        { return data.erase(v)>0; }
+    bool contains(const T& v) const{ return data.count(v)>0; }
+    int  size()               const{ return (int)data.size(); }
+    bool isEmpty()            const{ return data.empty(); }
+    void clear()                   { data.clear(); }
+    auto begin() { return data.begin(); }
+    auto end()   { return data.end(); }
+    auto begin() const { return data.begin(); }
+    auto end()   const { return data.end(); }
+};
+template<class T>
+class LinkedList {
+public:
+    ::std::deque<T> data;
+    void add(const T& v)           { data.push_back(v); }
+    void addFirst(const T& v)      { data.push_front(v); }
+    void addLast(const T& v)       { data.push_back(v); }
+    T    removeFirst()             { T v=data.front(); data.pop_front(); return v; }
+    T    removeLast()              { T v=data.back();  data.pop_back();  return v; }
+    T&   getFirst()                { return data.front(); }
+    T&   getLast()                 { return data.back(); }
+    int  size()               const{ return (int)data.size(); }
+    bool isEmpty()            const{ return data.empty(); }
+    void clear()                   { data.clear(); }
+    auto begin() { return data.begin(); }
+    auto end()   { return data.end(); }
+};
+
 class HashMap {
 public:
     ::std::map<K,V> data;
