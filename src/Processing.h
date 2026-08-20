@@ -977,7 +977,6 @@ public:
     void bezierVertex(float cx1,float cy1,float cz1,float cx2,float cy2,float cz2,float x,float y,float z);
     void curveVertex(float x, float y);
     void curveVertex(float x, float y, float z);
-    void curveVertex(float x, float y, float z);
     void image(PImage* img, float x, float y);
     void image(PImage* img, float x, float y, float w, float h);
     void image(PImage* img, float dx1,float dy1,float dx2,float dy2,float sx1,float sy1,float sx2,float sy2);
