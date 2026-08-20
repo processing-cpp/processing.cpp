@@ -1836,6 +1836,10 @@ namespace _api {
     void vertex(float,float);
     void vertex(float,float,float);
     void vertex(float,float,float,float);
+    void vertex(float,float,float,float,float);
+    void curveVertex(float,float);
+    void curveVertex(float,float,float);
+    void quadraticVertex(float,float,float,float);
     void bezier(float,float,float,float,float,float,float,float);
     void curve(float,float,float,float,float,float,float,float);
     void text(float,float,float);
