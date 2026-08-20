@@ -11,6 +11,15 @@ inline float degrees(float r)              { return PApplet::degrees(r); }
 inline float sq(float x)                   { return PApplet::sq(x); }
 inline float lerp(float a,float b,float t) { return PApplet::lerp(a,b,t); }
 inline bool* getKeysDown()  { return PApplet::g_papplet ? PApplet::g_papplet->keysDown  : nullptr; }
+// print/println for hoisted classes
+template<typename T> inline void print(const T& v)    { ::std::cout << v; ::std::cout.flush(); }
+template<typename T> inline void println(const T& v)  { ::std::cout << v << "\n"; ::std::cout.flush(); }
+inline                       void println()             { ::std::cout << "\n"; ::std::cout.flush(); }
+template<typename T> inline void printArray(const ::std::vector<T>& a) {
+    for(int i=0;i<(int)a.size();i++) ::std::cout<<"["<<i<<"] "<<a[i]<<"\n";
+    ::std::cout.flush();
+}
+
 // File/IO functions for hoisted classes
 inline ::std::string sketchPath(const ::std::string& w="") { return ::Processing::sketchPath(w); }
 inline ::std::string dataPath(const ::std::string& w="")   { return ::Processing::dataPath(w); }
