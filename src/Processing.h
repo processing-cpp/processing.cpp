@@ -4293,6 +4293,8 @@ struct PApplet {
     void fullScreen(int mode);
     void  frameRate(int fps);
     float getFrameRate() const { return _frameRate; }
+    int   getWidth()     const { return winWidth; }
+    int   getHeight()    const { return winHeight; }
     void noLoop();
     void loop();
     void redraw();
