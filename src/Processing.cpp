@@ -2529,7 +2529,10 @@ float PApplet::textDescent() {
 
 PImage* PApplet::createImage(int w,int h,int mode){
     PImage* img = new PImage(w,h);
-    if(mode==3/*ARGB*/) {
+    img->format = mode;
+    if(mode==ARGB) {
+        ::std::fill(img->pixels.begin(),img->pixels.end(),0x00000000);
+    } else if(mode==ALPHA) {
         ::std::fill(img->pixels.begin(),img->pixels.end(),0x00000000);
     }
     img->dirty=true;
