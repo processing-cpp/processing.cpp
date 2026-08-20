@@ -11,6 +11,18 @@ inline float degrees(float r)              { return PApplet::degrees(r); }
 inline float sq(float x)                   { return PApplet::sq(x); }
 inline float lerp(float a,float b,float t) { return PApplet::lerp(a,b,t); }
 inline bool* getKeysDown()  { return PApplet::g_papplet ? PApplet::g_papplet->keysDown  : nullptr; }
+// File/IO functions for hoisted classes
+inline ::std::string sketchPath(const ::std::string& w="") { return ::Processing::sketchPath(w); }
+inline ::std::string dataPath(const ::std::string& w="")   { return ::Processing::dataPath(w); }
+inline ::std::string sketchFile(const ::std::string& w)    { return ::Processing::sketchPath(w); }
+inline ::std::string dataFile(const ::std::string& w)      { return ::Processing::dataPath(w); }
+inline ::std::vector<::std::string> loadStrings(const ::std::string& p) {
+    return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->loadStrings(p) : ::std::vector<::std::string>{};
+}
+inline ::std::vector<unsigned char> loadBytes(const ::std::string& p) {
+    return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->loadBytes(p) : ::std::vector<unsigned char>{};
+}
+
 // Time functions
 inline unsigned long millis()  { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->millis() : 0; }
 inline int second() { ::std::time_t t=::std::time(nullptr); return ::std::localtime(&t)->tm_sec; }
