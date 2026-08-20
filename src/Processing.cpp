@@ -3941,6 +3941,7 @@ void PApplet::run(){
         auto frameEnd = ::std::chrono::steady_clock::now();
         double fullFrame = ::std::chrono::duration<double>(frameEnd - last).count();
         if (fullFrame > 0) _frameRate = (float)(1.0 / fullFrame);
+        deltaTime = (float)fullFrame;
         last = frameEnd;
     }
     if(phongProg){glDeleteProgram(phongProg);phongProg=0;}
