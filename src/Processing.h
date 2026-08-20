@@ -2907,6 +2907,18 @@ template<class T> inline void arrayCopy(const T* src, T* dst, int length) {
     ::std::copy(src, src+length, dst);
 }
 
+// arrayCopy for std::vector
+template<class T> inline void arrayCopy(const ::std::vector<T>& src, ::std::vector<T>& dst) {
+    dst = src;
+}
+template<class T> inline void arrayCopy(const ::std::vector<T>& src, int srcPos, ::std::vector<T>& dst, int dstPos, int length) {
+    for (int i=0;i<length;i++) dst[dstPos+i]=src[srcPos+i];
+}
+// arrayCopy for raw arrays
+template<class T> inline void arrayCopy(const T* src, T* dst, int length) {
+    ::std::copy(src, src+length, dst);
+}
+
 
 template<typename T>
 Array<T> concat(const Array<T>& a, const Array<T>& b) {
