@@ -1292,6 +1292,16 @@ static constexpr int OTHER   = 0;
 static constexpr int WINDOWS = 1;
 static constexpr int MACOS   = 2;
 static constexpr int LINUX   = 3;
+// Current platform
+#if defined(_WIN32)
+static constexpr int platform = WINDOWS;
+#elif defined(__APPLE__)
+static constexpr int platform = MACOS;
+#elif defined(__linux__)
+static constexpr int platform = LINUX;
+#else
+static constexpr int platform = OTHER;
+#endif
 // Orientation constants (Android/mobile)
 static constexpr int PORTRAIT  = 1;
 static constexpr int LANDSCAPE = 2;
