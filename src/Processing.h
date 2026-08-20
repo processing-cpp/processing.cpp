@@ -304,6 +304,7 @@ public:
     PVector& set(float _x, float _y, float _z=0) { x=_x; y=_y; z=_z; return *this; }
     PVector& set(const PVector& v)               { x=v.x; y=v.y; z=v.z; return *this; }
     PVector  copy() const { return PVector(x, y, z); }
+    ::std::vector<float> array() const { return {x, y, z}; }
 
     // Magnitude
     float mag()   const { return ::std::sqrt(x*x + y*y + z*z); }
