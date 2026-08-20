@@ -4263,6 +4263,20 @@ bool PApplet::saveTable(const ::std::string& path,const Table& t,const ::std::st
 // =============================================================================
 void PApplet::shapeMode(int mode){ shapeDrawMode=mode; }
 PShape PApplet::createShape(int kind){ return PShape(kind); }
+PShape PApplet::createShape(int kind, float a, float b, float c, float d){
+    // createShape(RECT/ELLIPSE/LINE/POINT, x, y, w, h)
+    PShape s(kind);
+    s.beginShape();
+    if(kind==ELLIPSE||kind==RECT) {
+        s.params = {a,b,c,d};
+    } else if(kind==LINE) {
+        s.vertex(a,b); s.vertex(c,d);
+    } else if(kind==POINT) {
+        s.vertex(a,b);
+    }
+    s.endShape();
+    return s;
+}
 
 // ── Minimal SVG loader ────────────────────────────────────────────────────────
 // Parses basic SVG shapes (path, rect, circle, ellipse, polygon, polyline, line)
