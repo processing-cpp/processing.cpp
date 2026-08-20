@@ -2306,6 +2306,29 @@ public:
     String toString() const { return String(::std::to_string(v)); }
 };
 
+// Java Math class -- static methods for sketches that use Math.sin() etc.
+class Math {
+public:
+    static float abs(float x)   { return ::std::abs(x); }
+    static float min(float a, float b) { return a<b?a:b; }
+    static float max(float a, float b) { return a>b?a:b; }
+    static float sqrt(float x)  { return ::std::sqrt(x); }
+    static float pow(float a, float b) { return ::std::pow(a,b); }
+    static float floor(float x) { return ::std::floor(x); }
+    static float ceil(float x)  { return ::std::ceil(x); }
+    static float round(float x) { return ::std::round(x); }
+    static float log(float x)   { return ::std::log(x); }
+    static float exp(float x)   { return ::std::exp(x); }
+    static float sin(float x)   { return ::std::sin(x); }
+    static float cos(float x)   { return ::std::cos(x); }
+    static float tan(float x)   { return ::std::tan(x); }
+    static float atan2(float y, float x) { return ::std::atan2(y,x); }
+    static const float PI;
+    static const float E;
+};
+inline const float Math::PI = 3.14159265358979323846f;
+inline const float Math::E  = 2.71828182845904523536f;
+
 class Integer : public NumberWrapperBase<int> {
 public:
     Integer() : NumberWrapperBase<int>() {}
