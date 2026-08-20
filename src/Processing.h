@@ -566,6 +566,10 @@ public:
     // These mirror the Processing Java API; dirty flag is used by updatePixels()
     void loadPixels()   {}
     void updatePixels() { dirty = true; }
+    bool isLoaded()  const { return width>0 && height>0; }
+    int  getWidth()  const { return width; }
+    int  getHeight() const { return height; }
+    int  format      = 1; // RGB=1, ARGB=2, ALPHA=4
 
     // Upload CPU pixels to the GPU texture
     void uploadTexture(); // defined in Processing.cpp
