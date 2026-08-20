@@ -3635,9 +3635,6 @@ public:
 
 
 
-// Java TreeMap and TreeSet -- aliases (std::map is already sorted)
-template<class K, class V> using TreeMap = HashMap<K,V>;
-template<class T>          using TreeSet = HashSet<T>;
 
 // Java Random class
 class Random {
@@ -3734,6 +3731,8 @@ public:
     void putIfAbsent(const K& k, const V& v){ if(!data.count(k)) data[k]=v; }
     ::std::vector<::std::pair<K,V>> entrySet() const { ::std::vector<::std::pair<K,V>> r; for(auto& p:data) r.push_back(p); return r; }
 };
+template<class K, class V> using TreeMap = HashMap<K,V>;
+template<class T>          using TreeSet = HashSet<T>;
 
 
 // =============================================================================
