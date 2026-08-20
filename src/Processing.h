@@ -1217,6 +1217,22 @@ static constexpr int MITER   = 8;
 static constexpr int BEVEL   = 32;
 
 // beginShape() kinds
+// Shape primitive type constants (for createShape/PShape)
+static constexpr int GROUP    = 0;
+static constexpr int POINT    = 2;
+static constexpr int LINE     = 4;
+static constexpr int TRIANGLE = 8;
+static constexpr int QUAD     = 16;
+static constexpr int POLYGON  = 20;
+static constexpr int PATH     = 21;
+static constexpr int RECT     = 30;
+static constexpr int ELLIPSE  = 31;
+static constexpr int ARC      = 32;
+static constexpr int SPHERE   = 40;
+static constexpr int BOX      = 41;
+// LINE_STRIP and LINE_LOOP
+static constexpr int LINE_STRIP = 50;
+static constexpr int LINE_LOOP  = 51;
 static constexpr int POINTS         = 3;
 static constexpr int LINES          = 5;
 static constexpr int TRIANGLES      = 9;
