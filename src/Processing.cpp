@@ -1,4 +1,4 @@
-#if
+#if __has_include("stb_truetype.h")
 if __has_include("stb_truetype.h")
 #  define PROCESSING_HAS_STB_TRUETYPE 1
 #  define STB_TRUETYPE_IMPLEMENTATION
