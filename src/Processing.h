@@ -1385,6 +1385,10 @@ static constexpr int DISABLE_KEY_REPEAT        =  11;
 static constexpr int ENABLE_KEY_REPEAT         = -11;
 static constexpr int DISABLE_ASYNC_SAVEFRAME   =  12;
 static constexpr int ENABLE_ASYNC_SAVEFRAME    = -12;
+// Image interpolation modes
+static constexpr int NEAREST_NEIGHBOR = 0;
+static constexpr int BILINEAR         = 1;
+static constexpr int BICUBIC          = 2;
 
 // Cursor shapes (map to GLFW)
 static constexpr int ARROW       = GLFW_ARROW_CURSOR;
