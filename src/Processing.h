@@ -3636,6 +3636,23 @@ public:
 
 
 
+// Java Exception classes
+class Exception : public ::std::exception {
+    ::std::string msg;
+public:
+    Exception() = default;
+    explicit Exception(const ::std::string& m) : msg(m) {}
+    const char* getMessage() const { return msg.c_str(); }
+    const char* what() const noexcept override { return msg.c_str(); }
+};
+class RuntimeException      : public Exception { using Exception::Exception; };
+class IllegalArgumentException : public Exception { using Exception::Exception; };
+class IllegalStateException    : public Exception { using Exception::Exception; };
+class NullPointerException     : public Exception { using Exception::Exception; };
+class IndexOutOfBoundsException: public Exception { using Exception::Exception; };
+class UnsupportedOperationException: public Exception { using Exception::Exception; };
+class ArithmeticException      : public Exception { using Exception::Exception; };
+
 // Java Random class
 class Random {
     ::std::mt19937 rng;
