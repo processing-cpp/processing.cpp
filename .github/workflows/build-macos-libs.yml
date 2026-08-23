@@ -45,6 +45,7 @@ jobs:
         run: |
           mkdir -p libs/macos
           cp libglfw.3.dylib libs/macos/
+          cp libglfw.3.dylib libs/macos/libglfw.dylib
           cp libGLEW.dylib   libs/macos/
           echo "Architecture check:"
           lipo -info libs/macos/libglfw.3.dylib
