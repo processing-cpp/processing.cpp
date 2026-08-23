@@ -1278,6 +1278,7 @@ public class CppBuild {
     out.append("  struct _PMX { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->pmouseX     : 0.f;   } } pmouseX;\n");
     out.append("  struct _PMY { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->pmouseY     : 0.f;   } } pmouseY;\n");
     out.append("  struct _FC  { operator int()   const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->frameCount  : 0;     } } frameCount;\n");
+    out.append("  struct _DT  { operator float() const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->deltaTime   : 0.016f; } } deltaTime;\n");
     out.append("  struct _MP  { operator bool()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_mousePressed : false; } } _mousePressed;\n");
     out.append("  struct _KP  { operator bool()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->_keyPressed  : false; } } _keyPressed;\n");
     out.append("  struct _K   { operator char()  const { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->key          : 0;     } } key;\n");
