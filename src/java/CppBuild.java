@@ -2100,7 +2100,11 @@ public class CppBuild {
       result.append(code, i, lineStart);
       // Also remove _PSketch from template classes -- they can't use Processing API
       boolean isTemplate = lineStart > 0 && code.substring(Math.max(0, lineStart - 200), lineStart).contains("template<");
-      if (hasMethod && !isTemplate) {
+      // If the class already inherits PApplet directly, skip _PSketch injection
+      // -- it already has width/height/key etc. as members, and injecting
+      // _PSketch proxies would cause ambiguity errors.
+      boolean alreadyInheritsApplet = code.substring(lineStart, braceOpen).contains("PApplet");
+      if (hasMethod && !isTemplate && !alreadyInheritsApplet) {
         // Keep _PSketch injection
         result.append(code, lineStart, j);
       } else {
