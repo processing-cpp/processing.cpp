@@ -1,6 +1,4 @@
-/
-inline float deltaTime()   { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->deltaTime : 0.016f; }
-/ Processing_api.h
+// Processing_api.h
 // Included in Sketch_run.cpp to make Processing API available to user-defined
 // classes inside sketches (which don't inherit from PApplet).
 #pragma once
@@ -13,6 +11,8 @@ inline float deltaTime()   { return ::Processing::PApplet::g_papplet ? ::Process
 
 // ── Math (static, no instance needed) ────────────────────────────────────────
 inline float sq(float x)                   { return PApplet::sq(x); }
+inline float deltaTime() { return ::Processing::PApplet::g_papplet ? ::Processing::PApplet::g_papplet->deltaTime : 0.016f; }
+
 inline float lerp(float a,float b,float t) { return PApplet::lerp(a,b,t); }
 inline bool* getKeysDown()  { return PApplet::g_papplet ? PApplet::g_papplet->keysDown  : nullptr; }
 inline bool isKeyDown(int keyCode) {
