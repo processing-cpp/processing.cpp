@@ -604,11 +604,15 @@ public class CppBuild {
       String macArch2 = System.getProperty("os.arch","").contains("aarch64") ? "arm64" : "x64";
       File macLibsDir2 = new File(runtimeDir.getParentFile(), "libs/macos");
       if (macLibsDir2.exists()) {
+        File macBinaryDir = new File(binary.getParent());
+        macBinaryDir.mkdirs();
         for (File dylib : macLibsDir2.listFiles((d,n) -> n.endsWith(".dylib"))) {
-          File destDylib = new File(sketch.getFolder(), dylib.getName());
-          try { java.nio.file.Files.copy(dylib.toPath(), destDylib.toPath(),
-              java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
-          catch (Exception ignored) {}
+          for (File destDir : new File[]{macBinaryDir, sketch.getFolder()}) {
+            File destDylib = new File(destDir, dylib.getName());
+            try { java.nio.file.Files.copy(dylib.toPath(), destDylib.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
+            catch (Exception ignored) {}
+          }
         }
       }
     }
