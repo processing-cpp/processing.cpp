@@ -3262,6 +3262,9 @@ public class CppBuild {
         cmd.add("-Wl,-rpath,@executable_path");
       } else if (homebrewPrefix != null) {
         cmd.add("-L" + homebrewPrefix + "/lib");
+        // Also add keg-only glfw/glew paths (newer Homebrew may install there)
+        cmd.add("-L" + homebrewPrefix + "/opt/glfw/lib");
+        cmd.add("-L" + homebrewPrefix + "/opt/glew/lib");
       }
       Collections.addAll(cmd, "-lglfw", "-lGLEW", "-lm", "-pthread", "-lobjc");
       Collections.addAll(cmd, "-framework", "OpenGL");
