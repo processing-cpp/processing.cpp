@@ -3261,10 +3261,18 @@ public class CppBuild {
       boolean hasBundled = new File(macLibsDir, "libglfw.3.dylib").exists()
                         && new File(macLibsDir, "libGLEW.dylib").exists();
       if (hasBundled) {
-        // Strip macOS quarantine attribute so Gatekeeper does not block the dylibs
+        // Strip macOS quarantine attribute so Gatekeeper does not block the dylibs.
+        // xattr -dr removes the quarantine flag; codesign ad-hoc signs as fallback
+        // in case xattr fails (e.g. SIP-restricted path).
         try {
           new ProcessBuilder("xattr", "-dr", "com.apple.quarantine", macLibsDir.getAbsolutePath())
               .start().waitFor();
+        } catch (Exception ignored) {}
+        try {
+          for (java.io.File dylib : macLibsDir.listFiles((d,n) -> n.endsWith(".dylib"))) {
+            new ProcessBuilder("codesign", "--force", "--sign", "-", dylib.getAbsolutePath())
+                .start().waitFor();
+          }
         } catch (Exception ignored) {}
         cmd.add("-L" + macLibsDir.getAbsolutePath());
         cmd.add("-Wl,-rpath," + macLibsDir.getAbsolutePath());
