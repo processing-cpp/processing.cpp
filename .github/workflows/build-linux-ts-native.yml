@@ -14,18 +14,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential python3 git openjdk-17-jdk-headless
 
-      - name: Clone java-tree-sitter (no recursive submodules)
+      - name: Clone java-tree-sitter
         run: |
           git clone --depth 1 https://github.com/seart-group/java-tree-sitter.git java-tree-sitter
 
-      - name: Init grammar submodules (top-level only, no nested)
+      - name: Init top-level grammar submodules (no nested)
         run: |
           cd java-tree-sitter
-          # Init only top-level grammar submodules — skip nested ones that
-          # require auth (e.g. tree-sitter-gitignore/test/gitignore).
-          git submodule update --init --depth 1 --no-recurse \
-            tree-sitter \
-            $(git config --file .gitmodules --get-regexp 'submodule\.tree-sitter-.*\.path' | awk '{print $2}')
+          # Default submodule update does NOT recurse into nested submodules.
+          # That avoids the toptal/gitignore auth failure.
+          git submodule update --init --depth 1 --jobs 8
 
       - name: Build native library (all grammars, glibc)
         run: |
