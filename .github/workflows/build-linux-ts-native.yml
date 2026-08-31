@@ -12,33 +12,27 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake git openjdk-17-jdk-headless
+          sudo apt-get install -y build-essential python3 git openjdk-17-jdk-headless
 
-      - name: Clone java-tree-sitter 1.9.1
+      - name: Clone java-tree-sitter (latest, with submodules for cpp only)
         run: |
-          git clone --depth 1 --branch 1.9.1 \
-            https://github.com/seart-group/java-tree-sitter.git java-tree-sitter
+          git clone --depth 1 https://github.com/seart-group/java-tree-sitter.git java-tree-sitter
+          cd java-tree-sitter
+          # Only init the submodules we actually need
+          git submodule update --init --depth 1 tree-sitter tree-sitter-cpp
 
-      - name: Build native library
+      - name: Build native library (C++ grammar only, glibc)
         run: |
           cd java-tree-sitter
-          # The native CMake target produces libjava-tree-sitter.so
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_FLAGS="-O2" \
-            -DJTREESITTER_BUILD_SHARED_LIBS=ON
-          cmake --build build --target java-tree-sitter -- -j$(nproc)
-          # Find the .so wherever CMake placed it
-          find build -name "libjava-tree-sitter.so"
+          python3 build.py --verbose tree-sitter-cpp
+          ls -lh libjava-tree-sitter.so
+          file libjava-tree-sitter.so
+          ldd  libjava-tree-sitter.so
 
       - name: Copy to libs/linux-x64/
         run: |
           mkdir -p libs/linux-x64
-          find java-tree-sitter/build -name "libjava-tree-sitter.so" \
-            -exec cp {} libs/linux-x64/ \;
-          echo "Built:"
-          file libs/linux-x64/libjava-tree-sitter.so
-          ldd  libs/linux-x64/libjava-tree-sitter.so
+          cp java-tree-sitter/libjava-tree-sitter.so libs/linux-x64/
 
       - uses: actions/upload-artifact@v4
         with:
