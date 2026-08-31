@@ -16,7 +16,7 @@ jobs:
 
       - name: Clone java-tree-sitter @ 1.9.1
         run: |
-          git clone --depth 1 --branch 1.9.1 https://github.com/seart-group/java-tree-sitter.git java-tree-sitter
+          git clone --depth 1 --branch v1.9.1 https://github.com/seart-group/java-tree-sitter.git java-tree-sitter
 
       - name: Init top-level grammar submodules (no nested)
         run: |
