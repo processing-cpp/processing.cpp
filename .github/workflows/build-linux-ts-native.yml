@@ -12,7 +12,7 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3 git openjdk-17-jdk-headless
+          sudo apt-get install -y build-essential python3 git openjdk-17-jdk-headless maven
 
       - name: Clone java-tree-sitter
         run: |
@@ -21,8 +21,6 @@ jobs:
       - name: Init top-level grammar submodules (no nested)
         run: |
           cd java-tree-sitter
-          # Default submodule update does NOT recurse into nested submodules.
-          # That avoids the toptal/gitignore auth failure.
           git submodule update --init --depth 1 --jobs 8
 
       - name: Build native library (all grammars, glibc)
@@ -33,13 +31,23 @@ jobs:
           file libjava-tree-sitter.so
           ldd  libjava-tree-sitter.so
 
-      - name: Copy to libs/linux-x64/
+      - name: Patch java-tree-sitter-1.9.1.jar with glibc .so
         run: |
-          mkdir -p libs/linux-x64
-          cp java-tree-sitter/libjava-tree-sitter.so libs/linux-x64/
+          JAR="mode/java-tree-sitter-1.9.1.jar"
+          if [ ! -f "$JAR" ]; then
+            echo "ERROR: $JAR not found in repo"
+            exit 1
+          fi
+          cp "$JAR" "$JAR.bak"
+          # Replace the bundled musl .so with our glibc-compiled one
+          zip -j "$JAR" java-tree-sitter/libjava-tree-sitter.so
+          echo "Patched $JAR:"
+          unzip -l "$JAR" | grep "\.so\|\.dylib"
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux-ts-native
-          path: libs/linux-x64/libjava-tree-sitter.so
+          path: |
+            java-tree-sitter/libjava-tree-sitter.so
+            mode/java-tree-sitter-1.9.1.jar
           retention-days: 90
