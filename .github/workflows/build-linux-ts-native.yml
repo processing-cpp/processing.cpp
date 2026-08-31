@@ -14,17 +14,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential python3 git openjdk-17-jdk-headless
 
-      - name: Clone java-tree-sitter (latest, with submodules for cpp only)
+      - name: Clone java-tree-sitter with all grammar submodules
         run: |
-          git clone --depth 1 https://github.com/seart-group/java-tree-sitter.git java-tree-sitter
-          cd java-tree-sitter
-          # Only init the submodules we actually need
-          git submodule update --init --depth 1 tree-sitter tree-sitter-cpp
+          git clone --depth 1 --recurse-submodules --shallow-submodules \
+            https://github.com/seart-group/java-tree-sitter.git java-tree-sitter
 
-      - name: Build native library (C++ grammar only, glibc)
+      - name: Build native library (all grammars, glibc)
         run: |
           cd java-tree-sitter
-          python3 build.py --verbose tree-sitter-cpp
+          python3 build.py --verbose
           ls -lh libjava-tree-sitter.so
           file libjava-tree-sitter.so
           ldd  libjava-tree-sitter.so
