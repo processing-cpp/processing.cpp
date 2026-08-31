@@ -21,6 +21,7 @@ import zipfile
 import tempfile
 import subprocess
 import threading
+import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -74,19 +75,26 @@ def bump_version_files(tag):
 
 def trigger_workflow(workflow_file):
     """Trigger a workflow_dispatch run and return its run ID, or None on failure."""
+    trigger_time = time.time()
     r = gh("workflow", "run", workflow_file, "--repo", REPO)
     if r.returncode != 0:
         log(f"  [{workflow_file}] trigger FAILED: {r.stderr.strip()}")
         return None
-    time.sleep(8)   # give GitHub a moment to register the run
-    r2 = gh("run", "list", "--repo", REPO, "--workflow", workflow_file,
-             "--limit", "1", "--json", "databaseId")
-    if r2.returncode != 0 or not r2.stdout.strip():
-        log(f"  [{workflow_file}] could not find run after trigger")
-        return None
-    run_id = json.loads(r2.stdout)[0]["databaseId"]
-    log(f"  [{workflow_file}] triggered → run {run_id}")
-    return run_id
+    # Poll until we see a run whose createdAt is >= our trigger time (up to 60s)
+    for _ in range(12):
+        time.sleep(5)
+        r2 = gh("run", "list", "--repo", REPO, "--workflow", workflow_file,
+                 "--limit", "5", "--json", "databaseId,createdAt")
+        if r2.returncode != 0 or not r2.stdout.strip():
+            continue
+        for run in json.loads(r2.stdout):
+            created = datetime.datetime.fromisoformat(
+                run["createdAt"].replace("Z", "+00:00")).timestamp()
+            if created >= trigger_time - 10:   # 10s buffer for clock skew
+                log(f"  [{workflow_file}] triggered → run {run['databaseId']}")
+                return run["databaseId"]
+    log(f"  [{workflow_file}] could not find new run after trigger")
+    return None
 
 def wait_for_run(workflow_file, run_id):
     """Poll until the run completes. Returns True on success."""
