@@ -19,16 +19,20 @@ import subprocess
 import sys
 import os
 import glob
+import platform
+import tempfile
+from os.path import expanduser
 
 SKETCHBOOK_JAR_DEST = os.path.expanduser("~/sketchbook/modes/CppMode/mode/CppMode.jar")
-TMP_DIR = "/tmp/_cpp"
+TMP_DIR = tempfile.gettempdir() + os.sep + "_cpp"
 
-def run(cmd, cwd=None):
+def run(cmd, cwd=None, stopOnFailure=True):
     print(f"$ {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=cwd)
-    if result.returncode != 0:
-        print(f"FAILED (exit code {result.returncode}): {' '.join(cmd)}")
-        sys.exit(result.returncode)
+    if stopOnFailure:
+        if result.returncode != 0:
+            print(f"FAILED (exit code {result.returncode}): {' '.join(cmd)}")
+            sys.exit(result.returncode)
 
 def get_processing4_dir():
     env_dir = os.environ.get("PROCESSING4_DIR")
@@ -55,7 +59,11 @@ def main():
         glob.glob(os.path.join(libs_dir, "java-*.jar"))
     )
     java_jar = _candidates[0] if _candidates else os.path.join(libs_dir, "java.jar")
-    gradlew = os.path.join(processing4_dir, "gradlew")
+
+    if platform.system() == "Windows":
+        gradlew = os.path.join(processing4_dir, "gradlew.bat")
+    else:
+        gradlew = os.path.join(processing4_dir, "gradlew")
 
     if not os.path.exists(cppbuild_java):
         print(f"ERROR: expected CppBuild.java not found at {cppbuild_java}")
@@ -79,8 +87,16 @@ def main():
         print(f"ERROR: expected jar not found at {java_jar}")
         sys.exit(1)
 
-    run(["rm", "-rf", TMP_DIR])
-    run(["mkdir", TMP_DIR])
+    if platform.system() == "Windows":
+        run(["cmd.exe", "/C", "rmdir", "/S", "/Q", TMP_DIR], stopOnFailure=False)
+    else:
+        run(["rm", "-rf", TMP_DIR])
+
+    if platform.system() == "Windows":
+        run(["cmd.exe", "/C", "mkdir", TMP_DIR])
+    else:
+        run(["mkdir", TMP_DIR])
+
     run(["jar", "xf", java_jar], cwd=TMP_DIR)
     os.makedirs(os.path.dirname(SKETCHBOOK_JAR_DEST), exist_ok=True)
     run(["jar", "cf", SKETCHBOOK_JAR_DEST, "processing/mode/cpp/"], cwd=TMP_DIR)
@@ -94,10 +110,11 @@ if __name__ == "__main__":
 
 # Sync to Processing bundled mode dirs so IDE picks up changes immediately
 import shutil, pathlib
-jar = pathlib.Path("/home/pep/sketchbook/modes/CppMode/mode/CppMode.jar")
+home = expanduser("~")
+jar = pathlib.Path(f"{home}/sketchbook/modes/CppMode/mode/CppMode.jar")
 for dest in [
-    "/home/pep/Projects/processing4/app/build/resources-bundled/common/modes/CppMode/mode/CppMode.jar",
-    "/home/pep/Projects/processing4/app/build/compose/tmp/prepareAppResources/modes/CppMode/mode/CppMode.jar",
+    f"{home}/Projects/processing4/app/build/resources-bundled/common/modes/CppMode/mode/CppMode.jar",
+    f"{home}/Projects/processing4/app/build/compose/tmp/prepareAppResources/modes/CppMode/mode/CppMode.jar",
 ]:
     pathlib.Path(dest).parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(jar, dest)
