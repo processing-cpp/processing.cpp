@@ -3630,7 +3630,12 @@ void PApplet::run(){
     glewExperimental = GL_TRUE;
     glewExperimental = GL_TRUE;
     GLenum glewErr = glewInit();
+#ifdef linux
+    if(glewErr != GLEW_OK && getenv("WAYLAND-DISPLAY") != nullptr && glewErr != GLEW_ERROR_NO_GLX_DISPLAY){
+#else
     if(glewErr != GLEW_OK){
+#endif
+
 #ifdef _WIN32
         char msg[256]; snprintf(msg,sizeof(msg),"glewInit() failed: %s", glewGetErrorString(glewErr));
         MessageBoxA(NULL, msg, "processing-cpp Error", MB_OK|MB_ICONERROR);
