@@ -83,12 +83,12 @@ public class CppLinter {
 
         // Build PCH: g++ -x c++-header -std=c++23 Processing.h -o Processing.h.gch
         try {
-            ProcessBuilder pb = new ProcessBuilder(
+            ProcessBuilder pb = CppBuild.toolchainEnv(new ProcessBuilder(
                 gpp, "-x", "c++-header", "-std=c++23",
                 "-I", runtimeDir.getAbsolutePath(),
                 processingH.getAbsolutePath(),
                 "-o", gch.getAbsolutePath()
-            );
+            ));
             pb.redirectErrorStream(true);
             Process proc = pb.start();
             proc.getInputStream().readAllBytes(); // drain
@@ -174,7 +174,7 @@ public class CppLinter {
             }
             cmd.add(tmp.toAbsolutePath().toString());
 
-            ProcessBuilder pb = new ProcessBuilder(cmd);
+            ProcessBuilder pb = CppBuild.toolchainEnv(new ProcessBuilder(cmd));
             pb.redirectErrorStream(true);
             Process proc = pb.start();
             // Cap output to 64KB to avoid OOM on large error outputs

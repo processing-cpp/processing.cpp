@@ -49,7 +49,7 @@ public class CppMode extends Mode {
       cmd.add("-c"); cmd.add(processingCpp.getAbsolutePath());
       cmd.add("-o"); cmd.add(processingO.getAbsolutePath());
 
-      new ProcessBuilder(cmd).redirectErrorStream(true).start().waitFor();
+      CppBuild.toolchainEnv(new ProcessBuilder(cmd)).redirectErrorStream(true).start().waitFor();
 
       // Also precompile Processing_defaults.cpp
       File defaultsO   = new File(cacheDir, "Processing_defaults.o");
@@ -62,7 +62,7 @@ public class CppMode extends Mode {
         cmd2.add("-DPROCESSING_HAS_STB_IMAGE");
         cmd2.add("-c"); cmd2.add(defaultsCpp.getAbsolutePath());
         cmd2.add("-o"); cmd2.add(defaultsO.getAbsolutePath());
-        new ProcessBuilder(cmd2).redirectErrorStream(true).start().waitFor();
+        CppBuild.toolchainEnv(new ProcessBuilder(cmd2)).redirectErrorStream(true).start().waitFor();
       }
     } catch (Exception ignored) {}
   }

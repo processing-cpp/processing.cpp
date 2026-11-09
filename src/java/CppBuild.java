@@ -10,6 +10,27 @@ import processing.app.Sketch;
 
 
 public class CppBuild {
+  // cppmode-issue6: on Windows, put the compiler's own bin folder first on PATH. Its helpers
+  // (cc1plus, as, ld) sit in folders without DLLs, so without this Windows loads the
+  // DLLs of whatever other mingw comes first on PATH, and the build dies with no output.
+  public static ProcessBuilder toolchainEnv(ProcessBuilder pb) {
+    try {
+      if (!System.getProperty("os.name").toLowerCase().contains("win")) return pb;
+      java.util.List<String> c = pb.command();
+      if (c.isEmpty()) return pb;
+      File exe = new File(c.get(0));
+      String n = exe.getName().toLowerCase();
+      if (!exe.isAbsolute() || exe.getParentFile() == null) return pb;
+      if (!(n.contains("g++") || n.contains("gcc") || n.equals("c++.exe") || n.equals("cpp.exe"))) return pb;
+      java.util.Map<String, String> env = pb.environment();   // case-insensitive on Windows
+      String bin = exe.getParentFile().getAbsolutePath();
+      String old = env.getOrDefault("PATH", "");
+      if (!old.toLowerCase().startsWith(bin.toLowerCase() + ";"))
+        env.put("PATH", bin + (old.isEmpty() ? "" : ";" + old));
+    } catch (Exception ignored) {}
+    return pb;
+  }
+
 
   private final Sketch sketch;
   private final CppMode mode;
@@ -296,13 +317,13 @@ public class CppBuild {
             if (which.waitFor() != 0) continue;
             ProcessBuilder pb2;
             if (term.equals("gnome-terminal")) {
-              pb2 = new ProcessBuilder(term, "--", "bash", tmp.getAbsolutePath());
+              pb2 = toolchainEnv(new ProcessBuilder(term, "--", "bash", tmp.getAbsolutePath()));
             } else if (term.equals("konsole")) {
-              pb2 = new ProcessBuilder(term, "-e", "bash", tmp.getAbsolutePath());
+              pb2 = toolchainEnv(new ProcessBuilder(term, "-e", "bash", tmp.getAbsolutePath()));
             } else if (term.equals("kitty") || term.equals("alacritty")) {
-              pb2 = new ProcessBuilder(term, "-e", "bash", tmp.getAbsolutePath());
+              pb2 = toolchainEnv(new ProcessBuilder(term, "-e", "bash", tmp.getAbsolutePath()));
             } else {
-              pb2 = new ProcessBuilder(term, "-e", "bash " + tmp.getAbsolutePath());
+              pb2 = toolchainEnv(new ProcessBuilder(term, "-e", "bash " + tmp.getAbsolutePath()));
             }
             pb2.start();
             launched = true;
@@ -313,7 +334,7 @@ public class CppBuild {
         if (!launched) {
           // Fallback: try pkexec (graphical sudo) without terminal
           try {
-            new ProcessBuilder("pkexec", "bash", tmp.getAbsolutePath()).start();
+            toolchainEnv(new ProcessBuilder("pkexec", "bash", tmp.getAbsolutePath())).start();
             launched = true;
           } catch (Exception ignored) {}
         }
@@ -551,7 +572,7 @@ public class CppBuild {
       System.err.println(String.join(" ", cmd));
     }
 
-    ProcessBuilder pb = new ProcessBuilder(cmd);
+    ProcessBuilder pb = toolchainEnv(new ProcessBuilder(cmd));
     pb.redirectErrorStream(true);
     pb.directory(buildDir);
     // Pass sketch folder so Processing.cpp can find data/ assets
@@ -768,7 +789,7 @@ public class CppBuild {
     new Thread(() -> {
       try {
         listener.statusNotice("Installing GLFW and GLEW via Homebrew...");
-        ProcessBuilder pb = new ProcessBuilder("brew", "install", "glfw", "glew");
+        ProcessBuilder pb = toolchainEnv(new ProcessBuilder("brew", "install", "glfw", "glew"));
         pb.redirectErrorStream(true);
         Process p = pb.start();
         try (java.io.BufferedReader br = new java.io.BufferedReader(
@@ -897,14 +918,14 @@ public class CppBuild {
           else
             termCmd = new String[]{ term, "-e", "bash " + tmp.getAbsolutePath() };
           try {
-            new ProcessBuilder(termCmd).start();
+            toolchainEnv(new ProcessBuilder(termCmd)).start();
             launched = true;
             break;
           } catch (Exception ignored) {}
         }
         if (!launched) {
           // Fallback: run directly
-          ProcessBuilder pb = new ProcessBuilder("bash", tmp.getAbsolutePath());
+          ProcessBuilder pb = toolchainEnv(new ProcessBuilder("bash", tmp.getAbsolutePath()));
           pb.redirectErrorStream(true);
           Process p = pb.start();
           try (java.io.BufferedReader br = new java.io.BufferedReader(
@@ -930,9 +951,9 @@ public class CppBuild {
       ProcessBuilder pb;
       if (os.contains("win")) {
         // On Windows use 'where' instead of 'which'
-        pb = new ProcessBuilder("where", cmd);
+        pb = toolchainEnv(new ProcessBuilder("where", cmd));
       } else {
-        pb = new ProcessBuilder("which", cmd);
+        pb = toolchainEnv(new ProcessBuilder("which", cmd));
       }
       pb.redirectErrorStream(true);
       return pb.start().waitFor() == 0;
@@ -3043,7 +3064,7 @@ public class CppBuild {
     return _stdCache.computeIfAbsent(gpp, g -> {
       // First verify g++ is actually available
       try {
-        Process test = new ProcessBuilder(g, "--version").redirectErrorStream(true).start();
+        Process test = toolchainEnv(new ProcessBuilder(g, "--version")).redirectErrorStream(true).start();
         test.getInputStream().readAllBytes();
         if (!test.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)) {
           test.destroyForcibly();
@@ -3056,7 +3077,7 @@ public class CppBuild {
       // Probe for best supported standard
       for (String std : new String[]{"c++2c", "c++23", "c++20", "c++17"}) {
         try {
-          ProcessBuilder pb = new ProcessBuilder(g, "-std=" + std, "-x", "c++", "-fsyntax-only", "-");
+          ProcessBuilder pb = toolchainEnv(new ProcessBuilder(g, "-std=" + std, "-x", "c++", "-fsyntax-only", "-"));
           pb.redirectErrorStream(true);
           Process proc = pb.start();
           proc.getOutputStream().close();
@@ -3161,7 +3182,7 @@ public class CppBuild {
       pchCmd.add("-x"); pchCmd.add("c++-header");
       pchCmd.add(processingH.getAbsolutePath());
       pchCmd.add("-o"); pchCmd.add(processingPch.getAbsolutePath());
-      ProcessBuilder pchPb = new ProcessBuilder(pchCmd);
+      ProcessBuilder pchPb = toolchainEnv(new ProcessBuilder(pchCmd));
       pchPb.redirectErrorStream(true);
       pchPb.start().waitFor();
     }
@@ -3176,7 +3197,7 @@ public class CppBuild {
       preCmd.add("-DPROCESSING_HAS_STB_TRUETYPE");
       preCmd.add("-c"); preCmd.add(processingCpp.getAbsolutePath());
       preCmd.add("-o"); preCmd.add(processingO.getAbsolutePath());
-      ProcessBuilder prePb = new ProcessBuilder(preCmd);
+      ProcessBuilder prePb = toolchainEnv(new ProcessBuilder(preCmd));
       prePb.redirectErrorStream(true);
       Process preP = prePb.start();
       StringBuilder preLog = new StringBuilder();
@@ -3201,7 +3222,7 @@ public class CppBuild {
       preCmd2.add("-DPROCESSING_HAS_STB_TRUETYPE");
       preCmd2.add("-c"); preCmd2.add(defaultsCpp.getAbsolutePath());
       preCmd2.add("-o"); preCmd2.add(defaultsO.getAbsolutePath());
-      ProcessBuilder prePb2 = new ProcessBuilder(preCmd2);
+      ProcessBuilder prePb2 = toolchainEnv(new ProcessBuilder(preCmd2));
       prePb2.redirectErrorStream(true);
       if (prePb2.start().waitFor() != 0 || !defaultsO.exists()) {
         cmd.add(defaultsCpp.getAbsolutePath());
@@ -3265,12 +3286,12 @@ public class CppBuild {
         // xattr -dr removes the quarantine flag; codesign ad-hoc signs as fallback
         // in case xattr fails (e.g. SIP-restricted path).
         try {
-          new ProcessBuilder("xattr", "-dr", "com.apple.quarantine", macLibsDir.getAbsolutePath())
+          toolchainEnv(new ProcessBuilder("xattr", "-dr", "com.apple.quarantine", macLibsDir.getAbsolutePath()))
               .start().waitFor();
         } catch (Exception ignored) {}
         try {
           for (java.io.File dylib : macLibsDir.listFiles((d,n) -> n.endsWith(".dylib"))) {
-            new ProcessBuilder("codesign", "--force", "--sign", "-", dylib.getAbsolutePath())
+            toolchainEnv(new ProcessBuilder("codesign", "--force", "--sign", "-", dylib.getAbsolutePath()))
                 .start().waitFor();
           }
         } catch (Exception ignored) {}
@@ -3370,7 +3391,7 @@ public class CppBuild {
       // the .cpp extension's default.  -P would strip line markers; we keep
       // them (omit -P) since downstream code already re-stamps its own
       // #line directive, and keeping g++'s markers costs nothing here.
-      ProcessBuilder pb = new ProcessBuilder(gpp, "-E", "-std=c++23", "-x", "c++", scratch.getAbsolutePath());
+      ProcessBuilder pb = toolchainEnv(new ProcessBuilder(gpp, "-E", "-std=c++23", "-x", "c++", scratch.getAbsolutePath()));
       pb.directory(buildDir != null ? buildDir : scratch.getParentFile());
       pb.redirectErrorStream(false);
       Process proc = pb.start();
@@ -3425,7 +3446,7 @@ public class CppBuild {
   /** Returns the major version of the given g++ binary, or 0 if unknown. */
   static int gppMajorVersion(String gpp) {
     try {
-      Process proc = new ProcessBuilder(gpp, "--version").redirectErrorStream(true).start();
+      Process proc = toolchainEnv(new ProcessBuilder(gpp, "--version")).redirectErrorStream(true).start();
       String out = new String(proc.getInputStream().readAllBytes());
       proc.waitFor();
       // Output: "g++ (GCC) 13.2.0 ..." or "Apple clang version 15.0.0 ..."
@@ -3780,8 +3801,8 @@ public class CppBuild {
       if (cmd != null) {
         listener.statusNotice("Installing " + t.label + " compiler...");
         ProcessBuilder pb = isWin
-          ? new ProcessBuilder("cmd", "/c", cmd)
-          : new ProcessBuilder("bash", "-c", cmd);
+          ? toolchainEnv(new ProcessBuilder("cmd", "/c", cmd))
+          : toolchainEnv(new ProcessBuilder("bash", "-c", cmd));
         pb.redirectErrorStream(true);
         Process p = pb.start();
         StringBuilder out = new StringBuilder();
@@ -3881,7 +3902,7 @@ public class CppBuild {
           ? javax.swing.JOptionPane.INFORMATION_MESSAGE
           : javax.swing.JOptionPane.ERROR_MESSAGE);
       if (d > 0) {
-        try { new ProcessBuilder("xdg-open", path).start(); }
+        try { toolchainEnv(new ProcessBuilder("xdg-open", path)).start(); }
         catch (Exception ignored) {}
       }
     });
@@ -3992,7 +4013,7 @@ public class CppBuild {
     cmd.add("-o"); cmd.add(binOut.getAbsolutePath());
 
     System.out.println("$ " + String.join(" ", cmd));
-    ProcessBuilder pb = new ProcessBuilder(cmd);
+    ProcessBuilder pb = toolchainEnv(new ProcessBuilder(cmd));
     pb.redirectErrorStream(true);
     pb.directory(sketch.getFolder());
     Process p = pb.start();
@@ -4239,9 +4260,9 @@ public class CppBuild {
     File icoFile = new File(outDir, "_icon.ico");
     String convert = System.getProperty("os.name","").toLowerCase().contains("win") ? "magick" : "convert";
     if (cmdExists(convert)) {
-      new ProcessBuilder(convert, iconPng,
+      toolchainEnv(new ProcessBuilder(convert, iconPng,
         "-define", "icon:auto-resize=256,128,64,48,32,16",
-        icoFile.getAbsolutePath())
+        icoFile.getAbsolutePath()))
         .redirectErrorStream(true).start().waitFor();
     }
     if (!icoFile.exists()) {
@@ -4257,8 +4278,8 @@ public class CppBuild {
     String windres = cmdExists("x86_64-w64-mingw32-windres")
       ? "x86_64-w64-mingw32-windres" : "windres";
     File resFile = new File(outDir, "_icon.res");
-    int rc = new ProcessBuilder(windres, rcFile.getAbsolutePath(),
-      "-O", "coff", "-o", resFile.getAbsolutePath())
+    int rc = toolchainEnv(new ProcessBuilder(windres, rcFile.getAbsolutePath(),
+      "-O", "coff", "-o", resFile.getAbsolutePath()))
       .redirectErrorStream(true).start().waitFor();
     // Clean up temp files; copy ico alongside exe regardless
     copyFile(icoFile, new File(outDir, exe.getName().replace(".exe","") + ".ico"));
@@ -4280,7 +4301,7 @@ public class CppBuild {
           String cmd = cmdExists("yay")
             ? "yay -S --noconfirm --needed mingw-w64-glfw mingw-w64-glew"
             : "pkexec pacman -S --noconfirm --needed mingw-w64-glfw mingw-w64-glew";
-          new ProcessBuilder("bash","-c",cmd).inheritIO().start().waitFor();
+          toolchainEnv(new ProcessBuilder("bash","-c",cmd)).inheritIO().start().waitFor();
         } catch (Exception ignored) {}
       }
     }
@@ -4293,7 +4314,7 @@ public class CppBuild {
           String cmd = cmdExists("pacman")
             ? "pkexec pacman -S --noconfirm --needed glfw-x11 glew"
             : "pkexec apt-get install -y libglfw3-dev libglew-dev";
-          new ProcessBuilder("bash","-c",cmd).inheritIO().start().waitFor();
+          toolchainEnv(new ProcessBuilder("bash","-c",cmd)).inheritIO().start().waitFor();
         } catch (Exception ignored) {}
       }
     }
@@ -4347,8 +4368,8 @@ public class CppBuild {
       if (iconPath != null && !iconPath.isEmpty() && new File(iconPath).exists()) {
         copyFile(new File(iconPath), iconDst);
       } else if (cmdExists("convert")) {
-        new ProcessBuilder("convert", "-size", "256x256", "xc:#3366cc",
-          iconDst.getAbsolutePath()).redirectErrorStream(true).start().waitFor();
+        toolchainEnv(new ProcessBuilder("convert", "-size", "256x256", "xc:#3366cc",
+          iconDst.getAbsolutePath())).redirectErrorStream(true).start().waitFor();
       }
       // .DirIcon is required for Dolphin/Nautilus to show the icon
       if (iconDst.exists()) copyFile(iconDst, new File(appDir, ".DirIcon"));
@@ -4382,9 +4403,9 @@ public class CppBuild {
       // Run appimagetool
       listener.statusNotice("Packaging AppImage...");
       File appImageOut = new File(dir, skName + "-x86_64.AppImage");
-      ProcessBuilder pb = new ProcessBuilder(
+      ProcessBuilder pb = toolchainEnv(new ProcessBuilder(
         appImageTool.getAbsolutePath(), "--no-appstream",
-        appDir.getAbsolutePath(), appImageOut.getAbsolutePath());
+        appDir.getAbsolutePath(), appImageOut.getAbsolutePath()));
       pb.environment().put("ARCH", "x86_64");
       pb.redirectErrorStream(true);
       StringBuilder log = new StringBuilder();
@@ -4469,9 +4490,9 @@ public class CppBuild {
         return null;
       }
 
-      int rc = new ProcessBuilder(imageMagick, iconPng,
+      int rc = toolchainEnv(new ProcessBuilder(imageMagick, iconPng,
         "-define", "icon:auto-resize=256,128,64,48,32,16",
-        icoFile.getAbsolutePath())
+        icoFile.getAbsolutePath()))
         .redirectErrorStream(true).start().waitFor();
 
       if (rc != 0 || !icoFile.exists()) {
@@ -4500,8 +4521,8 @@ public class CppBuild {
 
       File resFile = new File(outDir, "_icon_tmp.res");
       StringBuilder windresLog = new StringBuilder();
-      ProcessBuilder wpb = new ProcessBuilder(windres,
-        rcFile.getAbsolutePath(), "-O", "coff", "-o", resFile.getAbsolutePath());
+      ProcessBuilder wpb = toolchainEnv(new ProcessBuilder(windres,
+        rcFile.getAbsolutePath(), "-O", "coff", "-o", resFile.getAbsolutePath()));
       wpb.redirectErrorStream(true);
       Process wp = wpb.start();
       try (java.io.BufferedReader br = new java.io.BufferedReader(
@@ -4623,11 +4644,11 @@ public class CppBuild {
       String os = System.getProperty("os.name","").toLowerCase();
       ProcessBuilder pb;
       if (os.contains("win")) {
-        pb = new ProcessBuilder("tar", "-xzf",
-          tgzFile.getAbsolutePath(), "-C", toolsDir.getAbsolutePath());
+        pb = toolchainEnv(new ProcessBuilder("tar", "-xzf",
+          tgzFile.getAbsolutePath(), "-C", toolsDir.getAbsolutePath()));
       } else {
-        pb = new ProcessBuilder("tar", "-xzf",
-          tgzFile.getAbsolutePath(), "-C", toolsDir.getAbsolutePath());
+        pb = toolchainEnv(new ProcessBuilder("tar", "-xzf",
+          tgzFile.getAbsolutePath(), "-C", toolsDir.getAbsolutePath()));
       }
       pb.redirectErrorStream(true);
       int exitCode = pb.start().waitFor();
