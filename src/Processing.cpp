@@ -3628,9 +3628,16 @@ void PApplet::run(){
     });
     glfwMakeContextCurrent(gWindow);
     glewExperimental = GL_TRUE;
-    glewExperimental = GL_TRUE;
     GLenum glewErr = glewInit();
-    if(glewErr != GLEW_OK){
+    bool glewOk = (glewErr == GLEW_OK);
+#if defined(__linux__) && defined(GLEW_ERROR_NO_GLX_DISPLAY)
+    // A GLX-built GLEW reports NO_GLX_DISPLAY under native Wayland (GLFW uses EGL there),
+    // but the core GL functions are already loaded by then, so it's safe to carry on.
+    if (!glewOk && glewErr == GLEW_ERROR_NO_GLX_DISPLAY && getenv("WAYLAND_DISPLAY") != nullptr)
+        glewOk = true;
+#endif
+    if(!glewOk){
+
 #ifdef _WIN32
         char msg[256]; snprintf(msg,sizeof(msg),"glewInit() failed: %s", glewGetErrorString(glewErr));
         MessageBoxA(NULL, msg, "processing-cpp Error", MB_OK|MB_ICONERROR);
